@@ -859,6 +859,11 @@
             <input type="url" name="image" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://..." />
           </div>
           <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">規格圖片（選填）</label>
+            <input type="text" name="variantImages" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="多張請用逗號分隔，順序對應上方規格，例：https://a.jpg, https://b.jpg, https://c.jpg" />
+            <p class="text-xs text-slate-400 mt-0.5">顧客頁選不同規格時會切換為對應的圖，順序需與規格品項一致。</p>
+          </div>
+          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">描述</label>
             <textarea name="description" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
           </div>
@@ -1794,6 +1799,7 @@
               stock: p.stock != null ? p.stock : p.庫存,
               status: (p.status || p.狀態 || "上架").toString().trim() || "上架",
               image: p.image || p.圖片,
+              variantImages: (p.variantImages != null ? p.variantImages : p.規格圖片 != null ? p.規格圖片 : ""),
               description: p.description || p.描述,
               introduction: p.introduction || p.商品介紹,
               publishedAt: p.publishedAt || p.上架日期 || "",
@@ -2015,7 +2021,7 @@
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "image", "description", "introduction", "publishedAt"].forEach(function(key) {
+        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "image", "variantImages", "description", "introduction", "publishedAt"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
