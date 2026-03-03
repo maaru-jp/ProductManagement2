@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>商品管理 - Maaru Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .admin-sidebar a.active { background: rgba(255,255,255,0.12); }
+    /* 狀態切換開關：橢圓軌道 + 白色圓鈕 */
+    #statusTrack {
+      display: inline-block;
+      width: 48px;
+      height: 24px;
+      border-radius: 9999px;
+      position: relative;
+      transition: background-color 0.2s ease;
+      flex-shrink: 0;
+    }
+    #statusTrack.on { background-color: #10b981 !important; }
+    #statusTrack.off { background-color: #94a3b8 !important; }
+    #statusKnob {
+      display: block;
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      top: 2px;
+      left: 2px;
+      border-radius: 9999px;
+      background-color: #fff !important;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+      transition: transform 0.2s ease;
+    }
+    #statusTrack.on #statusKnob { transform: translateX(24px); }
+    #statusTrack.off #statusKnob { transform: translateX(0); }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-100">
+  <div class="flex">
+    <!-- 左側導覽 -->
+    <aside class="admin-sidebar w-56 min-h-screen bg-slate-800 text-white flex flex-col shrink-0">
+      <div class="p-4 border-b border-slate-700">
+        <h1 class="font-semibold text-sm tracking-wide">OMO ADMIN - MAARU</h1>
+      </div>
+      <nav class="p-2 flex-1">
+        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">◆ 總覽報表</a>
+        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">三 訂單管理</a>
+        <a href="#" class="block py-2.5 px-3 rounded text-sm bg-white/10 active">◇ 商品管理</a>
+        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">回 首頁排版</a>
+        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">口 採買統計</a>
+        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">⚙️ 網站設定</a>
+      </nav>
+      <div class="p-2 border-t border-slate-700">
+        <button type="button" class="w-full py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm text-left">登出</button>
+      </div>
+    </aside>
+
+    <!-- 主內容 -->
+    <main class="flex-1 p-6 overflow-auto">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold text-slate-800">商品管理</h2>
+        <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
+          前往官網 ↗
+        </a>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <button type="button" id="btnAdd" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">
+          + 新增商品
+        </button>
+        <button type="button" id="btnExport" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
+          匯出 CSV
+        </button>
+        <div class="flex-1 flex items-center gap-2 min-w-0">
+          <input type="text" id="searchInput" placeholder="搜尋商品名稱、分類、品牌..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <button type="button" id="btnSearch" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm hover:bg-slate-50">搜尋</button>
+        </div>
+      </div>
+
+      <div id="message" class="mb-3 text-sm hidden"></div>
+
+      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left py-3 px-4 font-medium text-slate-600">編號</th>
+                <th class="text-left py-3 px-4 font-medium text-slate-600">圖片</th>
+                <th class="text-left py-3 px-4 font-medium text-slate-600">名稱</th>
+                <th class="text-left py-3 px-4 font-medium text-slate-600">售價(日幣)</th>
+                <th class="text-left py-3 px-4 font-medium text-slate-600">分類</th>
+                <th class="text-left py-3 px-4 font-medium text-slate-600">子分類</th>
+                <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
+                <th class="text-left py-3 px-4 font-medium text-slate-600">操作</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody">
+              <tr><td colspan="8" class="py-8 text-center text-slate-500">載入中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 新增/編輯商品 Modal -->
+  <div id="modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/50" id="modalBackdrop"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-slate-200">
+          <h3 class="text-lg font-semibold" id="modalTitle">新增商品</h3>
+        </div>
+        <form id="productForm" class="p-6 space-y-4">
+          <input type="hidden" id="editRowIndex" value="" />
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">商品名稱 *</label>
+            <input type="text" name="name" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">分類</label>
+              <input type="text" name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：絨毛玩偶" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">子分類</label>
+              <input type="text" name="subcategory" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：玩偶公仔" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">角色</label>
+            <input type="text" name="character" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：酷洛米、凱蒂貓" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">規格</label>
+            <input type="text" name="variant" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格 *</label>
+            <input type="number" name="price" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">狀態</label>
+            <input type="hidden" name="status" id="statusInput" value="上架" />
+            <div id="statusToggle" class="flex items-center gap-3 cursor-pointer select-none" role="button" tabindex="0" aria-label="切換上架或下架">
+              <div id="statusTrack" class="on"></div>
+              <span id="statusLabel" class="text-sm font-medium text-emerald-600">上架中</span>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">圖片 URL</label>
+            <input type="url" name="image" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://..." />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">描述</label>
+            <textarea name="description" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">商品介紹</label>
+            <textarea name="introduction" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+          </div>
+          <div class="flex justify-end gap-2 pt-4">
+            <button type="button" id="btnCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm">取消</button>
+            <button type="submit" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">儲存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var API_READ = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+        ? "/api"
+        : "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
+      var API_WRITE = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+        ? "/api-write"
+        : "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
+
+      var products = [];
+      var searchKeyword = "";
+
+      function showMessage(text, isError) {
+        var el = document.getElementById("message");
+        el.textContent = text;
+        el.className = "mb-3 text-sm " + (isError ? "text-red-600" : "text-slate-600");
+        el.classList.remove("hidden");
+        setTimeout(function() { el.classList.add("hidden"); }, 4000);
+      }
+
+      function loadProducts() {
+        var tbody = document.getElementById("tableBody");
+        tbody.innerHTML = "<tr><td colspan=\"9\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
+        fetch(API_READ)
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            products = data.products || [];
+            renderTable();
+          })
+          .catch(function(err) {
+            tbody.innerHTML = "<tr><td colspan=\"9\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
+          });
+      }
+
+      function renderTable() {
+        var tbody = document.getElementById("tableBody");
+        var list = products;
+        if (searchKeyword) {
+          var q = searchKeyword.toLowerCase();
+          list = list.filter(function(p) {
+            var name = (p.name || p.商品名稱 || "").toString();
+            var cat = (p.category || p.分類 || "").toString();
+            var sub = (p.subcategory || p.子分類 || "").toString();
+          var char = (p.character || p.角色 || "").toString();
+          return name.toLowerCase().indexOf(q) >= 0 || cat.toLowerCase().indexOf(q) >= 0 || sub.toLowerCase().indexOf(q) >= 0 || char.toLowerCase().indexOf(q) >= 0;
+        });
+      }
+      if (list.length === 0) {
+        tbody.innerHTML = "<tr><td colspan=\"9\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
+        return;
+      }
+      tbody.innerHTML = list.map(function(p, idx) {
+        var rowNum = products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2;
+        var name = p.name || p.商品名稱 || "";
+        var price = p.price != null ? p.price : p.日幣價格 != null ? p.日幣價格 : "";
+        var cat = p.category || p.分類 || "";
+        var sub = p.subcategory || p.子分類 || "";
+        var img = p.image || p.圖片 || "";
+        var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
+        var isListed = status === "上架";
+        return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\">" +
+            "<td class=\"py-3 px-4 text-slate-500\">" + rowNum + "</td>" +
+            "<td class=\"py-3 px-4\"><img src=\"" + (img || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E") + "\" alt=\"\" class=\"w-10 h-10 object-cover rounded\" onerror=\"this.src='data:image/svg+xml,%26%23x3C%3Bsvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27 fill=%27%23cbd5e1%27%26%23x3E%26%23x3C%3Brect width=%2740%27 height=%2740%27/%26%23x3E%26%23x3C%3B/svg%26%23x3E%3B'\" /></td>" +
+            "<td class=\"py-3 px-4 font-medium\">" + escapeHtml(name) + "</td>" +
+            "<td class=\"py-3 px-4\">" + escapeHtml(String(price)) + "</td>" +
+            "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(cat) + "</td>" +
+            "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(sub) + "</td>" +
+            "<td class=\"py-3 px-4\"><span class=\"status-tag " + (isListed ? "text-emerald-600" : "text-slate-400") + " text-xs\">" + (isListed ? "上架中" : "已下架") + "</span></td>" +
+            "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
+            "</tr>";
+        }).join("");
+        tbody.querySelectorAll(".edit-btn").forEach(function(btn) {
+          btn.addEventListener("click", function() {
+            var rowIndex = parseInt(this.getAttribute("data-row"), 10);
+            var p = products[rowIndex - 2];
+            if (!p) return;
+            openModal(true);
+            document.getElementById("editRowIndex").value = rowIndex;
+            document.getElementById("modalTitle").textContent = "編輯商品";
+            setFormValues({
+              name: p.name || p.商品名稱,
+              category: p.category || p.分類,
+              subcategory: p.subcategory || p.子分類,
+              character: p.character || p.角色,
+              variant: p.variant || p.規格,
+              price: p.price != null ? p.price : p.日幣價格,
+              status: (p.status || p.狀態 || "上架").toString().trim() || "上架",
+              image: p.image || p.圖片,
+              description: p.description || p.描述,
+              introduction: p.introduction || p.商品介紹
+            });
+          });
+        });
+        tbody.querySelectorAll(".delete-btn").forEach(function(btn) {
+          btn.addEventListener("click", function() {
+            var rowIndex = parseInt(this.getAttribute("data-row"), 10);
+            var name = this.getAttribute("data-name") || "此商品";
+            if (!confirm("確定要刪除「" + name + "」嗎？刪除後試算表該列也會一併移除。")) return;
+            fetch(API_WRITE, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "delete", rowIndex: rowIndex })
+            })
+              .then(function(r) { return r.json(); })
+              .then(function(res) {
+                if (res.error) {
+                  showMessage("刪除失敗：" + res.message, true);
+                  return;
+                }
+                showMessage(res.message || "已刪除");
+                loadProducts();
+              })
+              .catch(function(err) {
+                showMessage("刪除失敗：" + err.message, true);
+              });
+          });
+        });
+      }
+
+      function escapeHtml(s) {
+        var div = document.createElement("div");
+        div.textContent = s;
+        return div.innerHTML;
+      }
+
+      function setFormValues(obj) {
+        var form = document.getElementById("productForm");
+        Object.keys(obj || {}).forEach(function(key) {
+          var input = form.querySelector("[name=" + key + "]");
+          if (input) input.value = obj[key] != null ? obj[key] : "";
+        });
+        if (obj && obj.status != null) updateStatusToggle(obj.status);
+      }
+
+      function updateStatusToggle(value) {
+        var isOn = (value || "上架").toString().trim() === "上架";
+        var input = document.getElementById("statusInput");
+        var track = document.getElementById("statusTrack");
+        var label = document.getElementById("statusLabel");
+        if (input) input.value = isOn ? "上架" : "下架";
+        if (track) {
+          track.classList.toggle("on", isOn);
+          track.classList.toggle("off", !isOn);
+        }
+        if (label) {
+          label.textContent = isOn ? "上架中" : "已下架";
+          label.className = "text-sm font-medium " + (isOn ? "text-emerald-600" : "text-slate-500");
+        }
+      }
+
+      function getFormValues() {
+        var form = document.getElementById("productForm");
+        var o = {};
+        ["name", "category", "subcategory", "character", "variant", "price", "status", "image", "description", "introduction"].forEach(function(key) {
+          var el = form.querySelector("[name=" + key + "]");
+          o[key] = el ? el.value : "";
+        });
+        if (o.price !== "") o.price = Number(o.price);
+        if (!o.status) o.status = "上架";
+        return o;
+      }
+
+      function openModal(isEdit) {
+        document.getElementById("modal").classList.remove("hidden");
+        document.getElementById("modalTitle").textContent = isEdit ? "編輯商品" : "新增商品";
+        document.getElementById("editRowIndex").value = "";
+        if (!isEdit) {
+          setFormValues({});
+          updateStatusToggle("上架");
+        }
+      }
+
+      function closeModal() {
+        document.getElementById("modal").classList.add("hidden");
+      }
+
+      document.getElementById("btnAdd").addEventListener("click", function() { openModal(false); });
+
+      document.getElementById("statusToggle").addEventListener("click", function() {
+        var input = document.getElementById("statusInput");
+        var next = input.value === "上架" ? "下架" : "上架";
+        updateStatusToggle(next);
+      });
+      document.getElementById("statusToggle").addEventListener("keydown", function(e) {
+        if (e.key === " " || e.key === "Enter") { e.preventDefault(); this.click(); }
+      });
+      document.getElementById("btnCancel").addEventListener("click", closeModal);
+      document.getElementById("modalBackdrop").addEventListener("click", closeModal);
+
+      document.getElementById("productForm").addEventListener("submit", function(e) {
+        e.preventDefault();
+        var rowIndex = document.getElementById("editRowIndex").value;
+        var product = getFormValues();
+        var action = rowIndex ? "update" : "append";
+        var body = { action: action, product: product };
+        if (rowIndex) body.rowIndex = parseInt(rowIndex, 10);
+        fetch(API_WRITE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        })
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (res.error) {
+              showMessage("儲存失敗：" + res.message, true);
+              return;
+            }
+            showMessage(res.message || "已儲存");
+            closeModal();
+            loadProducts();
+          })
+          .catch(function(err) {
+            showMessage("儲存失敗：" + err.message, true);
+          });
+      });
+
+      document.getElementById("btnSearch").addEventListener("click", function() {
+        searchKeyword = document.getElementById("searchInput").value.trim();
+        renderTable();
+      });
+      document.getElementById("searchInput").addEventListener("keydown", function(e) {
+        if (e.key === "Enter") { searchKeyword = this.value.trim(); renderTable(); }
+      });
+
+      document.getElementById("btnExport").addEventListener("click", function() {
+        if (products.length === 0) { showMessage("尚無商品可匯出", true); return; }
+        var headers = ["商品名稱", "分類", "子分類", "角色", "規格", "日幣價格", "圖片", "描述"];
+        var rows = [headers.join(",")];
+        products.forEach(function(p) {
+          var row = [
+            (p.name || p.商品名稱 || ""),
+            (p.category || p.分類 || ""),
+            (p.subcategory || p.子分類 || ""),
+            (p.character || p.角色 || ""),
+            (p.variant || p.規格 || ""),
+            (p.price != null ? p.price : p.日幣價格 != null ? p.日幣價格 : ""),
+            (p.image || p.圖片 || ""),
+            (p.description || p.描述 || "").replace(/"/g, '""')
+          ];
+          rows.push(row.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(","));
+        });
+        var blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "maaru-products-" + new Date().toISOString().slice(0, 10) + ".csv";
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showMessage("已匯出 CSV");
+      });
+
+      loadProducts();
+    })();
+  </script>
+</body>
+</html>
