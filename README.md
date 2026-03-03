@@ -17,7 +17,8 @@
 | 描述     | 描述、說明、content、description       |
 | 商品介紹 | 商品介紹、介紹、intro、introduction    |
 | 規格     | 規格、顏色、option、variant            |
-| 分類     | 分類、category                         |
+| 分類     | 分類、category（主分類，如：文具小物） |
+| 子分類   | 子分類、subcategory（如：各式筆類）    |
 | 熱銷     | 熱銷、hot（填 TRUE/是/1 表示熱銷）    |
 | 推薦     | 推薦、recommended                      |
 | 新品     | 新品、isNew                            |
