@@ -98,7 +98,7 @@ function formatTWDFromJPY(jpy, rate) {
 }
 
 const API_URL =
-  "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
+  "https://script.googleusercontent.com/macros/echo?user_content_key=AY5xjrTS-qEphaiBZpDtZQiI4E_L4Ge4iew16KNpZjrnxlTW9Un0pCjTYDgyjxahCWPMth1rKbw4LC2adRlvAfht8Yjg7lZHaSNf2S-SriWDDtPkvZ0ZAn44OhpAap08hwkyQnBZgk4So2daHtOKP07hH3WXCLBCTE0KweDPxOqKTj3iuBwAcZ3A6a2yB3lhKShH_c4yHGiNFo8kDU6geRbf5a0XtAG5j6s2v3vrQw-ebi9metYny89Q59EvXqqNicsMMaWcLpxHBU26yHqiKu9XQ0GZLvMhgA&lib=MCN1sfGqsjw8Wsi0FJVsTJbQ42JGSsI5e";
 
 // 在 GitHub Pages 等跨站環境下，Google 試算表 API 常因 CORS 被擋，失敗時改經由此 proxy 重試
 const CORS_PROXY_PREFIX = "https://corsproxy.io/?";
@@ -133,6 +133,7 @@ function normalizeItem(row, index) {
     "";
   const variant = row.variant ?? row.規格 ?? row.顏色 ?? row.option ?? "";
   const category = row.category ?? row.分類 ?? "";
+  const subcategory = row.subcategory ?? row.子分類 ?? "";
   const isHot = toBoolFlag(row.hot ?? row.熱銷);
   const isRecommended = toBoolFlag(row.recommended ?? row.推薦);
   const publishedAt = row.publishedAt ?? row.上架日期 ?? row.上架時間 ?? null;
@@ -153,6 +154,7 @@ function normalizeItem(row, index) {
     introduction,
     variant,
     category,
+    subcategory,
     isHot,
     isRecommended,
     isNew,
@@ -244,25 +246,139 @@ function getUniqueProductsByName(products) {
   return result;
 }
 
-// 分類選單結構：顯示文字（豎線分隔）與對應的 category 值
+// 分類選單結構：主分類 + 子分類（可展開/收合）
 const CATEGORY_MENU = [
-  { label: "文 | 具 | 小 | 物", value: "文具小物" },
-  { label: "包 | 袋 | 配 | 件", value: "包袋配件" },
-  { label: "餐 | 廚 | 百 | 貨", value: "餐廚百貨" },
-  { label: "媽 | 咪 | 寶 | 貝", value: "媽咪寶貝" },
-  { label: "居 | 家 | 雜 | 貨", value: "居家雜貨" },
-  { label: "衛 | 浴 | 用 | 品", value: "衛浴用品" },
-  { label: "美 | 妝 | 衛 | 生", value: "美妝衛生" },
+  {
+    label: "文 | 具 | 小 | 物",
+    value: "文具小物",
+    children: [
+      { label: "各式筆類", value: "各式筆類" },
+      { label: "筆記本 | 便條紙", value: "筆記本便條紙" },
+      { label: "卡片 | 信紙 | 紙袋", value: "卡片信紙紙袋" },
+      { label: "文件夾 | 資料袋", value: "文件夾資料袋" },
+      { label: "紙膠帶 | 貼紙", value: "紙膠帶貼紙" },
+      { label: "筆袋 | 筆盒", value: "筆袋筆盒" },
+      { label: "剪刀 | 尺 | 事務用品", value: "剪刀尺事務用品" },
+      { label: "3C周邊", value: "3C周邊" },
+    ],
+  },
+  {
+    label: "包 | 袋 | 配 | 件",
+    value: "包袋配件",
+    children: [
+      { label: "後背包", value: "後背包" },
+      { label: "手提 | 斜背包", value: "手提斜背包" },
+      { label: "肩背 | 側背包", value: "肩背側背包" },
+      { label: "皮夾", value: "皮夾" },
+      { label: "零錢包 | 卡夾", value: "零錢包卡夾" },
+      { label: "化妝包 | 束口袋 | 收納包", value: "化妝包束口袋收納包" },
+      { label: "旅行用品", value: "旅行用品" },
+      { label: "環保購物袋", value: "環保購物袋" },
+      { label: "眼鏡盒", value: "眼鏡盒" },
+      { label: "吊飾 | 鑰匙圈", value: "吊飾鑰匙圈" },
+      { label: "手錶 | 飾品", value: "手錶飾品" },
+      { label: "服飾 | 鞋襪 | 帽子 | 圍巾", value: "服飾鞋襪帽子圍巾" },
+      { label: "髮飾", value: "髮飾" },
+      { label: "風扇 | 扇子", value: "風扇扇子" },
+    ],
+  },
+  {
+    label: "餐 | 廚 | 百 | 貨",
+    value: "餐廚百貨",
+    children: [
+      { label: "匙 | 叉 | 筷", value: "匙叉筷" },
+      { label: "碗 | 盤 | 食器類", value: "碗盤食器類" },
+      { label: "便當盒 | 保鮮盒", value: "便當盒保鮮盒" },
+      { label: "馬克杯 | 各式水杯", value: "馬克杯各式水杯" },
+      { label: "保溫杯瓶", value: "保溫杯瓶" },
+      { label: "水壺", value: "水壺" },
+      { label: "吸管 | 杯蓋 | 杯墊", value: "吸管杯蓋杯墊" },
+      { label: "料理烘焙模具 | 創意便當", value: "料理烘焙模具創意便當" },
+      { label: "杯袋 | 便當袋", value: "杯袋便當袋" },
+      { label: "鍋具 | 茶壺 | 廚房電器", value: "鍋具茶壺廚房電器" },
+      { label: "廚具 | 餐廚小物", value: "廚具餐廚小物" },
+      { label: "廚房收納", value: "廚房收納" },
+    ],
+  },
+  {
+    label: "媽 | 咪 | 寶 | 貝",
+    value: "媽咪寶貝",
+    children: [
+      { label: "兒童水壺 | 杯瓶", value: "兒童水壺杯瓶" },
+      { label: "兒童餐具", value: "兒童餐具" },
+      { label: "玩具", value: "玩具" },
+      { label: "絨毛玩偶 | 公仔", value: "絨毛玩偶公仔" },
+      { label: "卡通泡澡球", value: "卡通泡澡球" },
+      { label: "Tomica小汽車", value: "Tomica小汽車" },
+      { label: "兒童包袋服飾配件", value: "兒童包袋服飾配件" },
+      { label: "母嬰用品", value: "母嬰用品" },
+    ],
+  },
+  {
+    label: "居 | 家 | 雜 | 貨",
+    value: "居家雜貨",
+    children: [
+      { label: "桌上小物收納", value: "桌上小物收納" },
+      { label: "收納籃 | 收納箱", value: "收納籃收納箱" },
+      { label: "門簾 | 地墊", value: "門簾地墊" },
+      { label: "寢具 | 抱枕 | 毯", value: "寢具抱枕毯" },
+      { label: "時鐘 | 傢飾 | 燈", value: "時鐘傢飾燈" },
+      { label: "室內拖 | 圍裙", value: "室內拖圍裙" },
+      { label: "掛勾 | 衣架 | 洗曬", value: "掛勾衣架洗曬" },
+      { label: "雨具 | 雨衣", value: "雨具雨衣" },
+      { label: "垃圾桶 | 清潔小物", value: "垃圾桶清潔小物" },
+      { label: "居家雜貨", value: "居家雜貨" },
+      { label: "桌墊 | 野餐墊", value: "桌墊野餐墊" },
+      { label: "汽機車用品", value: "汽機車用品" },
+    ],
+  },
+  {
+    label: "衛 | 浴 | 用 | 品",
+    value: "衛浴用品",
+    children: [
+      { label: "毛巾 | 浴巾", value: "毛巾浴巾" },
+      { label: "手帕 | 擦手巾", value: "手帕擦手巾" },
+      { label: "牙刷 | 盥洗小物", value: "牙刷盥洗小物" },
+      { label: "浴室收納 | 用具", value: "浴室收納用具" },
+    ],
+  },
+  {
+    label: "美 | 妝 | 衛 | 生",
+    value: "美妝衛生",
+    children: [
+      { label: "口罩 | 防疫周邊", value: "口罩防疫周邊" },
+      { label: "分裝瓶罐", value: "分裝瓶罐" },
+      { label: "鏡梳", value: "鏡梳" },
+      { label: "濕紙巾 | 面紙", value: "濕紙巾面紙" },
+      { label: "ok繃 | 棉棒 | 牙線", value: "ok繃棉棒牙線" },
+      { label: "清潔保養", value: "清潔保養" },
+      { label: "美甲小物", value: "美甲小物" },
+      { label: "其他美妝小物", value: "其他美妝小物" },
+    ],
+  },
 ];
 
 function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate }) {
   const searchRef = React.useRef(null);
+  const [expandedKeys, setExpandedKeys] = React.useState(() => new Set(CATEGORY_MENU.map((c) => c.value)));
+
   React.useEffect(() => {
     if (open && searchRef.current) searchRef.current.focus();
   }, [open]);
 
+  function toggleExpand(value) {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
+
   const linkClass =
     "flex items-center justify-between w-full py-3.5 px-4 text-left text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors";
+  const subLinkClass =
+    "flex items-center w-full py-2.5 pl-6 pr-4 text-left text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors";
   const divider = "border-b border-slate-600/60";
 
   return (
@@ -347,20 +463,57 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                 <span>HOT新品推薦</span>
               </button>
             </div>
+            <div className={divider}>
+              <button
+                type="button"
+                onClick={() => { onNavigate("/?section=ideas"); onClose(); }}
+                className={linkClass}
+              >
+                點子選單
+              </button>
+            </div>
 
             {CATEGORY_MENU.map((item) => (
               <div key={item.value} className={divider}>
                 <button
                   type="button"
-                  onClick={() => {
-                    onNavigate("/?category=" + encodeURIComponent(item.value));
-                    onClose();
-                  }}
+                  onClick={() => toggleExpand(item.value)}
                   className={linkClass}
+                  aria-expanded={expandedKeys.has(item.value)}
                 >
                   <span>{item.label}</span>
-                  <span className="text-slate-500" aria-hidden>›</span>
+                  <span
+                    className={[
+                      "text-slate-500 transition-transform",
+                      expandedKeys.has(item.value) ? "rotate-180" : "",
+                    ].join(" ")}
+                    aria-hidden
+                  >
+                    ▼
+                  </span>
                 </button>
+                {item.children && expandedKeys.has(item.value) ? (
+                  <div className="py-0.5">
+                    {item.children.map((sub) => (
+                      <button
+                        key={sub.value}
+                        type="button"
+                        onClick={() => {
+                          onNavigate(
+                            "/?category=" +
+                              encodeURIComponent(item.value) +
+                              "&subcategory=" +
+                              encodeURIComponent(sub.value)
+                          );
+                          onClose();
+                        }}
+                        className={subLinkClass}
+                      >
+                        {sub.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))}
           </nav>
@@ -502,6 +655,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch }) {
   const SORT_KEY = "maarushop_home_sort_v1";
   const params = React.useMemo(() => parseSearchParams(routeSearch || ""), [routeSearch]);
   const categoryFromUrl = params.category ?? null;
+  const subcategoryFromUrl = params.subcategory ?? null;
   const searchFromUrl = params.q ?? null;
 
   const [selectedCategory, setSelectedCategory] = React.useState(() => {
@@ -585,6 +739,11 @@ function HomePage({ products, rate, loading, error, search: routeSearch }) {
         (p) => (p?.category || "").trim() === selectedCategory
       );
     }
+    if (subcategoryFromUrl) {
+      result = result.filter(
+        (p) => (p?.subcategory || "").trim() === subcategoryFromUrl
+      );
+    }
     const q = search.trim().toLowerCase();
     if (!q) return result;
 
@@ -593,7 +752,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch }) {
       const variant = (p?.variant || "").toLowerCase();
       return name.includes(q) || variant.includes(q);
     });
-  }, [products, selectedCategory, search]);
+  }, [products, selectedCategory, subcategoryFromUrl, search]);
 
   const uniqueProducts = React.useMemo(() => {
     const base = getUniqueProductsByName(filteredProducts);
