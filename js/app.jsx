@@ -152,6 +152,13 @@ function normalizeItem(row, index) {
     row.Image ??
     row["圖片URL"] ??
     "";
+  const rawVariantImages =
+    row.variantImages ?? row.規格圖片 ?? row["規格圖片"] ?? "";
+  const variantImages = Array.isArray(rawVariantImages)
+    ? rawVariantImages.filter((u) => u && String(u).trim())
+    : typeof rawVariantImages === "string"
+      ? rawVariantImages.split(/[,，、\n]/).map((s) => s.trim()).filter(Boolean)
+      : [];
   const description =
     row.description ?? row.描述 ?? row.說明 ?? row.content ?? "";
   const introduction =
@@ -182,6 +189,7 @@ function normalizeItem(row, index) {
     price,
     sellingPrice,
     image,
+    variantImages,
     description,
     introduction,
     variant,
@@ -989,12 +997,42 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   );
 }
 
+function splitVariantString(variantStr) {
+  if (!variantStr || typeof variantStr !== "string") return [];
+  return variantStr
+    .split(/[,，、\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
   const decodedName = decodeURIComponent(encodedName || "");
 
-  const group = React.useMemo(() => {
+  const baseGroup = React.useMemo(() => {
     return products.filter((p) => p.name === decodedName);
   }, [products, decodedName]);
+
+  const group = React.useMemo(() => {
+    const expanded = [];
+    for (const p of baseGroup) {
+      const parts = splitVariantString(p.variant || p.規格 || "");
+      if (parts.length <= 1) {
+        expanded.push(p);
+      } else {
+        const variantImgList = p.variantImages && Array.isArray(p.variantImages) ? p.variantImages : [];
+        parts.forEach((part, i) => {
+          const variantImage = variantImgList[i] && String(variantImgList[i]).trim() ? variantImgList[i] : p.image;
+          expanded.push({
+            ...p,
+            variant: part,
+            image: variantImage || p.image,
+            sku: [p.name, part, p.price ?? ""].join("||"),
+          });
+        });
+      }
+    }
+    return expanded;
+  }, [baseGroup]);
 
   if (!decodedName) {
     return (
