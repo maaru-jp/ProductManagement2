@@ -123,6 +123,7 @@ function buildKeyMap(headers) {
     ["商品介紹", "介紹", "intro", "introduction"],
     ["規格", "顏色", "option", "variant"],
     ["分類", "category"],
+    ["子分類", "subcategory"],
     ["熱銷", "hot"],
     ["推薦", "recommended"],
     ["新品", "isNew"],
