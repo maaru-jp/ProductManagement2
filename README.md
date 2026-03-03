@@ -1,31 +1,55 @@
-# Maaru Shop
+# Maaru Shop - Google Apps Script API
 
-前端會從 **Google 試算表（Apps Script）** 讀取商品資料。部署到 GitHub Pages 後若畫面上沒有資料，多半是 **CORS（跨站請求）** 被瀏覽器阻擋。
+這是給 **Google 試算表** 用的 Apps Script，用來把試算表當成商品與匯率的後端 API。
 
-## 已做的處理
+## 試算表結構
 
-- 程式會先直接請求 API，失敗時自動改經 **CORS proxy**（`corsproxy.io`）再試一次，多數情況下在 GitHub Pages 上就能顯示資料。
+### 1. 商品工作表（第一個工作表，或 CONFIG.sheetName 指定的名稱）
 
-## 若仍無法載入資料：在 Google Apps Script 加 CORS
+第一列為**標題列**，支援以下欄位名稱（中英文皆可）：
 
-若 proxy 不穩或仍失敗，請在 **提供 JSON 的那個 Google Apps Script 專案** 裡加上 CORS 標頭：
+| 用途     | 可用的欄位名稱                         |
+|----------|----------------------------------------|
+| 編號     | 序號、編號、id、ID                     |
+| 商品名稱 | 商品名稱、品名、title、name            |
+| 價格     | 日幣價格、價格、price、priceTWD        |
+| 圖片     | 圖片、圖片URL、image、imageUrl         |
+| 描述     | 描述、說明、content、description       |
+| 商品介紹 | 商品介紹、介紹、intro、introduction    |
+| 規格     | 規格、顏色、option、variant            |
+| 分類     | 分類、category                         |
+| 熱銷     | 熱銷、hot（填 TRUE/是/1 表示熱銷）    |
+| 推薦     | 推薦、recommended                      |
+| 新品     | 新品、isNew                            |
+| 上架日期 | 上架日期、上架時間、publishedAt        |
 
-1. 開啟試算表 → **擴充功能** → **Apps Script**。
-2. 找到負責回傳 JSON 的函式（例如 `doGet(e)`）。
-3. 回傳時改成同時設定標頭，例如：
+第二列起為一筆筆商品資料。
 
-```javascript
-function doGet(e) {
-  var data = getYourData(); // 你原本取得資料的程式
-  var output = ContentService.createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-  // 允許任何網站呼叫（部署到網頁應用程式後，外部才能載入）
-  output.setHeader('Access-Control-Allow-Origin', '*');
-  return output;
-}
-```
+### 2. 匯率（選用）
 
-4. **部署** → **管理部署** → 編輯現有部署或建立新部署，**誰可以存取** 選「**任何人**」→ 儲存。
-5. 重新開啟你的 GitHub Pages 網站，重新整理後再試。
+若要有「日圓 → 台幣」匯率，可新增一個工作表命名為 **設定**：
 
-這樣 GitHub Pages 的網域就能通過 CORS，直接取得試算表資料，不依賴 proxy。
+- 第一列：標題，其中一欄為 **匯率** 或 **rate**
+- 第二列：匯率數字（例如 0.23 表示 1 日圓 = 0.23 台幣）
+
+沒有「設定」工作表或沒有匯率欄位時，前端會顯示「價格請洽詢」。
+
+## 部署步驟
+
+1. 開啟你的 **Google 試算表**（商品與選用的匯率都在同一個試算表）。
+2. 選單：**擴充功能** → **Apps Script**。
+3. 刪除預設的 `function myFunction()`，把 `Code.gs` 的內容全部貼上，儲存。
+4. 上方 **部署** → **新增部署** → 類型選 **網頁應用程式**。
+5. **說明**可填「Maaru Shop API」。
+6. **執行身分**：我。
+7. **誰可以存取**：**任何人**（前端才能從 GitHub Pages / 本機開啟的網頁呼叫）。
+8. 按 **部署**，完成後複製 **網頁應用程式 URL**。
+9. 到專案前端的 `assets/app.jsx`，把 `API_URL` 常數改成這個 URL。
+
+## API 回傳格式
+
+- **GET** 請求會回傳 JSON：
+  - `rate`：數字或 null（匯率）。
+  - `products`：陣列，每個元素為一筆商品物件（欄位名對應試算表標題轉成的 key）。
+
+前端已支援 `data.rate` 與 `data.products`，無需再改前端邏輯。
