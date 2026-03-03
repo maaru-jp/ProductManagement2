@@ -4,6 +4,15 @@ body {
   background: #f8fafc;
 }
 
+/* 選單橫向捲動時隱藏捲軸 */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Optional: nicer text rendering */
 body {
   -webkit-font-smoothing: antialiased;
