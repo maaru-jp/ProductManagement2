@@ -240,18 +240,13 @@
                   <th class="text-left py-3 px-4 font-medium text-slate-600">利潤</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">成本</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">庫存</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">分類</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">子分類</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">上架日期</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">熱銷</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">推薦</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">新品</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">操作</th>
                 </tr>
               </thead>
               <tbody id="tableBody">
-                <tr><td colspan="16" class="py-8 text-center text-slate-500">載入中...</td></tr>
+                <tr><td colspan="11" class="py-8 text-center text-slate-500">載入中...</td></tr>
               </tbody>
             </table>
           </div>
@@ -801,8 +796,15 @@
             <input type="text" name="character" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：酷洛米、凱蒂貓" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">規格</label>
-            <input type="text" name="variant" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆）</label>
+            <div id="variantListContainer" class="space-y-2">
+              <div class="variant-item-row flex gap-2">
+                <input type="text" class="variant-item w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：酷洛米" />
+                <button type="button" class="variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" title="移除">✕</button>
+              </div>
+            </div>
+            <button type="button" id="btnAddVariant" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50">+ 新增規格品項</button>
+            <input type="hidden" name="variant" id="variantValue" value="" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格 *</label>
@@ -1002,12 +1004,22 @@
 
   <script>
     (function() {
-      var API_READ = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-        ? "/api"
-        : "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
-      var API_WRITE = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-        ? "/api-write"
-        : "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
+      // ※ 重要：請換成「您自己的」Google 試算表網頁應用程式 URL，否則後台無法寫入試算表、顧客頁也讀不到資料。
+      // 步驟：試算表 → 擴充功能 → Apps Script → 貼上 Code.gs → 部署 → 新增部署 → 網頁應用程式 →
+      // 執行身分「我」、誰可以存取「任何人」→ 部署 → 複製「網頁應用程式 URL」貼到下面兩行（READ 與 WRITE 用同一個 URL）。
+      var isLocalHost = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+      var API_BASE = "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
+      var API_READ = isLocalHost ? "/api" : API_BASE;
+      var API_WRITE = isLocalHost ? "/api-write" : API_BASE;
+      var CORS_PROXY_PREFIX = "https://corsproxy.io/?";
+
+      function fetchWrite(body) {
+        var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+        return fetch(API_WRITE, opts).catch(function(err) {
+          if (isLocalHost) throw err;
+          return fetch(CORS_PROXY_PREFIX + encodeURIComponent(API_WRITE), opts);
+        });
+      }
 
       var products = [];
       var searchKeyword = "";
@@ -1725,7 +1737,7 @@
         });
       }
       if (list.length === 0) {
-        tbody.innerHTML = "<tr><td colspan=\"16\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
+        tbody.innerHTML = "<tr><td colspan=\"11\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
         return;
       }
       function fmtDate(v) {
@@ -1737,18 +1749,13 @@
       tbody.innerHTML = list.map(function(p, idx) {
         var rowNum = products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2;
         var name = p.name || p.商品名稱 || "";
-        var price = p.price != null ? p.price : p.日幣價格 != null ? p.日幣價格 : "";
-        var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : "";
+        var price = p.price != null ? p.price : p.priceTWD != null ? p.priceTWD : p.日幣價格 != null ? p.日幣價格 : "";
+        var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : p.台幣售價 != null ? p.台幣售價 : "";
         var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
         var cost = p.cost != null ? p.cost : p.成本 != null ? p.成本 : "";
         var stock = p.stock != null ? p.stock : p.庫存 != null ? p.庫存 : "";
-        var cat = p.category || p.分類 || "";
-        var sub = p.subcategory || p.子分類 || "";
         var img = p.image || p.圖片 || "";
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
-        var hot = yesNo(p.hot || p.熱銷);
-        var rec = yesNo(p.recommended || p.推薦);
-        var isNew = yesNo(p.isNew || p.新品);
         var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
         var isListed = status === "上架";
         return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\">" +
@@ -1760,12 +1767,7 @@
             "<td class=\"py-3 px-4\">" + escapeHtml(String(profit)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(cost)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(stock)) + "</td>" +
-            "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(cat) + "</td>" +
-            "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(sub) + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(publishedAt) + "</td>" +
-            "<td class=\"py-3 px-4 text-slate-600\">" + (hot ? "Y" : "") + "</td>" +
-            "<td class=\"py-3 px-4 text-slate-600\">" + (rec ? "Y" : "") + "</td>" +
-            "<td class=\"py-3 px-4 text-slate-600\">" + (isNew ? "Y" : "") + "</td>" +
             "<td class=\"py-3 px-4\"><span class=\"status-tag " + (isListed ? "text-emerald-600" : "text-slate-400") + " text-xs\">" + (isListed ? "上架中" : "已下架") + "</span></td>" +
             "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
             "</tr>";
@@ -1808,11 +1810,7 @@
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
             var name = this.getAttribute("data-name") || "此商品";
             if (!confirm("確定要刪除「" + name + "」嗎？刪除後試算表該列也會一併移除。")) return;
-            fetch(API_WRITE, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "delete", rowIndex: rowIndex })
-            })
+            fetchWrite({ action: "delete", rowIndex: rowIndex })
               .then(function(r) { return r.json(); })
               .then(function(res) {
                 if (res.error) {
@@ -1823,7 +1821,9 @@
                 loadProducts();
               })
               .catch(function(err) {
-                showMessage("刪除失敗：" + err.message, true);
+                var msg = err.message || "";
+                if (/failed to fetch/i.test(msg)) msg = "無法連線（CORS 或網路問題，請確認 API 網址正確並已部署為「任何人」；或改用本機伺服器開啟後台）";
+                showMessage("刪除失敗：" + msg, true);
               });
           });
         });
@@ -1853,11 +1853,45 @@
         }
       }
 
+      function syncVariantToHidden() {
+        var container = document.getElementById("variantListContainer");
+        var hidden = document.getElementById("variantValue");
+        if (!container || !hidden) return;
+        var items = [].map.call(container.querySelectorAll(".variant-item"), function(inp) {
+          return (inp.value || "").trim();
+        }).filter(Boolean);
+        hidden.value = items.join(", ");
+      }
+
+      function renderVariantList(variantStr) {
+        var container = document.getElementById("variantListContainer");
+        if (!container) return;
+        var parts = (variantStr || "").split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
+        if (parts.length === 0) parts = [""];
+        container.innerHTML = parts.map(function(val) {
+          return "<div class=\"variant-item-row flex gap-2\">" +
+            "<input type=\"text\" class=\"variant-item w-full rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"例：酷洛米\" value=\"" + (val || "").replace(/"/g, "&quot;") + "\" />" +
+            "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>" +
+            "</div>";
+        }).join("");
+        container.querySelectorAll(".variant-item").forEach(function(inp) {
+          inp.addEventListener("input", syncVariantToHidden);
+          inp.addEventListener("change", syncVariantToHidden);
+        });
+        container.querySelectorAll(".variant-item-remove").forEach(function(btn) {
+          btn.addEventListener("click", function() {
+            var row = this.closest(".variant-item-row");
+            var rows = container.querySelectorAll(".variant-item-row");
+            if (rows.length > 1 && row) { row.remove(); syncVariantToHidden(); }
+          });
+        });
+      }
+
       function setFormValues(obj) {
         var form = document.getElementById("productForm");
         updateSubcategoryOptions(obj && obj.category ? obj.category : "");
         Object.keys(obj || {}).forEach(function(key) {
-          if (key === "hot" || key === "recommended" || key === "isNew") return;
+          if (key === "hot" || key === "recommended" || key === "isNew" || key === "variant") return;
           var input = form.querySelector("[name=" + key + "]");
           if (input) input.value = obj[key] != null ? obj[key] : "";
         });
@@ -1865,6 +1899,9 @@
           var el = form.querySelector("[name=" + key + "]");
           if (el) el.checked = (obj[key] === "Y" || obj[key] === true || obj[key] === "1");
         });
+        renderVariantList(obj && obj.variant != null ? obj.variant : "");
+        var variantHidden = document.getElementById("variantValue");
+        if (variantHidden) variantHidden.value = (obj && obj.variant != null ? obj.variant : "") || "";
         if (obj && obj.status != null) updateStatusToggle(obj.status);
         updateCalculatedFields();
       }
@@ -1975,6 +2012,7 @@
         updateCalculatedFields();
         syncSellingPriceFromInput();
         updateProfitDisplay();
+        syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
         ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "image", "description", "introduction", "publishedAt"].forEach(function(key) {
@@ -2014,6 +2052,28 @@
 
       document.getElementById("btnAdd").addEventListener("click", function() { openModal(false); });
 
+      var btnAddVariant = document.getElementById("btnAddVariant");
+      if (btnAddVariant) {
+        btnAddVariant.addEventListener("click", function() {
+          var container = document.getElementById("variantListContainer");
+          if (!container) return;
+          var row = document.createElement("div");
+          row.className = "variant-item-row flex gap-2";
+          row.innerHTML = "<input type=\"text\" class=\"variant-item w-full rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"例：酷洛米\" />" +
+            "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>";
+          container.appendChild(row);
+          var inp = row.querySelector(".variant-item");
+          var removeBtn = row.querySelector(".variant-item-remove");
+          if (inp) { inp.addEventListener("input", syncVariantToHidden); inp.addEventListener("change", syncVariantToHidden); }
+          if (removeBtn) {
+            removeBtn.addEventListener("click", function() {
+              var rows = container.querySelectorAll(".variant-item-row");
+              if (rows.length > 1) { row.remove(); syncVariantToHidden(); }
+            });
+          }
+        });
+      }
+
       var productCategorySelect = document.getElementById("productCategorySelect");
       if (productCategorySelect) {
         productCategorySelect.addEventListener("change", function() {
@@ -2049,26 +2109,21 @@
         e.preventDefault();
         updateCalculatedFields();
         syncSellingPriceFromInput();
-        var costVal = document.getElementById("costValue").value;
-        var sellingVal = document.getElementById("sellingPriceValue").value;
-        if (!costVal || costVal === "") {
-          showMessage("請輸入日幣價格與匯率（成本將自動計算）", true);
+        var product = getFormValues();
+        if (!product.name || !String(product.name).trim()) {
+          showMessage("請輸入商品名稱", true);
           return;
         }
-        if (!sellingVal || sellingVal === "") {
-          showMessage("請選擇毛利率或於自訂售價輸入台幣售價", true);
+        var priceNum = product.price;
+        if (priceNum === "" || priceNum === undefined || priceNum === null || (typeof priceNum === "number" && !Number.isFinite(priceNum))) {
+          showMessage("請輸入日幣價格", true);
           return;
         }
         var rowIndex = document.getElementById("editRowIndex").value;
-        var product = getFormValues();
         var action = rowIndex ? "update" : "append";
         var body = { action: action, product: product };
         if (rowIndex) body.rowIndex = parseInt(rowIndex, 10);
-        fetch(API_WRITE, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        })
+        fetchWrite(body)
           .then(function(r) { return r.json(); })
           .then(function(res) {
             if (res.error) {
@@ -2080,7 +2135,7 @@
             loadProducts();
           })
           .catch(function(err) {
-            showMessage("儲存失敗：" + err.message, true);
+            showMessage("儲存失敗：" + (err.message || "網路錯誤，請確認 API 網址或改用本機伺服器開啟後台").replace(/^Failed to fetch$/i, "無法連線（可能為 CORS 或網路問題，請確認 API 網址或改用本機開啟）"), true);
           });
       });
 
