@@ -98,7 +98,7 @@ function formatTWDFromJPY(jpy, rate) {
 }
 
 const API_URL =
-  "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
+  "https://script.googleusercontent.com/macros/echo?user_content_key=AY5xjrTS-qEphaiBZpDtZQiI4E_L4Ge4iew16KNpZjrnxlTW9Un0pCjTYDgyjxahCWPMth1rKbw4LC2adRlvAfht8Yjg7lZHaSNf2S-SriWDDtPkvZ0ZAn44OhpAap08hwkyQnBZgk4So2daHtOKP07hH3WXCLBCTE0KweDPxOqKTj3iuBwAcZ3A6a2yB3lhKShH_c4yHGiNFo8kDU6geRbf5a0XtAG5j6s2v3vrQw-ebi9metYny89Q59EvXqqNicsMMaWcLpxHBU26yHqiKu9XQ0GZLvMhgA&lib=MCN1sfGqsjw8Wsi0FJVsTJbQ42JGSsI5e";
 
 // 在 GitHub Pages 等跨站環境下，Google 試算表 API 常因 CORS 被擋，失敗時改經由此 proxy 重試
 const CORS_PROXY_PREFIX = "https://corsproxy.io/?";
@@ -182,10 +182,15 @@ function useProducts() {
       for (const url of urlsToTry) {
         if (cancelled) break;
         try {
-          // 不要加自訂 header，否則會觸發 CORS preflight，Google Script 常不回應
           const res = await fetch(url, { cache: "no-store" });
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          const data = await res.json();
+          const text = await res.text();
+          if (!res.ok) {
+            throw new Error("HTTP " + res.status);
+          }
+          if (text.trimStart().startsWith("<")) {
+            throw new Error("HTML_RESPONSE");
+          }
+          const data = JSON.parse(text);
           if (!cancelled) {
             console.log("Raw API data:", data);
             const apiRate = toNumberOrNull(data?.rate);
@@ -201,6 +206,9 @@ function useProducts() {
               .map((row, idx) => normalizeItem(row, idx))
               .filter((x) => x && x.name);
             setProducts(normalized);
+            if (!cancelled && rows.length > 0 && normalized.length === 0) {
+              console.warn("API 有回傳筆數但無有效商品，請確認試算表第一列為標題且含「商品名稱」欄位，第二列起有商品名稱。", rows);
+            }
           }
           lastError = null;
           break;
@@ -211,14 +219,19 @@ function useProducts() {
       }
       if (!cancelled) {
         if (lastError) {
-          const msg =
-            lastError?.message || "無法載入商品資料";
-          const hint =
-            window.location.hostname.includes("github.io") ||
-            window.location.hostname === "localhost"
-              ? " 若在 GitHub 上仍無法載入，請在 Google 試算表「擴充功能」→「Apps Script」的 doGet 回傳時加上 CORS 標頭（見專案說明）。"
-              : "";
-          setError(msg + hint);
+          let msg = lastError?.message || "無法載入商品資料";
+          if (msg === "HTML_RESPONSE" || (msg.includes("Unexpected token '<'") && msg.includes("DOCTYPE"))) {
+            msg =
+              "API 回傳了網頁而非資料。請確認：① 網址是否為 Google「部署」→「網頁應用程式」的完整 URL；② 以試算表擁有者身分在瀏覽器開啟該 URL 一次，若有「授權」畫面請按授權，完成後再重新整理商店頁面。";
+          } else {
+            const hint =
+              window.location.hostname.includes("github.io") ||
+              window.location.hostname === "localhost"
+                ? " 若在 GitHub 上仍無法載入，請在 Google Apps Script 的 doGet 回傳時加上 CORS 標頭（見專案說明）。"
+                : "";
+            msg = msg + hint;
+          }
+          setError(msg);
         }
         setLoading(false);
       }
