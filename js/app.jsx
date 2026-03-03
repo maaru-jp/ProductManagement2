@@ -1019,9 +1019,17 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
       if (parts.length <= 1) {
         expanded.push(p);
       } else {
-        const variantImgList = p.variantImages && Array.isArray(p.variantImages) ? p.variantImages : [];
+        let variantImgList =
+          p.variantImages && Array.isArray(p.variantImages)
+            ? p.variantImages
+            : typeof p.variantImages === "string"
+              ? p.variantImages.split(/[,，、\n]/).map((s) => s.trim()).filter(Boolean)
+              : [];
         parts.forEach((part, i) => {
-          const variantImage = variantImgList[i] && String(variantImgList[i]).trim() ? variantImgList[i] : p.image;
+          const variantImage =
+            variantImgList[i] && String(variantImgList[i]).trim()
+              ? variantImgList[i]
+              : p.image;
           expanded.push({
             ...p,
             variant: part,
@@ -1086,8 +1094,9 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
             <div className="aspect-[4/5] bg-slate-100">
               {displayImage ? (
                 <img
+                  key={selectedItem?.sku || "main"}
                   src={displayImage}
-                  alt={mainProduct.name}
+                  alt={mainProduct.name + (selectedItem?.variant ? " " + selectedItem.variant : "")}
                   className="w-full h-full object-contain"
                 />
               ) : (
