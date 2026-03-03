@@ -1169,6 +1169,7 @@ function CartDrawer({
   open,
   onClose,
   items,
+  products = [],
   rate,
   onInc,
   onDec,
@@ -1176,6 +1177,26 @@ function CartDrawer({
   onClear,
 }) {
   const [copyState, setCopyState] = React.useState({ status: "idle", message: "" });
+
+  function getEffectiveItem(it) {
+    const key = it.key || [it.name, it.variant || "", it.price ?? ""].join("||");
+    let fromList = products.find(
+      (p) => (p.sku || [p.name, p.variant || "", p.price ?? ""].join("||")) === key
+    );
+    if (!fromList) {
+      fromList = products.find(
+        (p) =>
+          (p.name || "") === (it.name || "") &&
+          (p.variant || "") === (it.variant || "")
+      );
+    }
+    if (!fromList) return it;
+    return {
+      ...it,
+      price: it.price ?? fromList.price ?? it.price,
+      sellingPrice: it.sellingPrice ?? fromList.sellingPrice,
+    };
+  }
 
   React.useEffect(() => {
     if (!open) return;
@@ -1202,10 +1223,12 @@ function CartDrawer({
 
   const totalTWD = React.useMemo(() => {
     return items.reduce(
-      (sum, it) => sum + (getUnitTWD(it, rate) ?? 0) * (Number(it.qty) || 0),
+      (sum, it) =>
+        sum +
+        (getUnitTWD(getEffectiveItem(it), rate) ?? 0) * (Number(it.qty) || 0),
       0
     );
-  }, [items, rate]);
+  }, [items, products, rate]);
 
   function buildCheckoutText() {
     const lines = [];
@@ -1216,7 +1239,7 @@ function CartDrawer({
       const name = (it.name || "").trim();
       const variant = (it.variant || "").trim();
       const qty = Number(it.qty || 0);
-      const unitTWD = getUnitTWD(it, rate);
+      const unitTWD = getUnitTWD(getEffectiveItem(it), rate);
       const lineName = variant ? `${name} ${variant}` : name;
       const lineTWD = unitTWD != null ? unitTWD * qty : null;
 
@@ -1340,7 +1363,7 @@ function CartDrawer({
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <div className="text-xs text-slate-600">
                         {(() => {
-                          const unitTWD = getUnitTWD(it, rate);
+                          const unitTWD = getUnitTWD(getEffectiveItem(it), rate);
                           const qty = Number(it.qty || 0);
                           const lineTWD = unitTWD != null ? unitTWD * qty : null;
                           const twdText =
@@ -1495,6 +1518,7 @@ function App() {
           name: product.name,
           variant: product.variant || "",
           price: product.price,
+          sellingPrice: product.sellingPrice,
           image: product.image || "",
           qty: addQty,
         },
@@ -1589,6 +1613,7 @@ function App() {
         open={cartOpen}
         onClose={() => setCartOpen(false)}
         items={cartItems}
+        products={products}
         rate={rate}
         onInc={incItem}
         onDec={decItem}
