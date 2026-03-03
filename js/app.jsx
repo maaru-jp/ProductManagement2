@@ -97,6 +97,25 @@ function formatTWDFromJPY(jpy, rate) {
   return "NT$" + Math.round(j * r).toLocaleString("zh-TW");
 }
 
+// 顧客頁顯示價：優先使用商品「台幣售價」，沒有則用日幣 × 匯率
+function getDisplayPrice(product, rate) {
+  const twd = toNumberOrNull(product?.sellingPrice);
+  if (twd != null && Number.isFinite(twd)) {
+    return "NT$" + Math.round(twd).toLocaleString("zh-TW");
+  }
+  return formatTWDFromJPY(product?.price, rate);
+}
+
+// 每單位台幣金額（用於購物車小計／總計）
+function getUnitTWD(product, rate) {
+  const twd = toNumberOrNull(product?.sellingPrice);
+  if (twd != null && Number.isFinite(twd)) return twd;
+  const j = toNumberOrNull(product?.price);
+  const r = toNumberOrNull(rate);
+  if (j != null && r != null) return j * r;
+  return null;
+}
+
 // ※ 顧客頁商品來源：請換成「您自己的」Google 試算表網頁應用程式 URL（與後台 admin 使用同一個部署 URL）。
 const API_URL =
   "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
@@ -123,6 +142,9 @@ function normalizeItem(row, index) {
     row["日幣價格"] ??
     null;
   const price = toNumberOrNull(rawPrice);
+  const rawSelling =
+    row.sellingPrice ?? row.售價 ?? row.台幣售價 ?? row["台幣售價"] ?? null;
+  const sellingPrice = toNumberOrNull(rawSelling);
   const image =
     row.image ??
     row.圖片 ??
@@ -158,6 +180,7 @@ function normalizeItem(row, index) {
     sku,
     name,
     price,
+    sellingPrice,
     image,
     description,
     introduction,
@@ -688,7 +711,7 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
 }
 
 function ProductCard({ product, rate }) {
-  const twd = formatTWDFromJPY(product.price, rate);
+  const twd = getDisplayPrice(product, rate);
 
   const encodedName = encodeURIComponent(product.name);
 
@@ -1048,11 +1071,11 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
               </p>
             ) : null}
 
-            {selectedItem?.price != null ? (
+            {(selectedItem?.price != null || selectedItem?.sellingPrice != null) ? (
               <div className="space-y-0.5">
-                {formatTWDFromJPY(selectedItem.price, rate) ? (
+                {getDisplayPrice(selectedItem, rate) ? (
                   <p className="text-base text-slate-900">
-                    {formatTWDFromJPY(selectedItem.price, rate)}
+                    {getDisplayPrice(selectedItem, rate)}
                   </p>
                 ) : (
                   <p className="text-base text-slate-500">價格請洽詢</p>
@@ -1117,7 +1140,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                             <span>{label}</span>
                           </span>
                           <span className="text-xs text-slate-500">
-                            {item.price != null ? formatTWDFromJPY(item.price, rate) || "" : ""}
+                            {getDisplayPrice(item, rate) || ""}
                           </span>
                         </label>
                       );
@@ -1177,38 +1200,36 @@ function CartDrawer({
     setCopyState({ status: "idle", message: "" });
   }, [open]);
 
-  const totalJPY = React.useMemo(() => {
-    return items.reduce((sum, it) => sum + (toNumberOrNull(it.price) || 0) * it.qty, 0);
-  }, [items]);
-
-  const totalTWD = formatTWDFromJPY(totalJPY, rate);
+  const totalTWD = React.useMemo(() => {
+    return items.reduce(
+      (sum, it) => sum + (getUnitTWD(it, rate) ?? 0) * (Number(it.qty) || 0),
+      0
+    );
+  }, [items, rate]);
 
   function buildCheckoutText() {
     const lines = [];
     lines.push("MAARU 日本萌GO代購登記清單：");
     lines.push("");
 
-    const r = toNumberOrNull(rate);
-
     for (const it of items) {
       const name = (it.name || "").trim();
       const variant = (it.variant || "").trim();
       const qty = Number(it.qty || 0);
-      const jpy = toNumberOrNull(it.price) || 0;
+      const unitTWD = getUnitTWD(it, rate);
       const lineName = variant ? `${name} ${variant}` : name;
+      const lineTWD = unitTWD != null ? unitTWD * qty : null;
 
-      if (r != null) {
-        const twd = Math.round(jpy * r * qty);
-        lines.push(`${lineName} × ${qty}  NT$${twd.toLocaleString("zh-TW")}`);
+      if (lineTWD != null) {
+        lines.push(`${lineName} × ${qty}  NT$${Math.round(lineTWD).toLocaleString("zh-TW")}`);
       } else {
         lines.push(`${lineName} × ${qty}  NT$—`);
       }
     }
 
     lines.push("");
-    if (r != null) {
-      const total = Math.round((toNumberOrNull(totalJPY) || 0) * r);
-      lines.push(`商品總計：NT$${total.toLocaleString("zh-TW")}`);
+    if (totalTWD != null && Number.isFinite(totalTWD)) {
+      lines.push(`商品總計：NT$${Math.round(totalTWD).toLocaleString("zh-TW")}`);
     } else {
       lines.push(`商品總計：NT$—`);
     }
@@ -1319,15 +1340,13 @@ function CartDrawer({
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <div className="text-xs text-slate-600">
                         {(() => {
-                          const r = toNumberOrNull(rate);
-                          const jpyUnit = toNumberOrNull(it.price) || 0;
+                          const unitTWD = getUnitTWD(it, rate);
                           const qty = Number(it.qty || 0);
-                          const jpyLine = jpyUnit * qty;
+                          const lineTWD = unitTWD != null ? unitTWD * qty : null;
                           const twdText =
-                            r != null
-                              ? `NT$${Math.round(jpyLine * r).toLocaleString("zh-TW")}`
-                              : "";
-
+                            lineTWD != null
+                              ? `NT$${Math.round(lineTWD).toLocaleString("zh-TW")}`
+                              : null;
                           return (
                             <div className="space-y-0.5">
                               {twdText ? (
@@ -1378,7 +1397,11 @@ function CartDrawer({
                 <p className="text-xs text-slate-500 tracking-[0.2em] uppercase">
                   Total
                 </p>
-                <p className="text-base font-semibold">{totalTWD || "—"}</p>
+                <p className="text-base font-semibold">
+                  {totalTWD != null && Number.isFinite(totalTWD)
+                    ? "NT$" + Math.round(totalTWD).toLocaleString("zh-TW")
+                    : "—"}
+                </p>
               </div>
               {items.length > 0 ? (
                 <button
