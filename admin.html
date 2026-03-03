@@ -3,10 +3,28 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>商品管理 - Maaru Admin</title>
+  <title>後台管理 - Maaru Admin</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     .admin-sidebar a.active { background: rgba(255,255,255,0.12); }
+    /* 左側欄固定，右側捲動時不跟著動 */
+    .admin-sidebar-wrap { position: fixed !important; left: 0; top: 0; bottom: 0; z-index: 20; width: 14rem; }
+    #adminApp.sidebar-collapsed .admin-sidebar-wrap { width: 4rem; }
+    #adminApp { height: 100vh; overflow: hidden; display: flex; }
+    #adminApp > main { margin-left: 14rem; transition: margin-left 0.3s ease-in-out; min-height: 0; flex: 1; overflow: auto; }
+    #adminApp.sidebar-collapsed > main { margin-left: 4rem; }
+    /* 收合選單 */
+    #adminSidebar.sidebar-collapsed { width: 4rem !important; min-width: 4rem; }
+    #adminSidebar.sidebar-collapsed .sidebar-title { display: none; }
+    #adminSidebar.sidebar-collapsed .sidebar-icon { display: flex !important; }
+    #adminSidebar.sidebar-collapsed .nav-text { display: none; }
+    #adminSidebar.sidebar-collapsed .nav-item { justify-content: center; padding-left: 0.75rem; padding-right: 0.75rem; }
+    #adminSidebar.sidebar-collapsed .sidebar-logout { justify-content: center; }
+    #adminSidebar.sidebar-collapsed a.active { border-left: 3px solid #f472b6; padding-left: calc(0.75rem - 3px); }
+    .nav-icon svg { width: 100%; height: 100%; }
+    /* 後台標題左側圖示 */
+    .section-title-icon { width: 1.5rem; height: 1.5rem; flex-shrink: 0; color: inherit; }
+    .section-title-with-icon { display: inline-flex; align-items: center; gap: 0.5rem; }
     /* 狀態切換開關：橢圓軌道 + 白色圓鈕 */
     #statusTrack {
       display: inline-block;
@@ -33,74 +51,708 @@
     }
     #statusTrack.on #statusKnob { transform: translateX(24px); }
     #statusTrack.off #statusKnob { transform: translateX(0); }
+    /* KPI 卡片浮動效果 */
+    .kpi-card {
+      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.2s ease;
+    }
+    .kpi-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.12), 0 8px 16px -8px rgba(0, 0, 0, 0.08);
+      border-color: rgb(226 232 240);
+    }
+    /* 全域設定：按鈕與面板專屬樣式 */
+    #layoutGlobalBtn {
+      transition: all 0.25s ease;
+      border-left: 3px solid transparent;
+    }
+    #layoutGlobalBtn:hover {
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+      transform: translateY(-1px);
+    }
+    #layoutGlobalBtn.layout-global-active {
+      border-left-color: rgb(59 130 246);
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.2);
+    }
+    #layoutSettingsGlobal {
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      border-left: 4px solid rgb(59 130 246);
+      box-shadow: 0 8px 24px -4px rgba(59, 130, 246, 0.15), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+    }
+    #layoutSettingsGlobal:not(.hidden) {
+      animation: layoutGlobalPanelIn 0.25s ease;
+    }
+    @keyframes layoutGlobalPanelIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    #layoutSettingsGlobal input:focus,
+    #layoutSettingsGlobal select:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+    }
+    /* 頁尾區塊：與全域設定不同的視覺風格 */
+    #layoutFooterBlock {
+      transition: all 0.25s ease;
+      border: 2px dashed rgb(226 232 240);
+      background-color: rgb(241 245 249);
+    }
+    #layoutFooterBlock:hover {
+      box-shadow: 0 6px 16px rgba(16, 185, 129, 0.15);
+      transform: translateY(-2px);
+      border-color: rgb(110 231 183);
+      background-color: rgb(236 253 245 / 0.8);
+    }
+    #layoutFooterBlock.layout-footer-active {
+      border-style: solid;
+      border-color: rgb(16 185 129);
+      background: linear-gradient(135deg, rgb(236 253 245) 0%, rgb(209 250 229 / 0.9) 100%);
+      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.2);
+    }
   </style>
 </head>
 <body class="min-h-screen bg-slate-100">
-  <div class="flex">
+  <!-- CMS 登入畫面（點擊登出後顯示） -->
+  <div id="cmsLoginScreen" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-slate-300">
+    <div class="bg-white rounded-xl shadow-xl p-8 w-full max-w-sm mx-4">
+      <h2 class="text-xl font-bold text-slate-900 text-center mb-6">CMS 後台管理</h2>
+      <input type="password" id="cmsLoginPassword" class="w-full px-0 py-2 text-slate-800 bg-transparent border-0 border-b-2 border-slate-300 focus:border-slate-800 focus:ring-0 text-sm" placeholder="請輸入管理員密碼" />
+      <button type="button" id="cmsLoginBtn" class="w-full mt-6 py-3 rounded-lg bg-slate-900 text-white font-semibold text-sm hover:bg-slate-800">登入</button>
+    </div>
+  </div>
+
+  <div id="adminApp" class="flex min-h-screen">
     <!-- 左側導覽 -->
-    <aside class="admin-sidebar w-56 min-h-screen bg-slate-800 text-white flex flex-col shrink-0">
-      <div class="p-4 border-b border-slate-700">
-        <h1 class="font-semibold text-sm tracking-wide">OMO ADMIN - MAARU</h1>
-      </div>
-      <nav class="p-2 flex-1">
-        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">◆ 總覽報表</a>
-        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">三 訂單管理</a>
-        <a href="#" class="block py-2.5 px-3 rounded text-sm bg-white/10 active">◇ 商品管理</a>
-        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">回 首頁排版</a>
-        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">口 採買統計</a>
-        <a href="#" class="block py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm">⚙️ 網站設定</a>
-      </nav>
-      <div class="p-2 border-t border-slate-700">
-        <button type="button" class="w-full py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm text-left">登出</button>
-      </div>
-    </aside>
+    <div class="admin-sidebar-wrap shrink-0 flex">
+      <aside id="adminSidebar" class="admin-sidebar w-56 min-h-screen bg-slate-800 text-white flex flex-col shrink-0 transition-[width] duration-300 ease-in-out overflow-hidden">
+        <div class="sidebar-header p-4 border-b border-slate-700 shrink-0 whitespace-nowrap">
+          <h1 class="sidebar-title font-semibold text-sm tracking-wide">ADMIN - MAARU日本萌GO</h1>
+          <div class="sidebar-icon hidden justify-center py-1 text-xl text-white/90" aria-hidden="true">≡</div>
+        </div>
+        <nav class="p-2 flex-1 flex flex-col justify-center">
+          <a href="#" id="navReports" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="總覽報表"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span><span class="nav-text">總覽報表</span></a>
+          <a href="#" id="navOrders" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="訂單管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span><span class="nav-text">訂單管理</span></a>
+          <a href="#" id="navProducts" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-sm bg-white/10 active" title="商品管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span><span class="nav-text">商品管理</span></a>
+          <a href="#" id="navLayout" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="首頁排版"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span><span class="nav-text">首頁排版</span></a>
+          <a href="#" id="navPurchases" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="採買統計"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4l-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></span><span class="nav-text">採買統計</span></a>
+          <a href="#" id="navSettings" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="網站設定"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="nav-text">網站設定</span></a>
+        </nav>
+        <div class="p-2 border-t border-slate-700 shrink-0">
+          <button type="button" id="btnLogout" class="sidebar-logout w-full flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm text-left" title="登出"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="nav-text">登出</span></button>
+        </div>
+      </aside>
+      <button type="button" id="sidebarToggle" class="sidebar-toggle absolute top-1/2 -translate-y-1/2 right-0 z-10 w-9 h-9 rounded-full bg-slate-800 border-2 border-slate-600 text-white shadow-lg flex items-center justify-center hover:bg-slate-700 hover:border-slate-500 transition-colors translate-x-1/2" title="收合選單" aria-label="收合選單">
+        <span id="sidebarToggleIcon" class="text-sm font-bold leading-none">&lt;</span>
+      </button>
+    </div>
 
     <!-- 主內容 -->
-    <main class="flex-1 p-6 overflow-auto">
-      <div class="flex items-center justify-between mb-6">
-        <h2 class="text-xl font-semibold text-slate-800">商品管理</h2>
-        <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
-          前往官網 ↗
-        </a>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-3 mb-4">
-        <button type="button" id="btnAdd" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">
-          + 新增商品
-        </button>
-        <button type="button" id="btnExport" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
-          匯出 CSV
-        </button>
-        <div class="flex-1 flex items-center gap-2 min-w-0">
-          <input type="text" id="searchInput" placeholder="搜尋商品名稱、分類、品牌..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <button type="button" id="btnSearch" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm hover:bg-slate-50">搜尋</button>
+    <main class="flex-1 p-6 min-h-0">
+      <!-- 總覽報表區塊 -->
+      <section id="sectionReports" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+            <svg class="section-title-icon text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            總覽報表
+          </h2>
+          <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
+            前往官網 ↗
+          </a>
         </div>
-      </div>
 
-      <div id="message" class="mb-3 text-sm hidden"></div>
-
-      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead class="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th class="text-left py-3 px-4 font-medium text-slate-600">編號</th>
-                <th class="text-left py-3 px-4 font-medium text-slate-600">圖片</th>
-                <th class="text-left py-3 px-4 font-medium text-slate-600">名稱</th>
-                <th class="text-left py-3 px-4 font-medium text-slate-600">售價(日幣)</th>
-                <th class="text-left py-3 px-4 font-medium text-slate-600">分類</th>
-                <th class="text-left py-3 px-4 font-medium text-slate-600">子分類</th>
-                <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
-                <th class="text-left py-3 px-4 font-medium text-slate-600">操作</th>
-              </tr>
-            </thead>
-            <tbody id="tableBody">
-              <tr><td colspan="8" class="py-8 text-center text-slate-500">載入中...</td></tr>
-            </tbody>
-          </table>
+        <div class="mb-6">
+          <span class="text-sm text-slate-600 mr-2">統計範圍：</span>
+          <select id="reportRange" class="rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
+            <option value="all">全部</option>
+            <option value="today">今日</option>
+            <option value="7days">近7天</option>
+            <option value="month">本月</option>
+            <option value="year">今年</option>
+            <option value="custom">自訂範圍</option>
+          </select>
+          <div id="reportCustomRange" class="hidden mt-3 inline-flex items-center gap-2 flex-wrap">
+            <input type="date" id="reportDateStart" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <span class="text-slate-500">～</span>
+            <input type="date" id="reportDateEnd" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </div>
         </div>
-      </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="kpi-card bg-white rounded-xl border border-slate-200 p-5 shadow-sm cursor-default">
+            <div class="text-2xl font-semibold text-slate-800">NT$ <span id="kpiRevenue">0</span></div>
+            <div class="text-xs text-slate-500 mt-1">已確認訂單</div>
+            <div class="text-sm font-medium text-slate-600 mt-2">總營業額</div>
+          </div>
+          <div class="kpi-card bg-white rounded-xl border border-slate-200 p-5 shadow-sm cursor-default">
+            <div class="text-2xl font-semibold text-slate-800">NT$ <span id="kpiCost">0</span></div>
+            <div class="text-xs text-slate-500 mt-1">商品成本統計</div>
+            <div class="text-sm font-medium text-slate-600 mt-2">預估總成本</div>
+          </div>
+          <div class="kpi-card bg-white rounded-xl border border-slate-200 p-5 shadow-sm cursor-default">
+            <div class="text-2xl font-semibold text-slate-800">NT$ <span id="kpiProfit">0</span></div>
+            <div class="text-xs text-slate-500 mt-1">毛利率: <span id="kpiMargin">0</span>%</div>
+            <div class="text-sm font-medium text-slate-600 mt-2">預估毛利</div>
+          </div>
+          <div class="kpi-card bg-white rounded-xl border border-slate-200 p-5 shadow-sm cursor-default">
+            <div class="text-2xl font-semibold text-slate-800"><span id="kpiOrders">0</span></div>
+            <div class="text-xs text-slate-500 mt-1">待處理: <span id="kpiPending">0</span></div>
+            <div class="text-sm font-medium text-slate-600 mt-2">訂單統計</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 商品管理區塊 -->
+      <section id="sectionProducts">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+            <svg class="section-title-icon text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            商品管理
+          </h2>
+          <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
+            前往官網 ↗
+          </a>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+          <button type="button" id="btnAdd" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">
+            + 新增商品
+          </button>
+          <button type="button" id="btnExport" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
+            匯出 CSV
+          </button>
+          <div class="flex-1 flex items-center gap-2 min-w-0">
+            <input type="text" id="searchInput" placeholder="搜尋商品名稱、分類、品牌..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <button type="button" id="btnSearch" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm hover:bg-slate-50">搜尋</button>
+          </div>
+        </div>
+
+        <div id="message" class="mb-3 text-sm hidden"></div>
+
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">編號</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">圖片</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">名稱</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">售價(JPY)</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">售價(TW)</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">利潤</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">成本</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">庫存</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">分類</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">子分類</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">上架日期</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">熱銷</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">推薦</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">新品</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">操作</th>
+                </tr>
+              </thead>
+              <tbody id="tableBody">
+                <tr><td colspan="16" class="py-8 text-center text-slate-500">載入中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 訂單管理區塊 -->
+      <section id="sectionOrders" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+            <svg class="section-title-icon text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+            訂單管理
+          </h2>
+          <div class="flex items-center gap-3">
+            <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
+              前往官網 ↗
+            </a>
+            <button type="button" id="btnSaveOrders" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed">
+              儲存所有變更
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+          <button type="button" id="btnAddOrder" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">
+            + 新增訂單
+          </button>
+          <button type="button" id="btnExportOrders" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
+            匯出 CSV
+          </button>
+          <div class="flex-1 flex items-center gap-2 min-w-0 justify-end">
+            <input type="text" id="orderSearchInput" placeholder="搜尋訂單編號、客戶姓名、電話..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm pl-9" />
+            <button type="button" id="btnOrderSearch" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm hover:bg-slate-50">搜尋</button>
+            <select id="orderStatusFilter" class="rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
+              <option value="">全部狀態</option>
+              <option value="待處理">待處理</option>
+              <option value="已確認">已確認</option>
+              <option value="出貨中">出貨中</option>
+              <option value="已完成">已完成</option>
+              <option value="已取消">已取消</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="orderMessage" class="mb-3 text-sm hidden"></div>
+        <p class="mb-3 text-xs text-slate-500">每筆訂單右側「操作」欄可點 <strong>產生 PDF</strong>，列印時選擇「另存為 PDF」即可下載客人訂單 PDF。</p>
+
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">訂單編號</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">日期</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">客戶</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">運送方式</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">總額</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600 whitespace-nowrap">操作（產生 PDF／編輯／刪除）</th>
+                </tr>
+              </thead>
+              <tbody id="orderTableBody">
+                <tr><td colspan="7" class="py-12 text-center text-slate-500">目前沒有訂單。請先點「+ 新增訂單」建立訂單，建立後該筆訂單的「操作」欄會出現「產生 PDF」按鈕。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="mt-6 p-4 rounded-lg bg-rose-50 border border-rose-100 flex items-start gap-3">
+          <span class="text-rose-500 text-lg">💡</span>
+          <div class="text-sm text-slate-700">
+            <p>提示：修改狀態後，請按右上角「儲存所有變更」才會生效。</p>
+            <p class="mt-2">若要產生客人訂單 PDF：在每筆訂單最右側「操作」欄點 <strong>產生 PDF</strong>，在跳出的列印視窗中選擇「另存為 PDF」即可。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 採買統計區塊 -->
+      <section id="sectionPurchases" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+            <svg class="section-title-icon text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4l-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+            採買統計
+          </h2>
+          <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
+            前往官網 ↗
+          </a>
+        </div>
+
+        <div class="rounded-xl border-2 border-rose-200 bg-white p-5 mb-5 shadow-sm">
+          <h3 class="text-sm font-medium text-slate-700 mb-4">採買統計</h3>
+          <div class="flex flex-wrap items-center gap-3 mb-4">
+            <button type="button" id="purchaseRecalc" class="px-4 py-2 rounded-lg border-2 border-rose-200 bg-white text-slate-700 text-sm font-medium hover:bg-rose-50 hover:border-rose-300">
+              重新計算
+            </button>
+            <button type="button" id="purchaseExport" class="px-4 py-2 rounded-lg border-2 border-rose-200 bg-white text-slate-700 text-sm font-medium hover:bg-rose-50 hover:border-rose-300">
+              匯出報表
+            </button>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="text-sm text-slate-600">日期範圍：</span>
+            <input type="date" id="purchaseDateStart" class="rounded-lg border-2 border-rose-200 px-3 py-2 text-sm bg-white" />
+            <span class="text-slate-500">至</span>
+            <input type="date" id="purchaseDateEnd" class="rounded-lg border-2 border-rose-200 px-3 py-2 text-sm bg-white" />
+            <select id="purchaseRangeQuick" class="rounded-lg border-2 border-rose-200 px-3 py-2 text-sm bg-white text-slate-700">
+              <option value="">請選</option>
+              <option value="today">今日</option>
+              <option value="yesterday">昨日</option>
+              <option value="7days">近7日</option>
+              <option value="month">本月</option>
+              <option value="year">今年</option>
+            </select>
+            <div class="flex gap-2">
+              <button type="button" class="purchaseQuickBtn px-3 py-1.5 rounded-lg border-2 border-rose-200 text-sm bg-rose-50 text-rose-800 font-medium border-rose-300" data-range="today">今日</button>
+              <button type="button" class="purchaseQuickBtn px-3 py-1.5 rounded-lg border-2 border-rose-200 bg-white text-slate-600 text-sm hover:bg-rose-50" data-range="yesterday">昨日</button>
+              <button type="button" class="purchaseQuickBtn px-3 py-1.5 rounded-lg border-2 border-rose-200 bg-white text-slate-600 text-sm hover:bg-rose-50" data-range="7days">近7日</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border-2 border-rose-200 bg-white p-5 mb-5 shadow-sm">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="kpi-card rounded-lg border border-rose-100 bg-rose-50/50 p-5 cursor-default">
+              <div class="text-2xl font-semibold text-slate-800"><span id="purchaseKpiTypes">0</span></div>
+              <div class="text-sm font-medium text-slate-600 mt-1">總計商品種數</div>
+            </div>
+            <div class="kpi-card rounded-lg border border-rose-100 bg-rose-50/50 p-5 cursor-default">
+              <div class="text-2xl font-semibold text-slate-800"><span id="purchaseKpiItems">0</span></div>
+              <div class="text-sm font-medium text-slate-600 mt-1">總計商品件數</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border-2 border-rose-200 bg-white overflow-hidden shadow-sm">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-rose-50/80 border-b border-rose-200">
+                <tr>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">商品名稱</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">規格/款式</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">採買數量</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">涉及訂單數</th>
+                </tr>
+              </thead>
+              <tbody id="purchaseTableBody">
+                <tr><td colspan="4" class="py-12 text-center text-slate-500">此期間無訂單資料</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 首頁排版管理區塊 -->
+      <section id="sectionLayout" class="hidden flex-1 flex flex-col min-h-0">
+        <div class="flex flex-1 gap-4 min-h-0">
+          <!-- 左側控制面板 -->
+          <div class="w-72 shrink-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div class="p-4 border-b border-slate-200">
+              <h2 class="text-lg font-semibold text-slate-800 section-title-with-icon">
+                <svg class="section-title-icon text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                首頁排版管理
+              </h2>
+            </div>
+            <div class="p-3 border-b border-slate-100">
+              <button type="button" id="layoutGlobalBtn" class="w-full py-2 px-3 rounded-lg text-sm font-medium bg-blue-100 text-blue-700 border border-blue-200">
+                全域設定
+              </button>
+              <div id="layoutSettingsGlobal" class="hidden rounded-lg border border-rose-200 bg-blue-50/30 p-3 space-y-3 mt-2">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">網站背景顏色</label>
+                  <input type="text" id="layoutGlobalBgColor" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="#ffffff 或色碼" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">預設字體大小 (px)</label>
+                  <select id="layoutGlobalFontSize" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="12">12px</option>
+                    <option value="14">14px</option>
+                    <option value="16" selected>16px</option>
+                    <option value="18">18px</option>
+                    <option value="20">20px</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">網站字型</label>
+                  <select id="layoutGlobalFontFamily" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="'Noto Sans TC', sans-serif">Noto Sans TC</option>
+                    <option value="'Noto Serif TC', serif">Noto Serif TC</option>
+                    <option value="'Microsoft JhengHei', sans-serif">Microsoft JhengHei</option>
+                    <option value="'PingFang TC', sans-serif">PingFang TC</option>
+                    <option value="system-ui, sans-serif">system-ui</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-3">
+              <ul id="layoutComponentList" class="space-y-2">
+                <li class="layout-item flex items-center gap-2 rounded-lg border-2 border-transparent p-2 hover:bg-slate-50" data-id="welcome" data-type="hero">
+                  <span class="cursor-move text-slate-400" title="拖曳排序">≡</span>
+                  <span class="flex-1 text-sm text-slate-700 truncate">Welcome to OMO Select</span>
+                  <button type="button" class="layout-item-delete text-xs text-red-600 hover:underline">刪除</button>
+                </li>
+                <li class="layout-item flex items-center gap-2 rounded-lg border-2 border-transparent p-2 hover:bg-slate-50" data-id="announce" data-type="announce">
+                  <span class="cursor-move text-slate-400">≡</span>
+                  <span class="flex-1 text-sm text-slate-700 truncate">公告欄</span>
+                  <button type="button" class="layout-item-delete text-xs text-red-600 hover:underline">刪除</button>
+                </li>
+                <li class="layout-item flex items-center gap-2 rounded-lg border-2 border-rose-300 bg-rose-50/50 p-2" data-id="productlist1" data-type="productlist">
+                  <span class="cursor-move text-slate-400">≡</span>
+                  <span class="flex-1 text-sm text-slate-700 truncate">商品列表</span>
+                  <button type="button" class="layout-item-delete text-xs text-red-600 hover:underline">刪除</button>
+                </li>
+                <li class="layout-item flex items-center gap-2 rounded-lg border-2 border-transparent p-2 hover:bg-slate-50" data-id="productlist2" data-type="productlist">
+                  <span class="cursor-move text-slate-400">≡</span>
+                  <span class="flex-1 text-sm text-slate-700 truncate">商品列表</span>
+                  <button type="button" class="layout-item-delete text-xs text-red-600 hover:underline">刪除</button>
+                </li>
+              </ul>
+              <button type="button" id="layoutAddBlockBtn" class="mt-2 w-full py-2 rounded-lg border-2 border-dashed border-slate-300 text-slate-600 text-sm font-medium hover:border-rose-400 hover:text-rose-600">
+                + 區塊
+              </button>
+              <div id="layoutFooterBlock" class="layout-item-footer mt-3 rounded-xl p-3 text-center text-sm text-slate-600 cursor-pointer font-medium" data-id="footer" data-type="footer" role="button" tabindex="0">
+                頁尾區塊
+              </div>
+            </div>
+            <div id="layoutComponentSettings" class="p-3 border-t border-slate-200 space-y-3">
+              <div id="layoutSettingsMargins">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">上方間距(px)</label>
+                  <div class="flex items-center gap-2">
+                    <input type="range" id="layoutMarginTop" min="0" max="80" value="0" class="flex-1 h-2 rounded-lg appearance-none bg-slate-200 accent-rose-500" />
+                    <span id="layoutMarginTopVal" class="text-sm text-slate-600 w-8">0</span>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">下方間距(px)</label>
+                  <div class="flex items-center gap-2">
+                    <input type="range" id="layoutMarginBottom" min="0" max="80" value="20" class="flex-1 h-2 rounded-lg appearance-none bg-slate-200 accent-rose-500" />
+                    <span id="layoutMarginBottomVal" class="text-sm text-slate-600 w-8">20</span>
+                  </div>
+                </div>
+              </div>
+              <div id="layoutSettingsHero" class="hidden space-y-3">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">文字對齊</label>
+                  <select id="layoutHeroTextAlign" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="left">靠左</option>
+                    <option value="center" selected>置中</option>
+                    <option value="right">靠右</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">標題</label>
+                  <input type="text" id="layoutHeroTitle" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Welcome to OMO Select" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">副標題/文字</label>
+                  <textarea id="layoutHeroSubtitle" rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Discover the best Korean products"></textarea>
+                </div>
+                <div class="border-t border-slate-200 pt-3">
+                  <span class="block text-xs font-medium text-slate-600 mb-2">圖片設定</span>
+                  <div class="space-y-2">
+                    <div>
+                      <label class="block text-xs text-slate-500 mb-0.5">背景圖 URL</label>
+                      <input type="text" id="layoutHeroBgUrl" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://..." />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-slate-500 mb-0.5">手機版圖片 URL</label>
+                      <input type="text" id="layoutHeroMobileUrl" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://..." />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-slate-500 mb-0.5">按鈕文字</label>
+                      <input type="text" id="layoutHeroButtonText" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="選填" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div id="layoutSettingsFooter" class="hidden space-y-4">
+                <div>
+                  <span class="block text-xs font-medium text-slate-600 mb-2">社群連結</span>
+                  <div class="space-y-2">
+                    <div>
+                      <label class="block text-xs text-slate-500 mb-0.5">Line 連結</label>
+                      <input type="text" id="layoutFooterLineUrl" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://..." />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-slate-500 mb-0.5">Instagram 連結</label>
+                      <input type="text" id="layoutFooterInstagramUrl" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://..." />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-slate-500 mb-0.5">Threads 連結</label>
+                      <input type="text" id="layoutFooterThreadsUrl" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://..." />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <span class="block text-xs font-medium text-slate-600 mb-1">版權聲明</span>
+                  <label class="block text-xs text-slate-500 mb-0.5">版權文字</label>
+                  <input type="text" id="layoutFooterCopyright" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="2025 OMO Select. All rights reserved." value="2025 OMO Select. All rights reserved." />
+                </div>
+                <div>
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-medium text-slate-600">購買須知</span>
+                    <button type="button" id="layoutFooterAddNotice" class="text-xs text-rose-600 hover:underline">+ 新增區塊</button>
+                  </div>
+                  <ul id="layoutFooterNoticeList" class="space-y-4"></ul>
+                </div>
+              </div>
+            </div>
+            <div class="p-3 border-t border-slate-200 space-y-2">
+              <button type="button" id="layoutConfirmPreviewBtn" class="w-full py-2.5 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">
+                確認修改 (立即更新預覽)
+              </button>
+              <button type="button" id="layoutSaveBtn" class="w-full py-2.5 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">
+                儲存排版
+              </button>
+            </div>
+          </div>
+          <!-- 右側預覽 -->
+          <div class="flex-1 flex flex-col min-w-0 rounded-xl border border-slate-200 bg-slate-50 shadow-sm overflow-hidden">
+            <div class="flex items-center justify-between p-3 border-b border-slate-200 bg-white shrink-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm text-slate-500 flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  即時預覽中
+                </span>
+              </div>
+              <div class="flex items-center gap-3">
+                <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
+                  前往官網 ↗
+                </a>
+                <div class="flex rounded-lg border border-slate-200 overflow-hidden">
+                  <button type="button" id="layoutPreviewDesktop" class="px-3 py-1.5 text-sm font-medium bg-slate-800 text-white">
+                    電腦版
+                  </button>
+                  <button type="button" id="layoutPreviewMobile" class="px-3 py-1.5 text-sm text-slate-600 bg-white hover:bg-slate-50">
+                    手機版
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="flex-1 min-h-0 p-4 overflow-auto bg-slate-100">
+              <div id="layoutPreviewFrame" class="bg-white rounded-lg shadow-lg mx-auto overflow-hidden" style="max-width: 100%; min-height: 480px;">
+                <iframe id="layoutIframe" src="index.html" title="首頁預覽" class="w-full h-full min-h-[480px] border-0 rounded-lg"></iframe>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 網站設定區塊 -->
+      <section id="sectionSettings" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+            <svg class="section-title-icon text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            網站設定
+          </h2>
+          <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">前往官網 ↗</a>
+        </div>
+
+        <div class="space-y-8 max-w-3xl">
+          <!-- 網站基本資訊 -->
+          <div class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 class="text-base font-semibold text-slate-800 mb-4">網站基本資訊</h3>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">網站標題 (Title)</label>
+                <input type="text" id="settingsSiteTitle" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value="MAARU日本萌物GO" placeholder="網站標題" />
+                <p class="text-xs text-slate-500 mt-1">顯示在瀏覽器標籤頁與搜尋結果標題。</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">網站後綴 (Suffix)</label>
+                <input type="text" id="settingsSiteSuffix" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value="SHOP" placeholder="韓國代購" />
+                <p class="text-xs text-slate-500 mt-1">顯示在標題後方，例如「店名｜韓國代購」。預設為「韓國代購」。</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">網站描述 (Description)</label>
+                <textarea id="settingsSiteDescription" rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例如：提供最新韓國熱門商品代購服務..."></textarea>
+                <p class="text-xs text-slate-500 mt-1">顯示在搜尋結果摘要與社群分享預覽。</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">網站 Logo</label>
+                <div id="settingsLogoPreview" class="mt-1 mb-2 w-32 h-16 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-400 text-xs">目前 Logo</div>
+                <div class="flex gap-2">
+                  <button type="button" id="settingsLogoUpload" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">上傳新 Logo</button>
+                  <button type="button" id="settingsLogoDelete" class="px-4 py-2 rounded-lg bg-red-500 text-white text-sm hover:bg-red-600">刪除 Logo</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 運送方式設定 -->
+          <div class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 class="text-base font-semibold text-slate-800 mb-2">運送方式設定</h3>
+            <p class="text-sm text-slate-600 mb-4 flex items-center gap-1.5"><span class="text-amber-500">💡</span> 設定網站前台的運送選項，客戶在結帳時可以選擇。</p>
+            <div class="space-y-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-lg bg-slate-50 border border-slate-100">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">運送選項 1 名稱</label>
+                  <input type="text" id="settingsShipping1Name" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value="賣貨便" placeholder="運送方式名稱" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">運費 (元)</label>
+                  <input type="number" id="settingsShipping1Fee" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value="38" min="0" placeholder="0" />
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-lg bg-slate-50 border border-slate-100">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">運送選項 2 名稱</label>
+                  <input type="text" id="settingsShipping2Name" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value="7-11店到店" placeholder="運送方式名稱" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">運費 (元)</label>
+                  <input type="number" id="settingsShipping2Fee" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value="60" min="0" placeholder="0" />
+                </div>
+              </div>
+              <button type="button" id="settingsSaveShipping" class="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">儲存設定</button>
+            </div>
+          </div>
+
+          <!-- 結帳資訊設定 -->
+          <div class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 class="text-base font-semibold text-slate-800 mb-4">結帳資訊設定</h3>
+            <div class="space-y-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-1">銀行名稱</label>
+                  <input type="text" id="settingsBankName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value="國泰世華" placeholder="銀行名稱" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-1">銀行代碼</label>
+                  <input type="text" id="settingsBankCode" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value="13" placeholder="銀行代碼" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">銀行帳號</label>
+                <input type="text" id="settingsBankAccount" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value="123456789" placeholder="銀行帳號" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">匯款備註說明</label>
+                <p class="text-xs text-slate-500 mb-1">（顯示於結帳頁面匯款資訊下方）</p>
+                <textarea id="settingsRemittanceNote" rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入匯款備註">請於下單後3天內完成匯款，並保留匯款收據供查詢</textarea>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">匯款完成提示 <span class="text-blue-600 text-xs font-normal">支援 HTML</span></label>
+                <textarea id="settingsRemittancePrompt" rows="4" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono text-sm" placeholder="例如：匯款完成後請至官方 Line 回覆..."></textarea>
+                <p class="text-xs text-slate-500 mt-1 flex items-center gap-1"><span class="text-amber-500">💡</span> 此訊息將顯示在結帳頁面紅色提示區與訂單成功頁面。</p>
+              </div>
+              <button type="button" id="settingsSaveCheckout" class="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">儲存設定</button>
+            </div>
+          </div>
+
+          <!-- 修改管理密碼 -->
+          <div class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 class="text-base font-semibold text-slate-800 mb-4">修改管理密碼</h3>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">目前密碼</label>
+                <input type="password" id="settingsCurrentPassword" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入目前的密碼" />
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-1">新密碼</label>
+                  <input type="password" id="settingsNewPassword" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="至少4個字元" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-1">確認新密碼</label>
+                  <input type="password" id="settingsNewPasswordConfirm" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="再次輸入新密碼" />
+                </div>
+              </div>
+              <button type="button" id="settingsChangePassword" class="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">變更密碼</button>
+              <p class="text-xs text-slate-500 mt-3 flex items-center gap-1.5"><span class="text-amber-500">💡</span> 變更密碼後，下次登入請使用新密碼。忘記密碼時可直接查看 Google Sheet「網站設定」分頁。</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
+  </div>
+
+  <!-- 選擇要新增的區塊類型 Modal -->
+  <div id="layoutBlockTypeModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/50" data-dismiss="layoutBlockTypeModal"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-4 border-b border-slate-200">
+          <h3 class="text-lg font-semibold text-slate-800">選擇要新增的區塊類型</h3>
+        </div>
+        <div class="p-4 grid grid-cols-2 gap-2">
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="hero" data-label="首頁大圖">首頁大圖</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="carousel" data-label="輪播圖">輪播圖</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="imagecarousel" data-label="圖片輪播">圖片輪播</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="textcombo" data-label="文字組合">文字組合</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="imagetext" data-label="圖文介紹">圖文介紹</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="accordion" data-label="折疊段落">折疊段落</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="categorynav" data-label="分類導覽">分類導覽</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="productlist" data-label="商品列表">商品列表</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="singleimage" data-label="單張圖片">單張圖片</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="code" data-label="程式碼">程式碼</button>
+          <button type="button" class="layout-block-type-btn py-3 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:border-rose-300 hover:bg-rose-50/50" data-type="announce" data-label="公告欄">公告欄</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- 新增/編輯商品 Modal -->
@@ -120,11 +772,28 @@
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-medium text-slate-500 mb-1">分類</label>
-              <input type="text" name="category" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：絨毛玩偶" />
+              <select name="category" id="productCategorySelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
+                <option value="">-- 請選擇 --</option>
+                <option value="絨毛玩偶">絨毛玩偶</option>
+                <option value="包包時尚小物">包包時尚小物</option>
+                <option value="美妝用品">美妝用品</option>
+                <option value="飾品配件">飾品配件</option>
+                <option value="服飾專區">服飾專區</option>
+                <option value="文具用品">文具用品</option>
+                <option value="3C用品">3C用品</option>
+                <option value="居家生活">居家生活</option>
+                <option value="兒童專區">兒童專區</option>
+                <option value="廚房用品">廚房用品</option>
+                <option value="浴室用品">浴室用品</option>
+                <option value="旅行用品">旅行用品</option>
+                <option value="戶外用品">戶外用品</option>
+              </select>
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-500 mb-1">子分類</label>
-              <input type="text" name="subcategory" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：玩偶公仔" />
+              <select name="subcategory" id="productSubcategorySelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
+                <option value="">-- 請選擇 --</option>
+              </select>
             </div>
           </div>
           <div>
@@ -137,13 +806,49 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格 *</label>
-            <input type="number" name="price" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <input type="number" name="price" id="priceInput" min="0" step="1" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：1000" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">匯率</label>
+            <input type="number" name="rate" id="rateInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：0.20（1 日幣＝0.20 台幣）" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">成本(台幣)</label>
+            <div id="costDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（日幣價格 × 匯率）</div>
+            <input type="hidden" name="cost" id="costValue" value="" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">毛利率</label>
+            <select id="marginSelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="">-- 請選擇 --</option>
+              <option value="20">20%</option>
+              <option value="25">25%</option>
+              <option value="30">30%</option>
+              <option value="35">35%</option>
+              <option value="40">40%</option>
+              <option value="custom">自訂售價</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">台幣售價 *</label>
+            <div id="sellingPriceDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（成本 ÷ (1－毛利率)）</div>
+            <input type="number" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm hidden" placeholder="自訂售價" />
+            <input type="hidden" name="sellingPrice" id="sellingPriceValue" value="" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（自動計算：售價－成本）</label>
+            <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（售價－成本）</div>
+            <input type="hidden" name="profit" id="profitValue" value="" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">庫存</label>
+            <input type="number" name="stock" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="0" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">狀態</label>
             <input type="hidden" name="status" id="statusInput" value="上架" />
             <div id="statusToggle" class="flex items-center gap-3 cursor-pointer select-none" role="button" tabindex="0" aria-label="切換上架或下架">
-              <div id="statusTrack" class="on"></div>
+              <div id="statusTrack" class="on"><span id="statusKnob"></span></div>
               <span id="statusLabel" class="text-sm font-medium text-emerald-600">上架中</span>
             </div>
           </div>
@@ -159,9 +864,136 @@
             <label class="block text-xs font-medium text-slate-500 mb-1">商品介紹</label>
             <textarea name="introduction" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
           </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">上架日期</label>
+            <input type="date" name="publishedAt" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="YYYY-MM-DD" />
+          </div>
+          <div class="flex flex-wrap items-center gap-6">
+            <label class="inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="hot" id="productHotCheck" class="rounded border-slate-300 text-rose-500" />
+              <span class="text-sm text-slate-600">熱銷</span>
+            </label>
+            <label class="inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="recommended" id="productRecommendedCheck" class="rounded border-slate-300 text-rose-500" />
+              <span class="text-sm text-slate-600">推薦</span>
+            </label>
+            <label class="inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="isNew" id="productIsNewCheck" class="rounded border-slate-300 text-rose-500" />
+              <span class="text-sm text-slate-600">新品</span>
+            </label>
+          </div>
           <div class="flex justify-end gap-2 pt-4">
             <button type="button" id="btnCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm">取消</button>
             <button type="submit" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">儲存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 訂單詳情 (新訂單) Modal - 手動建立 -->
+  <div id="orderModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/50" id="orderModalBackdrop"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-slate-200 flex items-center justify-between">
+          <h3 class="text-lg font-semibold text-slate-800">訂單詳情 (新訂單)</h3>
+          <button type="button" id="orderModalClose" class="p-1 rounded hover:bg-slate-100 text-slate-500" aria-label="關閉">✕</button>
+        </div>
+        <form id="orderForm" class="p-6 space-y-5">
+          <div>
+            <h4 class="text-sm font-medium text-slate-700 mb-3">客戶資訊 (可編輯)</h4>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">客戶姓名</label>
+                <input type="text" id="orderCustomerName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入姓名" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">電話</label>
+                <input type="text" id="orderPhone" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入電話" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Email</label>
+                <input type="email" id="orderEmail" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入 Email" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Line ID</label>
+                <input type="text" id="orderLineId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入 Line ID" />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">運送方式</label>
+            <select id="orderShippingMethod" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
+              <option value="">-- 請選擇運送方式 --</option>
+              <option value="宅配">宅配</option>
+              <option value="超商取貨">超商取貨</option>
+              <option value="門市取貨">門市取貨</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">門市名稱</label>
+              <input type="text" id="orderStoreName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="選填" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">門市店號</label>
+              <input type="text" id="orderStoreId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="選填" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">地址 (門市或宅配)</label>
+            <textarea id="orderAddress" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入地址"></textarea>
+          </div>
+
+          <div class="border-t border-slate-200 pt-4 space-y-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">商品小計</label>
+              <div class="flex items-center gap-2">
+                <span class="text-slate-600">NT$</span>
+                <input type="number" id="orderSubtotal" min="0" value="0" step="1" class="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="inline-flex items-center gap-2">
+                <input type="checkbox" id="orderDiscountRateCheck" class="rounded border-slate-300" />
+                <span class="text-sm text-slate-600">啟用折扣率</span>
+              </label>
+              <input type="number" id="orderDiscountRate" min="0" max="100" value="90" class="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+              <span class="text-sm text-slate-600">% - NT$ <span id="orderDiscountRateAmount">0</span></span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="inline-flex items-center gap-2">
+                <input type="checkbox" id="orderFixedDiscountCheck" class="rounded border-slate-300" />
+                <span class="text-sm text-slate-600">固定折扣金額</span>
+              </label>
+              <input type="number" id="orderFixedDiscount" min="0" value="0" class="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+              <span class="text-sm text-slate-600">元</span>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">運費</label>
+              <div class="flex items-center gap-2">
+                <input type="number" id="orderShippingFee" min="0" value="0" step="1" class="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                <span class="text-sm text-slate-600">元</span>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">訂單總計</label>
+              <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800">
+                NT$ <span id="orderTotalDisplay">0</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">備註 (可編輯)</label>
+            <textarea id="orderRemark" rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="選填"></textarea>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-4 border-t border-slate-200">
+            <button type="button" id="orderFormCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm hover:bg-slate-50">取消</button>
+            <button type="submit" class="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium hover:bg-slate-900">建立訂單</button>
           </div>
         </form>
       </div>
@@ -180,6 +1012,683 @@
       var products = [];
       var searchKeyword = "";
 
+      function setNavActive(navId) {
+        var navs = ["navReports", "navOrders", "navProducts", "navPurchases", "navLayout", "navSettings"];
+        navs.forEach(function(id) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          if (id === navId) {
+            el.classList.add("active", "bg-white/10"); el.classList.remove("text-slate-300");
+          } else {
+            el.classList.remove("active", "bg-white/10"); el.classList.add("text-slate-300");
+          }
+        });
+      }
+
+      function showSection(sectionId) {
+        var reportsSection = document.getElementById("sectionReports");
+        var productsSection = document.getElementById("sectionProducts");
+        var ordersSection = document.getElementById("sectionOrders");
+        var purchasesSection = document.getElementById("sectionPurchases");
+        var layoutSection = document.getElementById("sectionLayout");
+        var settingsSection = document.getElementById("sectionSettings");
+        if (reportsSection) reportsSection.classList.toggle("hidden", sectionId !== "sectionReports");
+        if (productsSection) productsSection.classList.toggle("hidden", sectionId !== "sectionProducts");
+        if (ordersSection) ordersSection.classList.toggle("hidden", sectionId !== "sectionOrders");
+        if (purchasesSection) purchasesSection.classList.toggle("hidden", sectionId !== "sectionPurchases");
+        if (layoutSection) layoutSection.classList.toggle("hidden", sectionId !== "sectionLayout");
+        if (settingsSection) settingsSection.classList.toggle("hidden", sectionId !== "sectionSettings");
+        if (sectionId === "sectionReports") setNavActive("navReports");
+        else if (sectionId === "sectionOrders") setNavActive("navOrders");
+        else if (sectionId === "sectionPurchases") setNavActive("navPurchases");
+        else if (sectionId === "sectionLayout") setNavActive("navLayout");
+        else if (sectionId === "sectionSettings") setNavActive("navSettings");
+        else setNavActive("navProducts");
+      }
+
+      function updateReportKPI() {
+        var totalCost = 0, totalProfit = 0;
+        products.forEach(function(p) {
+          var cost = p.cost != null ? p.cost : (p.成本 != null ? p.成本 : 0);
+          var profit = p.profit != null ? p.profit : (p.利潤 != null ? p.利潤 : 0);
+          if (typeof cost === "number" && isFinite(cost)) totalCost += cost;
+          if (typeof profit === "number" && isFinite(profit)) totalProfit += profit;
+        });
+        var revenue = 0;
+        var marginPct = (revenue > 0 && totalCost >= 0) ? Math.round((revenue - totalCost) / revenue * 100) : 0;
+        var elRevenue = document.getElementById("kpiRevenue");
+        var elCost = document.getElementById("kpiCost");
+        var elProfit = document.getElementById("kpiProfit");
+        var elMargin = document.getElementById("kpiMargin");
+        var elOrders = document.getElementById("kpiOrders");
+        var elPending = document.getElementById("kpiPending");
+        if (elRevenue) elRevenue.textContent = revenue.toLocaleString("zh-TW");
+        if (elCost) elCost.textContent = totalCost.toLocaleString("zh-TW");
+        if (elProfit) elProfit.textContent = totalProfit.toLocaleString("zh-TW");
+        if (elMargin) elMargin.textContent = marginPct;
+        if (elOrders) elOrders.textContent = "0";
+        if (elPending) elPending.textContent = "0";
+      }
+
+      document.getElementById("navReports").addEventListener("click", function(e) {
+        e.preventDefault();
+        showSection("sectionReports");
+        updateReportKPI();
+      });
+      document.getElementById("navOrders").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionOrders"); });
+      document.getElementById("navProducts").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionProducts"); });
+      document.getElementById("navLayout").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionLayout"); });
+      document.getElementById("navSettings").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionSettings"); });
+
+      (function initCmsLogin() {
+        var loginScreen = document.getElementById("cmsLoginScreen");
+        var adminApp = document.getElementById("adminApp");
+        var btnLogout = document.getElementById("btnLogout");
+        var cmsLoginPassword = document.getElementById("cmsLoginPassword");
+        var cmsLoginBtn = document.getElementById("cmsLoginBtn");
+        function showLogin() {
+          if (loginScreen) loginScreen.classList.remove("hidden");
+          if (adminApp) adminApp.classList.add("hidden");
+          if (cmsLoginPassword) { cmsLoginPassword.value = ""; cmsLoginPassword.focus(); }
+        }
+        function hideLogin() {
+          if (loginScreen) loginScreen.classList.add("hidden");
+          if (adminApp) adminApp.classList.remove("hidden");
+        }
+        if (btnLogout) btnLogout.addEventListener("click", function(e) { e.preventDefault(); showLogin(); });
+        if (cmsLoginBtn) cmsLoginBtn.addEventListener("click", function() {
+          if (cmsLoginPassword && cmsLoginPassword.value.trim()) hideLogin();
+          else alert("請輸入管理員密碼");
+        });
+        if (cmsLoginPassword) cmsLoginPassword.addEventListener("keydown", function(e) { if (e.key === "Enter") cmsLoginBtn && cmsLoginBtn.click(); });
+      })();
+
+      (function initSettingsSection() {
+        var saveShipping = document.getElementById("settingsSaveShipping");
+        var saveCheckout = document.getElementById("settingsSaveCheckout");
+        var changePassword = document.getElementById("settingsChangePassword");
+        var logoUpload = document.getElementById("settingsLogoUpload");
+        var logoDelete = document.getElementById("settingsLogoDelete");
+        if (saveShipping) saveShipping.addEventListener("click", function() { alert("運送方式已儲存（實際需串接後端）"); });
+        if (saveCheckout) saveCheckout.addEventListener("click", function() { alert("結帳資訊已儲存（實際需串接後端）"); });
+        if (changePassword) changePassword.addEventListener("click", function() { alert("變更密碼需串接後端驗證與更新"); });
+        if (logoUpload) logoUpload.addEventListener("click", function() { alert("上傳 Logo 需串接後端或圖床 API"); });
+        if (logoDelete) logoDelete.addEventListener("click", function() { if (confirm("確定要刪除 Logo？")) { alert("已刪除（實際需串接後端）"); } });
+      })();
+
+      (function initSidebarCollapse() {
+        var SIDEBAR_KEY = "adminSidebarCollapsed";
+        var sidebar = document.getElementById("adminSidebar");
+        var adminApp = document.getElementById("adminApp");
+        var toggleBtn = document.getElementById("sidebarToggle");
+        var toggleIcon = document.getElementById("sidebarToggleIcon");
+        function applyCollapsed(collapsed) {
+          if (!sidebar) return;
+          if (collapsed) {
+            sidebar.classList.add("sidebar-collapsed");
+            if (adminApp) adminApp.classList.add("sidebar-collapsed");
+            if (toggleIcon) toggleIcon.textContent = ">";
+            if (toggleBtn) toggleBtn.setAttribute("title", "展開選單");
+          } else {
+            sidebar.classList.remove("sidebar-collapsed");
+            if (adminApp) adminApp.classList.remove("sidebar-collapsed");
+            if (toggleIcon) toggleIcon.textContent = "<";
+            if (toggleBtn) toggleBtn.setAttribute("title", "收合選單");
+          }
+          try { localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0"); } catch (e) {}
+        }
+        var collapsed = false;
+        try { collapsed = localStorage.getItem(SIDEBAR_KEY) === "1"; } catch (e) {}
+        applyCollapsed(collapsed);
+        if (toggleBtn) toggleBtn.addEventListener("click", function() {
+          var isCollapsed = sidebar.classList.contains("sidebar-collapsed");
+          applyCollapsed(!isCollapsed);
+        });
+      })();
+
+      (function initLayoutSection() {
+        var list = document.getElementById("layoutComponentList");
+        var marginTop = document.getElementById("layoutMarginTop");
+        var marginBottom = document.getElementById("layoutMarginBottom");
+        var marginTopVal = document.getElementById("layoutMarginTopVal");
+        var marginBottomVal = document.getElementById("layoutMarginBottomVal");
+        var saveBtn = document.getElementById("layoutSaveBtn");
+        var previewDesktop = document.getElementById("layoutPreviewDesktop");
+        var previewMobile = document.getElementById("layoutPreviewMobile");
+        var previewFrame = document.getElementById("layoutPreviewFrame");
+        var layoutGlobalBtn = document.getElementById("layoutGlobalBtn");
+        var layoutComponentSettings = document.getElementById("layoutComponentSettings");
+        var layoutSettingsMargins = document.getElementById("layoutSettingsMargins");
+        var layoutSettingsHero = document.getElementById("layoutSettingsHero");
+        var layoutHeroTextAlign = document.getElementById("layoutHeroTextAlign");
+        var layoutHeroTitle = document.getElementById("layoutHeroTitle");
+        var layoutHeroSubtitle = document.getElementById("layoutHeroSubtitle");
+        var layoutHeroBgUrl = document.getElementById("layoutHeroBgUrl");
+        var layoutHeroMobileUrl = document.getElementById("layoutHeroMobileUrl");
+        var layoutHeroButtonText = document.getElementById("layoutHeroButtonText");
+        var layoutAddBlockBtn = document.getElementById("layoutAddBlockBtn");
+        var layoutBlockTypeModal = document.getElementById("layoutBlockTypeModal");
+        var layoutFooterBlock = document.getElementById("layoutFooterBlock");
+        var layoutSettingsFooter = document.getElementById("layoutSettingsFooter");
+        var layoutFooterLineUrl = document.getElementById("layoutFooterLineUrl");
+        var layoutFooterInstagramUrl = document.getElementById("layoutFooterInstagramUrl");
+        var layoutFooterThreadsUrl = document.getElementById("layoutFooterThreadsUrl");
+        var layoutFooterCopyright = document.getElementById("layoutFooterCopyright");
+        var layoutFooterAddNotice = document.getElementById("layoutFooterAddNotice");
+        var layoutFooterNoticeList = document.getElementById("layoutFooterNoticeList");
+        var layoutConfirmPreviewBtn = document.getElementById("layoutConfirmPreviewBtn");
+        var layoutIframe = document.getElementById("layoutIframe");
+        var layoutSettingsGlobal = document.getElementById("layoutSettingsGlobal");
+        var layoutGlobalBgColor = document.getElementById("layoutGlobalBgColor");
+        var layoutGlobalFontSize = document.getElementById("layoutGlobalFontSize");
+        var layoutGlobalFontFamily = document.getElementById("layoutGlobalFontFamily");
+        var LAYOUT_STORAGE_KEY = "layoutConfig";
+        var globalConfig = { bgColor: "", fontSize: "16", fontFamily: "'Noto Sans TC', sans-serif" };
+        var componentConfig = {}; // data-id -> { marginTop, marginBottom, type, hero: {...}, footer: {...} }
+        var selectedId = null;
+        var globalSelected = false;
+        var blockIdCounter = 0;
+
+        try {
+          var saved = JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY) || "{}");
+          if (saved.componentMargins) {
+            Object.keys(saved.componentMargins).forEach(function(k) {
+              componentConfig[k] = saved.componentMargins[k];
+            });
+          }
+          if (saved.componentConfig) componentConfig = saved.componentConfig;
+          if (saved.global && typeof saved.global === "object") globalConfig = saved.global;
+        } catch (err) {}
+
+        function getMargins(id) {
+          var c = componentConfig[id];
+          return { marginTop: c && c.marginTop !== undefined ? parseInt(c.marginTop, 10) : 0, marginBottom: c && c.marginBottom !== undefined ? parseInt(c.marginBottom, 10) : 20 };
+        }
+        function setMargins(id, top, bottom) {
+          if (!componentConfig[id]) componentConfig[id] = {};
+          componentConfig[id].marginTop = top;
+          componentConfig[id].marginBottom = bottom;
+        }
+        function getHero(id) {
+          var c = componentConfig[id];
+          var h = (c && c.hero) ? c.hero : {};
+          var defaults = (id === "welcome") ? { title: "Welcome to OMO Select", subtitle: "Discover the best Korean products" } : {};
+          return { textAlign: h.textAlign || "center", title: h.title !== undefined ? h.title : defaults.title || "", subtitle: h.subtitle !== undefined ? h.subtitle : defaults.subtitle || "", bgUrl: h.bgUrl || "", mobileUrl: h.mobileUrl || "", buttonText: h.buttonText || "" };
+        }
+        function setHero(id, o) {
+          if (!componentConfig[id]) componentConfig[id] = {};
+          componentConfig[id].hero = o;
+        }
+        function getFooter(id) {
+          var c = componentConfig[id];
+          var f = (c && c.footer) ? c.footer : {};
+          var defaults = (id === "footer") ? { copyrightText: "2025 OMO Select. All rights reserved." } : {};
+          return {
+            lineUrl: f.lineUrl || "",
+            instagramUrl: f.instagramUrl || "",
+            threadsUrl: f.threadsUrl || "",
+            copyrightText: f.copyrightText !== undefined ? f.copyrightText : defaults.copyrightText || "",
+            purchaseNotices: Array.isArray(f.purchaseNotices) ? f.purchaseNotices : []
+          };
+        }
+        function setFooter(id, o) {
+          if (!componentConfig[id]) componentConfig[id] = {};
+          componentConfig[id].footer = o;
+        }
+        function applySlidersFromMargins(margins) {
+          if (marginTop) { marginTop.value = margins.marginTop; if (marginTopVal) marginTopVal.textContent = margins.marginTop; }
+          if (marginBottom) { marginBottom.value = margins.marginBottom; if (marginBottomVal) marginBottomVal.textContent = margins.marginBottom; }
+        }
+        function applyHeroFields(hero) {
+          if (layoutHeroTextAlign) layoutHeroTextAlign.value = hero.textAlign;
+          if (layoutHeroTitle) layoutHeroTitle.value = hero.title;
+          if (layoutHeroSubtitle) layoutHeroSubtitle.value = hero.subtitle;
+          if (layoutHeroBgUrl) layoutHeroBgUrl.value = hero.bgUrl;
+          if (layoutHeroMobileUrl) layoutHeroMobileUrl.value = hero.mobileUrl;
+          if (layoutHeroButtonText) layoutHeroButtonText.value = hero.buttonText;
+        }
+        function applyFooterFields(footer) {
+          if (layoutFooterLineUrl) layoutFooterLineUrl.value = footer.lineUrl;
+          if (layoutFooterInstagramUrl) layoutFooterInstagramUrl.value = footer.instagramUrl;
+          if (layoutFooterThreadsUrl) layoutFooterThreadsUrl.value = footer.threadsUrl;
+          if (layoutFooterCopyright) layoutFooterCopyright.value = footer.copyrightText;
+          if (layoutFooterNoticeList) {
+            layoutFooterNoticeList.innerHTML = "";
+            (footer.purchaseNotices || []).forEach(function(n, i) {
+              var title = n.title !== undefined ? n.title : (n.text || "");
+              var content = n.content !== undefined ? n.content : (n.text || "");
+              var li = document.createElement("li");
+              li.className = "layout-footer-notice-block rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2";
+              li.setAttribute("data-index", String(i));
+              li.innerHTML = "<label class=\"block text-xs font-medium text-slate-600\">標題</label>" +
+                "<input type=\"text\" class=\"layout-footer-notice-title w-full rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"新區塊標題\" />" +
+                "<label class=\"block text-xs font-medium text-slate-600\">內容 (換行分段)</label>" +
+                "<textarea class=\"layout-footer-notice-content w-full rounded-lg border border-slate-300 px-3 py-2 text-sm resize-y min-h-[80px]\" rows=\"3\" placeholder=\"區塊內容...\"></textarea>" +
+                "<button type=\"button\" class=\"layout-footer-notice-remove w-full py-2 rounded-lg bg-red-500 text-white text-sm font-medium hover:bg-red-600\">刪除此區塊</button>";
+              var titleInput = li.querySelector(".layout-footer-notice-title");
+              var contentInput = li.querySelector(".layout-footer-notice-content");
+              if (titleInput) titleInput.value = title;
+              if (contentInput) contentInput.value = content;
+              layoutFooterNoticeList.appendChild(li);
+            });
+          }
+        }
+        function renderFooterNoticeList() {
+          var footer = getFooter("footer");
+          applyFooterFields(footer);
+          bindFooterNoticeInputs();
+        }
+        function bindFooterNoticeInputs() {
+          if (!layoutFooterNoticeList) return;
+          layoutFooterNoticeList.querySelectorAll(".layout-footer-notice-block").forEach(function(block) {
+            var idx = parseInt(block.getAttribute("data-index"), 10);
+            var titleInput = block.querySelector(".layout-footer-notice-title");
+            var contentInput = block.querySelector(".layout-footer-notice-content");
+            var removeBtn = block.querySelector(".layout-footer-notice-remove");
+            if (titleInput) {
+              titleInput.oninput = function() {
+                var f = getFooter("footer");
+                if (!f.purchaseNotices[idx]) f.purchaseNotices[idx] = { title: "", content: "" };
+                f.purchaseNotices[idx].title = this.value;
+                setFooter("footer", f);
+              };
+            }
+            if (contentInput) {
+              contentInput.oninput = function() {
+                var f = getFooter("footer");
+                if (!f.purchaseNotices[idx]) f.purchaseNotices[idx] = { title: "", content: "" };
+                f.purchaseNotices[idx].content = this.value;
+                setFooter("footer", f);
+              };
+            }
+            if (removeBtn) {
+              removeBtn.onclick = function() {
+                var f = getFooter("footer");
+                f.purchaseNotices.splice(idx, 1);
+                setFooter("footer", f);
+                renderFooterNoticeList();
+              };
+            }
+          });
+        }
+
+        function applyGlobalFields() {
+          if (layoutGlobalBgColor) layoutGlobalBgColor.value = globalConfig.bgColor || "";
+          if (layoutGlobalFontSize) layoutGlobalFontSize.value = globalConfig.fontSize || "16";
+          if (layoutGlobalFontFamily) layoutGlobalFontFamily.value = globalConfig.fontFamily || "'Noto Sans TC', sans-serif";
+        }
+        function readGlobalFields() {
+          if (layoutGlobalBgColor) globalConfig.bgColor = layoutGlobalBgColor.value.trim();
+          if (layoutGlobalFontSize) globalConfig.fontSize = layoutGlobalFontSize.value || "16";
+          if (layoutGlobalFontFamily) globalConfig.fontFamily = layoutGlobalFontFamily.value || "'Noto Sans TC', sans-serif";
+        }
+
+        function setGlobalSelected(on) {
+          globalSelected = on;
+          if (layoutGlobalBtn) {
+            if (on) {
+              layoutGlobalBtn.classList.add("bg-blue-100", "text-blue-700", "border-blue-200", "layout-global-active");
+              layoutGlobalBtn.classList.remove("bg-white", "text-slate-600", "border-slate-200");
+            } else {
+              layoutGlobalBtn.classList.remove("bg-blue-100", "text-blue-700", "border-blue-200", "layout-global-active");
+              layoutGlobalBtn.classList.add("bg-white", "text-slate-600", "border-slate-200");
+            }
+          }
+          if (layoutComponentSettings) layoutComponentSettings.classList.remove("hidden");
+          if (on) {
+            applyGlobalFields();
+            if (layoutSettingsMargins) layoutSettingsMargins.classList.add("hidden");
+            if (layoutSettingsHero) layoutSettingsHero.classList.add("hidden");
+            if (layoutSettingsFooter) layoutSettingsFooter.classList.add("hidden");
+            if (layoutSettingsGlobal) layoutSettingsGlobal.classList.remove("hidden");
+          } else {
+            if (layoutSettingsGlobal) layoutSettingsGlobal.classList.add("hidden");
+          }
+        }
+
+        function setFooterBlockHighlight(on) {
+          if (layoutFooterBlock) {
+            if (on) {
+              layoutFooterBlock.classList.add("layout-footer-active");
+            } else {
+              layoutFooterBlock.classList.remove("layout-footer-active");
+            }
+          }
+        }
+
+        function selectLayoutItem(el) {
+          document.querySelectorAll(".layout-item").forEach(function(li) {
+            li.classList.remove("border-rose-300", "bg-rose-50/50");
+            li.classList.add("border-transparent");
+          });
+          setFooterBlockHighlight(false);
+          if (el) {
+            el.classList.add("border-rose-300", "bg-rose-50/50");
+            el.classList.remove("border-transparent");
+            selectedId = el.getAttribute("data-id") || "";
+            var type = el.getAttribute("data-type") || "";
+            setGlobalSelected(false);
+            if (layoutComponentSettings) layoutComponentSettings.classList.remove("hidden");
+            if (layoutSettingsMargins) layoutSettingsMargins.classList.remove("hidden");
+            applySlidersFromMargins(getMargins(selectedId));
+            if (layoutSettingsHero) {
+              if (type === "hero") {
+                layoutSettingsHero.classList.remove("hidden");
+                applyHeroFields(getHero(selectedId));
+              } else {
+                layoutSettingsHero.classList.add("hidden");
+              }
+            }
+            if (layoutSettingsFooter) layoutSettingsFooter.classList.add("hidden");
+            if (layoutSettingsGlobal) layoutSettingsGlobal.classList.add("hidden");
+          }
+        }
+
+        function selectFooterBlock() {
+          document.querySelectorAll(".layout-item").forEach(function(li) {
+            li.classList.remove("border-rose-300", "bg-rose-50/50");
+            li.classList.add("border-transparent");
+          });
+          setFooterBlockHighlight(true);
+          selectedId = "footer";
+          setGlobalSelected(false);
+          if (layoutComponentSettings) layoutComponentSettings.classList.remove("hidden");
+          if (layoutSettingsMargins) layoutSettingsMargins.classList.add("hidden");
+          if (layoutSettingsHero) layoutSettingsHero.classList.add("hidden");
+          if (layoutSettingsFooter) {
+            layoutSettingsFooter.classList.remove("hidden");
+            applyFooterFields(getFooter("footer"));
+            renderFooterNoticeList();
+          }
+          if (layoutSettingsGlobal) layoutSettingsGlobal.classList.add("hidden");
+        }
+
+        if (layoutGlobalBtn) layoutGlobalBtn.addEventListener("click", function() {
+          if (globalSelected) {
+            globalSelected = false;
+            setGlobalSelected(false);
+            if (layoutComponentSettings) layoutComponentSettings.classList.add("hidden");
+          } else {
+            document.querySelectorAll(".layout-item").forEach(function(li) {
+              li.classList.remove("border-rose-300", "bg-rose-50/50");
+              li.classList.add("border-transparent");
+            });
+            setFooterBlockHighlight(false);
+            selectedId = null;
+            globalSelected = true;
+            setGlobalSelected(true);
+          }
+        });
+        if (layoutGlobalBtn && layoutIframe) layoutGlobalBtn.addEventListener("mouseenter", function() {
+          try {
+            var w = layoutIframe.contentWindow;
+            if (w) w.scrollTo(0, 0);
+          } catch (err) {}
+        });
+
+        if (list) {
+          list.addEventListener("click", function(e) {
+            var item = e.target.closest(".layout-item");
+            if (item && !e.target.classList.contains("layout-item-delete")) selectLayoutItem(item);
+            if (e.target.classList.contains("layout-item-delete")) {
+              if (item && confirm("確定要移除此區塊嗎？")) {
+                var id = item.getAttribute("data-id");
+                if (id) delete componentConfig[id];
+                item.remove();
+                var next = list.querySelector(".layout-item");
+                if (next) selectLayoutItem(next); else setGlobalSelected(true);
+              }
+            }
+          });
+        }
+
+        if (marginTop) {
+          marginTop.addEventListener("input", function() {
+            if (marginTopVal) marginTopVal.textContent = this.value;
+            if (selectedId) setMargins(selectedId, parseInt(this.value, 10), getMargins(selectedId).marginBottom);
+          });
+          marginTop.addEventListener("change", function() {
+            if (marginTopVal) marginTopVal.textContent = this.value;
+            if (selectedId) setMargins(selectedId, parseInt(this.value, 10), getMargins(selectedId).marginBottom);
+          });
+        }
+        if (marginBottom) {
+          marginBottom.addEventListener("input", function() {
+            if (marginBottomVal) marginBottomVal.textContent = this.value;
+            if (selectedId) setMargins(selectedId, getMargins(selectedId).marginTop, parseInt(this.value, 10));
+          });
+          marginBottom.addEventListener("change", function() {
+            if (marginBottomVal) marginBottomVal.textContent = this.value;
+            if (selectedId) setMargins(selectedId, getMargins(selectedId).marginTop, parseInt(this.value, 10));
+          });
+        }
+        if (layoutHeroTextAlign) layoutHeroTextAlign.addEventListener("change", function() {
+          if (selectedId) setHero(selectedId, Object.assign({}, getHero(selectedId), { textAlign: this.value }));
+        });
+        if (layoutHeroTitle) layoutHeroTitle.addEventListener("input", function() {
+          if (selectedId) setHero(selectedId, Object.assign({}, getHero(selectedId), { title: this.value }));
+        });
+        if (layoutHeroSubtitle) layoutHeroSubtitle.addEventListener("input", function() {
+          if (selectedId) setHero(selectedId, Object.assign({}, getHero(selectedId), { subtitle: this.value }));
+        });
+        if (layoutHeroBgUrl) layoutHeroBgUrl.addEventListener("input", function() {
+          if (selectedId) setHero(selectedId, Object.assign({}, getHero(selectedId), { bgUrl: this.value }));
+        });
+        if (layoutHeroMobileUrl) layoutHeroMobileUrl.addEventListener("input", function() {
+          if (selectedId) setHero(selectedId, Object.assign({}, getHero(selectedId), { mobileUrl: this.value }));
+        });
+        if (layoutHeroButtonText) layoutHeroButtonText.addEventListener("input", function() {
+          if (selectedId) setHero(selectedId, Object.assign({}, getHero(selectedId), { buttonText: this.value }));
+        });
+
+        if (layoutFooterBlock) {
+          layoutFooterBlock.addEventListener("click", function() {
+            if (selectedId === "footer") {
+              setFooterBlockHighlight(false);
+              selectedId = null;
+              if (layoutComponentSettings) layoutComponentSettings.classList.add("hidden");
+              if (layoutSettingsFooter) layoutSettingsFooter.classList.add("hidden");
+            } else {
+              selectFooterBlock();
+            }
+          });
+          layoutFooterBlock.addEventListener("keydown", function(e) {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              if (selectedId === "footer") {
+                setFooterBlockHighlight(false);
+                selectedId = null;
+                if (layoutComponentSettings) layoutComponentSettings.classList.add("hidden");
+                if (layoutSettingsFooter) layoutSettingsFooter.classList.add("hidden");
+              } else {
+                selectFooterBlock();
+              }
+            }
+          });
+          if (layoutIframe) layoutFooterBlock.addEventListener("mouseenter", function() {
+            try {
+              var w = layoutIframe.contentWindow;
+              var d = layoutIframe.contentDocument;
+              if (w && d) {
+                var h = (d.documentElement && d.documentElement.scrollHeight) || (d.body && d.body.scrollHeight) || 0;
+                w.scrollTo(0, h);
+              }
+            } catch (err) {}
+          });
+        }
+        if (layoutFooterLineUrl) layoutFooterLineUrl.addEventListener("input", function() {
+          if (selectedId === "footer") setFooter("footer", Object.assign({}, getFooter("footer"), { lineUrl: this.value }));
+        });
+        if (layoutFooterInstagramUrl) layoutFooterInstagramUrl.addEventListener("input", function() {
+          if (selectedId === "footer") setFooter("footer", Object.assign({}, getFooter("footer"), { instagramUrl: this.value }));
+        });
+        if (layoutFooterThreadsUrl) layoutFooterThreadsUrl.addEventListener("input", function() {
+          if (selectedId === "footer") setFooter("footer", Object.assign({}, getFooter("footer"), { threadsUrl: this.value }));
+        });
+        if (layoutFooterCopyright) layoutFooterCopyright.addEventListener("input", function() {
+          if (selectedId === "footer") setFooter("footer", Object.assign({}, getFooter("footer"), { copyrightText: this.value }));
+        });
+        if (layoutFooterAddNotice && layoutFooterNoticeList) layoutFooterAddNotice.addEventListener("click", function() {
+          var f = getFooter("footer");
+          if (!f.purchaseNotices) f.purchaseNotices = [];
+          f.purchaseNotices.push({ title: "", content: "" });
+          setFooter("footer", f);
+          renderFooterNoticeList();
+        });
+
+        if (layoutGlobalBgColor) layoutGlobalBgColor.addEventListener("input", function() { globalConfig.bgColor = this.value.trim(); });
+        if (layoutGlobalBgColor) layoutGlobalBgColor.addEventListener("change", function() { globalConfig.bgColor = this.value.trim(); });
+        if (layoutGlobalFontSize) layoutGlobalFontSize.addEventListener("change", function() { globalConfig.fontSize = this.value || "16"; });
+        if (layoutGlobalFontFamily) layoutGlobalFontFamily.addEventListener("change", function() { globalConfig.fontFamily = this.value || "'Noto Sans TC', sans-serif"; });
+
+        if (layoutConfirmPreviewBtn) layoutConfirmPreviewBtn.addEventListener("click", function() {
+          readGlobalFields();
+          var order = [];
+          if (list) [].slice.call(list.querySelectorAll(".layout-item")).forEach(function(li) { order.push(li.getAttribute("data-id")); });
+          try {
+            localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ componentConfig: componentConfig, order: order, global: globalConfig }));
+          } catch (err) {}
+          if (layoutIframe && layoutIframe.src) layoutIframe.src = layoutIframe.src;
+        });
+
+        if (saveBtn) saveBtn.addEventListener("click", function() {
+          readGlobalFields();
+          var order = [];
+          if (list) [].slice.call(list.querySelectorAll(".layout-item")).forEach(function(li) { order.push(li.getAttribute("data-id")); });
+          try {
+            localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ componentConfig: componentConfig, order: order, global: globalConfig }));
+          } catch (err) {}
+          alert("已儲存排版（實際套用需串接後端）");
+        });
+        if (previewDesktop) previewDesktop.addEventListener("click", function() {
+          previewDesktop.classList.add("bg-slate-800", "text-white"); previewDesktop.classList.remove("bg-white", "text-slate-600");
+          if (previewMobile) { previewMobile.classList.remove("bg-slate-800", "text-white"); previewMobile.classList.add("bg-white", "text-slate-600"); }
+          if (previewFrame) previewFrame.style.maxWidth = "100%";
+        });
+        if (previewMobile) previewMobile.addEventListener("click", function() {
+          previewMobile.classList.add("bg-slate-800", "text-white"); previewMobile.classList.remove("bg-white", "text-slate-600");
+          if (previewDesktop) { previewDesktop.classList.remove("bg-slate-800", "text-white"); previewDesktop.classList.add("bg-white", "text-slate-600"); }
+          if (previewFrame) previewFrame.style.maxWidth = "375px";
+        });
+
+        if (layoutAddBlockBtn && layoutBlockTypeModal) {
+          layoutAddBlockBtn.addEventListener("click", function() { layoutBlockTypeModal.classList.remove("hidden"); });
+          layoutBlockTypeModal.querySelector("[data-dismiss=\"layoutBlockTypeModal\"]").addEventListener("click", function() { layoutBlockTypeModal.classList.add("hidden"); });
+          layoutBlockTypeModal.querySelectorAll(".layout-block-type-btn").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+              var type = this.getAttribute("data-type");
+              var label = this.getAttribute("data-label");
+              blockIdCounter++;
+              var id = type + "_" + blockIdCounter;
+              var li = document.createElement("li");
+              li.className = "layout-item flex items-center gap-2 rounded-lg border-2 border-transparent p-2 hover:bg-slate-50";
+              li.setAttribute("data-id", id);
+              li.setAttribute("data-type", type);
+              li.innerHTML = "<span class=\"cursor-move text-slate-400\" title=\"拖曳排序\">≡</span><span class=\"flex-1 text-sm text-slate-700 truncate\">" + (label || id) + "</span><button type=\"button\" class=\"layout-item-delete text-xs text-red-600 hover:underline\">刪除</button>";
+              list.appendChild(li);
+              layoutBlockTypeModal.classList.add("hidden");
+              selectLayoutItem(li);
+            });
+          });
+        }
+
+        selectedId = null;
+        setGlobalSelected(true);
+      })();
+
+      document.getElementById("navPurchases").addEventListener("click", function(e) {
+        e.preventDefault();
+        showSection("sectionPurchases");
+        updatePurchaseDates();
+        updatePurchaseQuickBtns("today");
+        updatePurchaseKPI();
+      });
+
+      function setPurchaseDateRange(range) {
+        var today = new Date();
+        var start = new Date(today);
+        var end = new Date(today);
+        if (range === "today" || range === "yesterday") {
+          if (range === "yesterday") { start.setDate(start.getDate() - 1); end.setDate(end.getDate() - 1); }
+          var d = range === "today" ? today : start;
+          var y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+          document.getElementById("purchaseDateStart").value = y + "-" + m + "-" + day;
+          document.getElementById("purchaseDateEnd").value = y + "-" + m + "-" + day;
+        } else if (range === "7days") {
+          start.setDate(start.getDate() - 6);
+          document.getElementById("purchaseDateStart").value = start.getFullYear() + "-" + String(start.getMonth() + 1).padStart(2, "0") + "-" + String(start.getDate()).padStart(2, "0");
+          document.getElementById("purchaseDateEnd").value = end.getFullYear() + "-" + String(end.getMonth() + 1).padStart(2, "0") + "-" + String(end.getDate()).padStart(2, "0");
+        } else if (range === "month") {
+          start.setDate(1);
+          document.getElementById("purchaseDateStart").value = start.getFullYear() + "-" + String(start.getMonth() + 1).padStart(2, "0") + "-" + String(start.getDate()).padStart(2, "0");
+          document.getElementById("purchaseDateEnd").value = end.getFullYear() + "-" + String(end.getMonth() + 1).padStart(2, "0") + "-" + String(end.getDate()).padStart(2, "0");
+        } else if (range === "year") {
+          start.setMonth(0, 1);
+          document.getElementById("purchaseDateStart").value = start.getFullYear() + "-01-01";
+          document.getElementById("purchaseDateEnd").value = end.getFullYear() + "-" + String(end.getMonth() + 1).padStart(2, "0") + "-" + String(end.getDate()).padStart(2, "0");
+        }
+      }
+
+      function updatePurchaseDates() {
+        setPurchaseDateRange("today");
+      }
+
+      function updatePurchaseQuickBtns(activeRange) {
+        document.querySelectorAll(".purchaseQuickBtn").forEach(function(btn) {
+          var r = btn.getAttribute("data-range");
+          if (r === activeRange) {
+            btn.classList.add("bg-rose-50", "text-rose-800", "border-rose-300");
+            btn.classList.remove("bg-white", "text-slate-600");
+          } else {
+            btn.classList.remove("bg-rose-50", "text-rose-800", "border-rose-300");
+            btn.classList.add("bg-white", "text-slate-600");
+          }
+        });
+      }
+
+      (function initPurchaseSection() {
+        var recalc = document.getElementById("purchaseRecalc");
+        var exportBtn = document.getElementById("purchaseExport");
+        var rangeQuick = document.getElementById("purchaseRangeQuick");
+        if (recalc) recalc.addEventListener("click", function() { setPurchaseDateRange(document.getElementById("purchaseRangeQuick").value || "today"); updatePurchaseKPI(); });
+        if (exportBtn) exportBtn.addEventListener("click", function() { /* 匯出需訂單資料 */ });
+        if (rangeQuick) rangeQuick.addEventListener("change", function() { setPurchaseDateRange(this.value); updatePurchaseQuickBtns(this.value); updatePurchaseKPI(); });
+        document.querySelectorAll(".purchaseQuickBtn").forEach(function(btn) {
+          btn.addEventListener("click", function() {
+            var r = this.getAttribute("data-range");
+            setPurchaseDateRange(r);
+            if (rangeQuick) rangeQuick.value = r || "";
+            updatePurchaseQuickBtns(r);
+            updatePurchaseKPI();
+          });
+        });
+        var dStart = document.getElementById("purchaseDateStart");
+        var dEnd = document.getElementById("purchaseDateEnd");
+        if (dStart) dStart.addEventListener("change", updatePurchaseKPI);
+        if (dEnd) dEnd.addEventListener("change", updatePurchaseKPI);
+      })();
+
+      function updatePurchaseKPI() {
+        var elTypes = document.getElementById("purchaseKpiTypes");
+        var elItems = document.getElementById("purchaseKpiItems");
+        if (elTypes) elTypes.textContent = "0";
+        if (elItems) elItems.textContent = "0";
+        var tbody = document.getElementById("purchaseTableBody");
+        if (tbody) tbody.innerHTML = "<tr><td colspan=\"4\" class=\"py-12 text-center text-slate-500\">此期間無訂單資料</td></tr>";
+      }
+      var reportRange = document.getElementById("reportRange");
+      var reportCustomRange = document.getElementById("reportCustomRange");
+      if (reportRange) {
+        reportRange.addEventListener("change", function() {
+          if (reportCustomRange) reportCustomRange.classList.toggle("hidden", this.value !== "custom");
+          updateReportKPI();
+        });
+      }
+      ["reportDateStart", "reportDateEnd"].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener("change", updateReportKPI);
+      });
+
       function showMessage(text, isError) {
         var el = document.getElementById("message");
         el.textContent = text;
@@ -190,7 +1699,7 @@
 
       function loadProducts() {
         var tbody = document.getElementById("tableBody");
-        tbody.innerHTML = "<tr><td colspan=\"9\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
+        tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
         fetch(API_READ)
           .then(function(r) { return r.json(); })
           .then(function(data) {
@@ -198,7 +1707,7 @@
             renderTable();
           })
           .catch(function(err) {
-            tbody.innerHTML = "<tr><td colspan=\"9\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
+            tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
           });
       }
 
@@ -216,16 +1725,30 @@
         });
       }
       if (list.length === 0) {
-        tbody.innerHTML = "<tr><td colspan=\"9\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
+        tbody.innerHTML = "<tr><td colspan=\"16\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
         return;
       }
+      function fmtDate(v) {
+        if (v == null || v === "") return "";
+        if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+        try { var d = new Date(v); return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10); } catch (e) { return ""; }
+      }
+      function yesNo(v) { return (v === "Y" || v === "1" || v === true) ? "Y" : ""; }
       tbody.innerHTML = list.map(function(p, idx) {
         var rowNum = products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2;
         var name = p.name || p.商品名稱 || "";
         var price = p.price != null ? p.price : p.日幣價格 != null ? p.日幣價格 : "";
+        var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : "";
+        var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
+        var cost = p.cost != null ? p.cost : p.成本 != null ? p.成本 : "";
+        var stock = p.stock != null ? p.stock : p.庫存 != null ? p.庫存 : "";
         var cat = p.category || p.分類 || "";
         var sub = p.subcategory || p.子分類 || "";
         var img = p.image || p.圖片 || "";
+        var publishedAt = fmtDate(p.publishedAt || p.上架日期);
+        var hot = yesNo(p.hot || p.熱銷);
+        var rec = yesNo(p.recommended || p.推薦);
+        var isNew = yesNo(p.isNew || p.新品);
         var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
         var isListed = status === "上架";
         return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\">" +
@@ -233,8 +1756,16 @@
             "<td class=\"py-3 px-4\"><img src=\"" + (img || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E") + "\" alt=\"\" class=\"w-10 h-10 object-cover rounded\" onerror=\"this.src='data:image/svg+xml,%26%23x3C%3Bsvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27 fill=%27%23cbd5e1%27%26%23x3E%26%23x3C%3Brect width=%2740%27 height=%2740%27/%26%23x3E%26%23x3C%3B/svg%26%23x3E%3B'\" /></td>" +
             "<td class=\"py-3 px-4 font-medium\">" + escapeHtml(name) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(price)) + "</td>" +
+            "<td class=\"py-3 px-4\">" + escapeHtml(String(sellingPrice)) + "</td>" +
+            "<td class=\"py-3 px-4\">" + escapeHtml(String(profit)) + "</td>" +
+            "<td class=\"py-3 px-4\">" + escapeHtml(String(cost)) + "</td>" +
+            "<td class=\"py-3 px-4\">" + escapeHtml(String(stock)) + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(cat) + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(sub) + "</td>" +
+            "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(publishedAt) + "</td>" +
+            "<td class=\"py-3 px-4 text-slate-600\">" + (hot ? "Y" : "") + "</td>" +
+            "<td class=\"py-3 px-4 text-slate-600\">" + (rec ? "Y" : "") + "</td>" +
+            "<td class=\"py-3 px-4 text-slate-600\">" + (isNew ? "Y" : "") + "</td>" +
             "<td class=\"py-3 px-4\"><span class=\"status-tag " + (isListed ? "text-emerald-600" : "text-slate-400") + " text-xs\">" + (isListed ? "上架中" : "已下架") + "</span></td>" +
             "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
             "</tr>";
@@ -254,11 +1785,22 @@
               character: p.character || p.角色,
               variant: p.variant || p.規格,
               price: p.price != null ? p.price : p.日幣價格,
+              sellingPrice: p.sellingPrice != null ? p.sellingPrice : p.售價 || p.台幣售價,
+              rate: p.rate != null ? p.rate : p.匯率,
+              profit: p.profit != null ? p.profit : p.利潤,
+              cost: p.cost != null ? p.cost : p.成本,
+              stock: p.stock != null ? p.stock : p.庫存,
               status: (p.status || p.狀態 || "上架").toString().trim() || "上架",
               image: p.image || p.圖片,
               description: p.description || p.描述,
-              introduction: p.introduction || p.商品介紹
+              introduction: p.introduction || p.商品介紹,
+              publishedAt: p.publishedAt || p.上架日期 || "",
+              hot: p.hot || p.熱銷 || "",
+              recommended: p.recommended || p.推薦 || "",
+              isNew: p.isNew || p.新品 || ""
             });
+            document.getElementById("marginSelect").value = "custom";
+            updateSellingPriceByMargin();
           });
         });
         tbody.querySelectorAll(".delete-btn").forEach(function(btn) {
@@ -293,13 +1835,38 @@
         return div.innerHTML;
       }
 
+      var SUBCATEGORY_BY_CATEGORY = {
+        "絨毛玩偶": ["玩偶公仔", "吊飾娃娃"]
+      };
+      function updateSubcategoryOptions(categoryValue) {
+        var sel = document.getElementById("productSubcategorySelect");
+        if (!sel) return;
+        var opts = SUBCATEGORY_BY_CATEGORY[categoryValue];
+        sel.innerHTML = "<option value=\"\">-- 請選擇 --</option>";
+        if (opts && opts.length) {
+          opts.forEach(function(label) {
+            var o = document.createElement("option");
+            o.value = label;
+            o.textContent = label;
+            sel.appendChild(o);
+          });
+        }
+      }
+
       function setFormValues(obj) {
         var form = document.getElementById("productForm");
+        updateSubcategoryOptions(obj && obj.category ? obj.category : "");
         Object.keys(obj || {}).forEach(function(key) {
+          if (key === "hot" || key === "recommended" || key === "isNew") return;
           var input = form.querySelector("[name=" + key + "]");
           if (input) input.value = obj[key] != null ? obj[key] : "";
         });
+        ["hot", "recommended", "isNew"].forEach(function(key) {
+          var el = form.querySelector("[name=" + key + "]");
+          if (el) el.checked = (obj[key] === "Y" || obj[key] === true || obj[key] === "1");
+        });
         if (obj && obj.status != null) updateStatusToggle(obj.status);
+        updateCalculatedFields();
       }
 
       function updateStatusToggle(value) {
@@ -318,14 +1885,112 @@
         }
       }
 
+      function updateCalculatedFields() {
+        var priceEl = document.getElementById("priceInput");
+        var rateEl = document.getElementById("rateInput");
+        var priceNum = priceEl && priceEl.value !== "" ? Number(priceEl.value) : NaN;
+        var rateNum = rateEl && rateEl.value !== "" ? Number(rateEl.value) : NaN;
+
+        var costDisplay = document.getElementById("costDisplay");
+        var costHidden = document.getElementById("costValue");
+        if (isFinite(priceNum) && isFinite(rateNum) && rateNum > 0) {
+          var cost = Math.ceil(priceNum * rateNum);
+          costDisplay.textContent = cost;
+          costHidden.value = cost;
+        } else {
+          costDisplay.textContent = "自動計算（日幣價格 × 匯率）";
+          costHidden.value = "";
+        }
+        updateSellingPriceByMargin();
+      }
+
+      function updateSellingPriceByMargin() {
+        var marginSelect = document.getElementById("marginSelect");
+        var costVal = document.getElementById("costValue").value;
+        var margin = marginSelect ? marginSelect.value : "";
+        var sellingDisplay = document.getElementById("sellingPriceDisplay");
+        var sellingInput = document.getElementById("sellingPriceInput");
+        var sellingHidden = document.getElementById("sellingPriceValue");
+
+        if (margin && margin !== "custom" && margin !== "") {
+          var costNum = costVal !== "" ? Number(costVal) : NaN;
+          var marginNum = Number(margin);
+          if (isFinite(costNum) && isFinite(marginNum) && marginNum >= 0 && marginNum < 100) {
+            var selling = Math.ceil(costNum / (1 - marginNum / 100));
+            sellingDisplay.textContent = selling;
+            sellingHidden.value = selling;
+            sellingDisplay.classList.remove("hidden");
+            if (sellingInput) { sellingInput.classList.add("hidden"); sellingInput.value = ""; }
+          } else {
+            sellingDisplay.textContent = "自動計算（成本 ÷ (1－毛利率)）";
+            sellingHidden.value = "";
+            sellingDisplay.classList.remove("hidden");
+            if (sellingInput) sellingInput.classList.add("hidden");
+          }
+        } else {
+          sellingDisplay.classList.add("hidden");
+          if (sellingInput) {
+            sellingInput.classList.remove("hidden");
+            if (sellingHidden.value) sellingInput.value = sellingHidden.value;
+            sellingHidden.value = sellingInput.value;
+          } else {
+            sellingHidden.value = "";
+          }
+        }
+        updateProfitDisplay();
+      }
+
+      function syncSellingPriceFromInput() {
+        var marginSelect = document.getElementById("marginSelect");
+        if (marginSelect && marginSelect.value === "custom") {
+          var sellingInput = document.getElementById("sellingPriceInput");
+          var sellingHidden = document.getElementById("sellingPriceValue");
+          if (sellingInput && sellingHidden) sellingHidden.value = sellingInput.value;
+          updateProfitDisplay();
+        }
+      }
+
+      function updateProfitDisplay() {
+        var sellingVal = document.getElementById("sellingPriceValue").value;
+        var costVal = document.getElementById("costValue").value;
+        var display = document.getElementById("profitDisplay");
+        var hidden = document.getElementById("profitValue");
+        var sellingNum = sellingVal !== "" ? Number(sellingVal) : NaN;
+        var costNum = costVal !== "" ? Number(costVal) : NaN;
+        if (isFinite(sellingNum) && isFinite(costNum)) {
+          var profit = Math.ceil(sellingNum - costNum);
+          display.textContent = profit;
+          display.classList.remove("text-slate-400");
+          if (profit < 0) display.classList.add("text-red-600"); else display.classList.remove("text-red-600");
+          hidden.value = profit;
+        } else {
+          display.textContent = "自動計算（售價－成本）";
+          display.classList.add("text-slate-400");
+          display.classList.remove("text-red-600");
+          hidden.value = "";
+        }
+      }
+
       function getFormValues() {
+        updateCalculatedFields();
+        syncSellingPriceFromInput();
+        updateProfitDisplay();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "character", "variant", "price", "status", "image", "description", "introduction"].forEach(function(key) {
+        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "image", "description", "introduction", "publishedAt"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
+        ["hot", "recommended", "isNew"].forEach(function(key) {
+          var el = form.querySelector("[name=" + key + "]");
+          o[key] = el && el.checked ? "Y" : "";
+        });
         if (o.price !== "") o.price = Number(o.price);
+        if (o.sellingPrice !== "") o.sellingPrice = o.sellingPrice !== "" ? Number(o.sellingPrice) : "";
+        if (o.rate !== "") o.rate = Number(o.rate);
+        if (o.profit !== "") o.profit = Number(o.profit);
+        if (o.cost !== "") o.cost = o.cost !== "" ? Number(o.cost) : "";
+        if (o.stock !== "") o.stock = Number(o.stock);
         if (!o.status) o.status = "上架";
         return o;
       }
@@ -337,7 +2002,10 @@
         if (!isEdit) {
           setFormValues({});
           updateStatusToggle("上架");
+          var marginSelect = document.getElementById("marginSelect");
+          if (marginSelect) marginSelect.value = "";
         }
+        updateCalculatedFields();
       }
 
       function closeModal() {
@@ -345,6 +2013,15 @@
       }
 
       document.getElementById("btnAdd").addEventListener("click", function() { openModal(false); });
+
+      var productCategorySelect = document.getElementById("productCategorySelect");
+      if (productCategorySelect) {
+        productCategorySelect.addEventListener("change", function() {
+          updateSubcategoryOptions(this.value);
+          var subSel = document.getElementById("productSubcategorySelect");
+          if (subSel) subSel.value = "";
+        });
+      }
 
       document.getElementById("statusToggle").addEventListener("click", function() {
         var input = document.getElementById("statusInput");
@@ -354,11 +2031,34 @@
       document.getElementById("statusToggle").addEventListener("keydown", function(e) {
         if (e.key === " " || e.key === "Enter") { e.preventDefault(); this.click(); }
       });
+      function bindAutoCalc() {
+        var priceEl = document.getElementById("priceInput");
+        var rateEl = document.getElementById("rateInput");
+        var marginEl = document.getElementById("marginSelect");
+        if (priceEl) { priceEl.addEventListener("input", updateCalculatedFields); priceEl.addEventListener("change", updateCalculatedFields); }
+        if (rateEl) { rateEl.addEventListener("input", updateCalculatedFields); rateEl.addEventListener("change", updateCalculatedFields); }
+        if (marginEl) { marginEl.addEventListener("change", updateSellingPriceByMargin); }
+        var sellingInputEl = document.getElementById("sellingPriceInput");
+        if (sellingInputEl) { sellingInputEl.addEventListener("input", syncSellingPriceFromInput); sellingInputEl.addEventListener("change", syncSellingPriceFromInput); }
+      }
+      bindAutoCalc();
       document.getElementById("btnCancel").addEventListener("click", closeModal);
       document.getElementById("modalBackdrop").addEventListener("click", closeModal);
 
       document.getElementById("productForm").addEventListener("submit", function(e) {
         e.preventDefault();
+        updateCalculatedFields();
+        syncSellingPriceFromInput();
+        var costVal = document.getElementById("costValue").value;
+        var sellingVal = document.getElementById("sellingPriceValue").value;
+        if (!costVal || costVal === "") {
+          showMessage("請輸入日幣價格與匯率（成本將自動計算）", true);
+          return;
+        }
+        if (!sellingVal || sellingVal === "") {
+          showMessage("請選擇毛利率或於自訂售價輸入台幣售價", true);
+          return;
+        }
         var rowIndex = document.getElementById("editRowIndex").value;
         var product = getFormValues();
         var action = rowIndex ? "update" : "append";
@@ -394,7 +2094,7 @@
 
       document.getElementById("btnExport").addEventListener("click", function() {
         if (products.length === 0) { showMessage("尚無商品可匯出", true); return; }
-        var headers = ["商品名稱", "分類", "子分類", "角色", "規格", "日幣價格", "圖片", "描述"];
+        var headers = ["商品名稱", "分類", "子分類", "角色", "規格", "日幣價格", "售價", "利潤", "成本", "庫存", "圖片", "描述"];
         var rows = [headers.join(",")];
         products.forEach(function(p) {
           var row = [
@@ -404,6 +2104,10 @@
             (p.character || p.角色 || ""),
             (p.variant || p.規格 || ""),
             (p.price != null ? p.price : p.日幣價格 != null ? p.日幣價格 : ""),
+            (p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : ""),
+            (p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : ""),
+            (p.cost != null ? p.cost : p.成本 != null ? p.成本 : ""),
+            (p.stock != null ? p.stock : p.庫存 != null ? p.庫存 : ""),
             (p.image || p.圖片 || ""),
             (p.description || p.描述 || "").replace(/"/g, '""')
           ];
@@ -417,6 +2121,353 @@
         URL.revokeObjectURL(a.href);
         showMessage("已匯出 CSV");
       });
+
+      (function initOrderSection() {
+        var ORDER_STORAGE_KEY = "adminOrders";
+        var orderModal = document.getElementById("orderModal");
+        var orderModalBackdrop = document.getElementById("orderModalBackdrop");
+        var orderModalClose = document.getElementById("orderModalClose");
+        var orderFormCancel = document.getElementById("orderFormCancel");
+        var btnAddOrder = document.getElementById("btnAddOrder");
+        var btnExportOrders = document.getElementById("btnExportOrders");
+        var btnSaveOrders = document.getElementById("btnSaveOrders");
+        var btnOrderSearch = document.getElementById("btnOrderSearch");
+        var orderSearchInput = document.getElementById("orderSearchInput");
+        var orderStatusFilter = document.getElementById("orderStatusFilter");
+        var orderMessage = document.getElementById("orderMessage");
+        var orderTableBody = document.getElementById("orderTableBody");
+
+        var orders = [];
+        try {
+          var saved = localStorage.getItem(ORDER_STORAGE_KEY);
+          if (saved) orders = JSON.parse(saved);
+          if (!Array.isArray(orders)) orders = [];
+        } catch (err) { orders = []; }
+
+        function saveOrders() {
+          try { localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(orders)); } catch (err) {}
+        }
+
+        function showOrderMessage(text, isError) {
+          if (!orderMessage) return;
+          orderMessage.textContent = text;
+          orderMessage.className = "mb-3 text-sm " + (isError ? "text-red-600" : "text-slate-600");
+          orderMessage.classList.remove("hidden");
+          setTimeout(function() { orderMessage.classList.add("hidden"); }, 4000);
+        }
+
+        function getOrderFromForm() {
+          var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
+          var shipping = Number(document.getElementById("orderShippingFee").value) || 0;
+          var rateCheck = document.getElementById("orderDiscountRateCheck").checked;
+          var fixedCheck = document.getElementById("orderFixedDiscountCheck").checked;
+          var rateVal = Number(document.getElementById("orderDiscountRate").value) || 0;
+          var fixedVal = Number(document.getElementById("orderFixedDiscount").value) || 0;
+          var discount = 0;
+          if (rateCheck && rateVal >= 0 && rateVal <= 100) discount = Math.ceil(subtotal * (1 - rateVal / 100));
+          if (fixedCheck) discount = Math.ceil(fixedVal);
+          var total = Math.max(0, Math.ceil(subtotal - discount + shipping));
+          return {
+            customerName: (document.getElementById("orderCustomerName").value || "").trim(),
+            phone: (document.getElementById("orderPhone").value || "").trim(),
+            email: (document.getElementById("orderEmail").value || "").trim(),
+            lineId: (document.getElementById("orderLineId").value || "").trim(),
+            shippingMethod: (document.getElementById("orderShippingMethod").value || "").trim(),
+            storeName: (document.getElementById("orderStoreName").value || "").trim(),
+            storeId: (document.getElementById("orderStoreId").value || "").trim(),
+            address: (document.getElementById("orderAddress").value || "").trim(),
+            subtotal: subtotal,
+            discount: discount,
+            shippingFee: shipping,
+            total: total,
+            remark: (document.getElementById("orderRemark").value || "").trim()
+          };
+        }
+
+        function setFormFromOrder(o) {
+          document.getElementById("orderCustomerName").value = o.customerName || "";
+          document.getElementById("orderPhone").value = o.phone || "";
+          document.getElementById("orderEmail").value = o.email || "";
+          document.getElementById("orderLineId").value = o.lineId || "";
+          document.getElementById("orderShippingMethod").value = o.shippingMethod || "";
+          document.getElementById("orderStoreName").value = o.storeName || "";
+          document.getElementById("orderStoreId").value = o.storeId || "";
+          document.getElementById("orderAddress").value = o.address || "";
+          document.getElementById("orderSubtotal").value = String(o.subtotal || 0);
+          document.getElementById("orderFixedDiscount").value = String(o.discount || 0);
+          document.getElementById("orderDiscountRateCheck").checked = false;
+          document.getElementById("orderFixedDiscountCheck").checked = true;
+          document.getElementById("orderShippingFee").value = String(o.shippingFee || 0);
+          document.getElementById("orderRemark").value = o.remark || "";
+          updateOrderTotal();
+        }
+
+        function openOrderModal(editOrder) {
+          if (orderModal) orderModal.classList.remove("hidden");
+          document.getElementById("orderForm").setAttribute("data-edit-id", editOrder ? editOrder.id : "");
+          if (editOrder) {
+            document.querySelector("#orderModal h3").textContent = "編輯訂單";
+            setFormFromOrder(editOrder);
+          } else {
+            document.querySelector("#orderModal h3").textContent = "訂單詳情 (新訂單)";
+            document.getElementById("orderSubtotal").value = "0";
+            document.getElementById("orderDiscountRate").value = "90";
+            document.getElementById("orderDiscountRateCheck").checked = false;
+            document.getElementById("orderFixedDiscountCheck").checked = false;
+            document.getElementById("orderFixedDiscount").value = "0";
+            document.getElementById("orderShippingFee").value = "0";
+            document.getElementById("orderCustomerName").value = "";
+            document.getElementById("orderPhone").value = "";
+            document.getElementById("orderEmail").value = "";
+            document.getElementById("orderLineId").value = "";
+            document.getElementById("orderShippingMethod").value = "";
+            document.getElementById("orderStoreName").value = "";
+            document.getElementById("orderStoreId").value = "";
+            document.getElementById("orderAddress").value = "";
+            document.getElementById("orderRemark").value = "";
+            updateOrderTotal();
+          }
+        }
+
+        function closeOrderModal() {
+          if (orderModal) orderModal.classList.add("hidden");
+        }
+
+        function updateOrderTotal() {
+          var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
+          var shipping = Number(document.getElementById("orderShippingFee").value) || 0;
+          var rateCheck = document.getElementById("orderDiscountRateCheck").checked;
+          var fixedCheck = document.getElementById("orderFixedDiscountCheck").checked;
+          var rateVal = Number(document.getElementById("orderDiscountRate").value) || 0;
+          var fixedVal = Number(document.getElementById("orderFixedDiscount").value) || 0;
+
+          var discount = 0;
+          if (rateCheck && rateVal >= 0 && rateVal <= 100) {
+            discount = Math.ceil(subtotal * (1 - rateVal / 100));
+            document.getElementById("orderDiscountRateAmount").textContent = discount;
+          } else {
+            document.getElementById("orderDiscountRateAmount").textContent = "0";
+          }
+          if (fixedCheck) {
+            discount = Math.ceil(fixedVal);
+            document.getElementById("orderDiscountRateAmount").textContent = "0";
+          }
+
+          var total = subtotal - discount + shipping;
+          total = Math.ceil(total);
+          if (total < 0) total = 0;
+          document.getElementById("orderTotalDisplay").textContent = total;
+        }
+
+        function escapeHtml(s) {
+          var div = document.createElement("div");
+          div.textContent = s == null ? "" : String(s);
+          return div.innerHTML;
+        }
+
+        function renderOrders() {
+          if (!orderTableBody) return;
+          var filterStatus = orderStatusFilter ? orderStatusFilter.value : "";
+          var searchQ = (orderSearchInput && orderSearchInput.value) ? orderSearchInput.value.trim().toLowerCase() : "";
+          var list = orders.filter(function(ord) {
+            if (filterStatus && ord.status !== filterStatus) return false;
+            if (searchQ) {
+              var text = (ord.id || "") + (ord.customerName || "") + (ord.phone || "") + (ord.email || "");
+              if (text.toLowerCase().indexOf(searchQ) < 0) return false;
+            }
+            return true;
+          });
+          if (list.length === 0) {
+            orderTableBody.innerHTML = "<tr><td colspan=\"7\" class=\"py-12 text-center text-slate-500\">" + (orders.length === 0 ? "目前沒有訂單" : "沒有符合條件的訂單") + "</td></tr>";
+            return;
+          }
+          orderTableBody.innerHTML = list.map(function(ord) {
+            var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+            var customer = (ord.customerName || "-") + (ord.phone ? " / " + ord.phone : "");
+            return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\" data-order-id=\"" + escapeHtml(ord.id) + "\">" +
+              "<td class=\"py-3 px-4 font-medium text-slate-800\">" + escapeHtml(ord.id) + "</td>" +
+              "<td class=\"py-3 px-4\"><select class=\"order-status-select rounded border border-slate-300 px-2 py-1 text-sm bg-white\" data-order-id=\"" + escapeHtml(ord.id) + "\">" +
+              "<option value=\"待處理\"" + (ord.status === "待處理" ? " selected" : "") + ">待處理</option>" +
+              "<option value=\"已確認\"" + (ord.status === "已確認" ? " selected" : "") + ">已確認</option>" +
+              "<option value=\"出貨中\"" + (ord.status === "出貨中" ? " selected" : "") + ">出貨中</option>" +
+              "<option value=\"已完成\"" + (ord.status === "已完成" ? " selected" : "") + ">已完成</option>" +
+              "<option value=\"已取消\"" + (ord.status === "已取消" ? " selected" : "") + ">已取消</option>" +
+              "</select></td>" +
+              "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(dateStr) + "</td>" +
+              "<td class=\"py-3 px-4 text-slate-700\">" + escapeHtml(customer) + "</td>" +
+              "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(ord.shippingMethod || "-") + "</td>" +
+              "<td class=\"py-3 px-4 font-medium text-slate-800\">NT$ " + (ord.total != null ? Number(ord.total) : 0) + "</td>" +
+              "<td class=\"py-3 px-4\"><button type=\"button\" class=\"order-pdf-btn px-2 py-1 rounded bg-slate-700 text-white text-xs hover:bg-slate-800 mr-1\">產生 PDF</button>" +
+              "<button type=\"button\" class=\"order-edit-btn text-rose-600 hover:underline text-xs mr-1\">編輯</button>" +
+              "<button type=\"button\" class=\"order-delete-btn text-red-600 hover:underline text-xs\" data-name=\"" + escapeHtml(ord.customerName || ord.id) + "\">刪除</button></td>" +
+              "</tr>";
+          }).join("");
+
+          orderTableBody.querySelectorAll(".order-status-select").forEach(function(sel) {
+            sel.addEventListener("change", function() {
+              var id = this.getAttribute("data-order-id");
+              var ord = orders.find(function(o) { return o.id === id; });
+              if (ord) { ord.status = this.value; saveOrders(); }
+            });
+          });
+          orderTableBody.querySelectorAll(".order-edit-btn").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+              var id = this.closest("tr").getAttribute("data-order-id");
+              var ord = orders.find(function(o) { return o.id === id; });
+              if (ord) openOrderModal(ord);
+            });
+          });
+          orderTableBody.querySelectorAll(".order-delete-btn").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+              var id = this.closest("tr").getAttribute("data-order-id");
+              var name = this.getAttribute("data-name") || "此訂單";
+              if (!confirm("確定要刪除訂單「" + name + "」嗎？")) return;
+              orders = orders.filter(function(o) { return o.id !== id; });
+              saveOrders();
+              renderOrders();
+              showOrderMessage("已刪除訂單");
+            });
+          });
+          orderTableBody.querySelectorAll(".order-pdf-btn").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+              var id = this.closest("tr").getAttribute("data-order-id");
+              var ord = orders.find(function(o) { return o.id === id; });
+              if (ord) generateOrderPdf(ord);
+            });
+          });
+        }
+
+        function generateOrderPdf(ord) {
+          var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+          var html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>訂單 " + escapeHtml(ord.id) + "</title>" +
+            "<style>body{font-family:'Microsoft JhengHei',sans-serif;padding:24px;max-width:600px;margin:0 auto;color:#1e293b;} " +
+            "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:8px;} .row{margin:10px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:2px;} " +
+            "table{width:100%;border-collapse:collapse;margin:16px 0;} th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;} th{background:#f1f5f9;}" +
+            ".total{font-size:16px;font-weight:bold;margin-top:12px;}</style></head><body>" +
+            "<h1>訂單明細 " + escapeHtml(ord.id) + "</h1>" +
+            "<div class=\"row\"><span class=\"label\">訂單編號</span><div class=\"value\">" + escapeHtml(ord.id) + "</div></div>" +
+            "<div class=\"row\"><span class=\"label\">日期</span><div class=\"value\">" + escapeHtml(dateStr) + "</div></div>" +
+            "<div class=\"row\"><span class=\"label\">狀態</span><div class=\"value\">" + escapeHtml(ord.status || "待處理") + "</div></div>" +
+            "<h2 style=\"font-size:14px;margin-top:20px;\">客戶資訊</h2>" +
+            "<div class=\"row\"><span class=\"label\">姓名</span><div class=\"value\">" + escapeHtml(ord.customerName || "") + "</div></div>" +
+            "<div class=\"row\"><span class=\"label\">電話</span><div class=\"value\">" + escapeHtml(ord.phone || "") + "</div></div>" +
+            "<div class=\"row\"><span class=\"label\">Email</span><div class=\"value\">" + escapeHtml(ord.email || "") + "</div></div>" +
+            "<div class=\"row\"><span class=\"label\">Line ID</span><div class=\"value\">" + escapeHtml(ord.lineId || "") + "</div></div>" +
+            "<h2 style=\"font-size:14px;margin-top:20px;\">運送方式</h2>" +
+            "<div class=\"row\"><span class=\"label\">方式</span><div class=\"value\">" + escapeHtml(ord.shippingMethod || "") + "</div></div>" +
+            (ord.storeName || ord.storeId ? "<div class=\"row\"><span class=\"label\">門市</span><div class=\"value\">" + escapeHtml((ord.storeName || "") + (ord.storeId ? " (" + ord.storeId + ")" : "")) + "</div></div>" : "") +
+            "<div class=\"row\"><span class=\"label\">地址</span><div class=\"value\">" + escapeHtml(ord.address || "") + "</div></div>" +
+            "<h2 style=\"font-size:14px;margin-top:20px;\">金額</h2>" +
+            "<table><tr><th>項目</th><th>金額</th></tr>" +
+            "<tr><td>商品小計</td><td>NT$ " + (ord.subtotal != null ? ord.subtotal : 0) + "</td></tr>" +
+            "<tr><td>折扣</td><td>- NT$ " + (ord.discount != null ? ord.discount : 0) + "</td></tr>" +
+            "<tr><td>運費</td><td>NT$ " + (ord.shippingFee != null ? ord.shippingFee : 0) + "</td></tr>" +
+            "<tr><td><strong>總計</strong></td><td><strong>NT$ " + (ord.total != null ? ord.total : 0) + "</strong></td></tr></table>" +
+            (ord.remark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(ord.remark) + "</div></div>" : "") +
+            "</body></html>";
+          var w = window.open("", "_blank", "width=640,height=800");
+          w.document.write(html);
+          w.document.close();
+          w.focus();
+          setTimeout(function() { w.print(); }, 300);
+        }
+
+        if (btnAddOrder) btnAddOrder.addEventListener("click", function() { openOrderModal(null); });
+        if (orderModalClose) orderModalClose.addEventListener("click", closeOrderModal);
+        if (orderFormCancel) orderFormCancel.addEventListener("click", closeOrderModal);
+        if (orderModalBackdrop) orderModalBackdrop.addEventListener("click", closeOrderModal);
+
+        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount"].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) { el.addEventListener("input", updateOrderTotal); el.addEventListener("change", updateOrderTotal); }
+        });
+        if (document.getElementById("orderDiscountRateCheck")) {
+          document.getElementById("orderDiscountRateCheck").addEventListener("change", function() {
+            document.getElementById("orderFixedDiscountCheck").checked = false;
+            updateOrderTotal();
+          });
+        }
+        if (document.getElementById("orderFixedDiscountCheck")) {
+          document.getElementById("orderFixedDiscountCheck").addEventListener("change", function() {
+            document.getElementById("orderDiscountRateCheck").checked = false;
+            updateOrderTotal();
+          });
+        }
+
+        document.getElementById("orderForm").addEventListener("submit", function(e) {
+          e.preventDefault();
+          var editId = this.getAttribute("data-edit-id") || "";
+          var data = getOrderFromForm();
+          if (editId) {
+            var ord = orders.find(function(o) { return o.id === editId; });
+            if (ord) {
+              ord.customerName = data.customerName;
+              ord.phone = data.phone;
+              ord.email = data.email;
+              ord.lineId = data.lineId;
+              ord.shippingMethod = data.shippingMethod;
+              ord.storeName = data.storeName;
+              ord.storeId = data.storeId;
+              ord.address = data.address;
+              ord.subtotal = data.subtotal;
+              ord.discount = data.discount;
+              ord.shippingFee = data.shippingFee;
+              ord.total = data.total;
+              ord.remark = data.remark;
+              saveOrders();
+              renderOrders();
+              showOrderMessage("訂單已更新");
+            }
+          } else {
+            var newOrder = {
+              id: "ORD" + Date.now(),
+              date: new Date().toISOString(),
+              status: "待處理",
+              customerName: data.customerName,
+              phone: data.phone,
+              email: data.email,
+              lineId: data.lineId,
+              shippingMethod: data.shippingMethod,
+              storeName: data.storeName,
+              storeId: data.storeId,
+              address: data.address,
+              subtotal: data.subtotal,
+              discount: data.discount,
+              shippingFee: data.shippingFee,
+              total: data.total,
+              remark: data.remark
+            };
+            orders.unshift(newOrder);
+            saveOrders();
+            renderOrders();
+            showOrderMessage("訂單已建立");
+          }
+          closeOrderModal();
+        });
+
+        if (btnExportOrders) btnExportOrders.addEventListener("click", function() {
+          if (orders.length === 0) { showOrderMessage("目前沒有訂單可匯出", true); return; }
+          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "運送方式", "門市", "店號", "地址", "小計", "折扣", "運費", "總計", "備註"];
+          var rows = [headers.join(",")];
+          orders.forEach(function(ord) {
+            var dateStr = ord.date ? new Date(ord.date).toISOString() : "";
+            var row = [ord.id || "", ord.status || "", dateStr, ord.customerName || "", ord.phone || "", ord.email || "", ord.shippingMethod || "", ord.storeName || "", ord.storeId || "", (ord.address || "").replace(/\n/g, " "), ord.subtotal != null ? ord.subtotal : "", ord.discount != null ? ord.discount : "", ord.shippingFee != null ? ord.shippingFee : "", ord.total != null ? ord.total : "", (ord.remark || "").replace(/"/g, '""')];
+            rows.push(row.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(","));
+          });
+          var blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "訂單匯出-" + new Date().toISOString().slice(0, 10) + ".csv";
+          a.click();
+          URL.revokeObjectURL(a.href);
+          showOrderMessage("已匯出 CSV");
+        });
+        if (btnSaveOrders) { btnSaveOrders.disabled = false; btnSaveOrders.classList.remove("cursor-not-allowed", "bg-slate-100", "text-slate-400"); btnSaveOrders.classList.add("bg-slate-800", "text-white", "hover:bg-slate-700"); btnSaveOrders.addEventListener("click", function() { saveOrders(); showOrderMessage("已儲存所有變更"); }); }
+        if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { renderOrders(); });
+        if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders(); } });
+        if (orderStatusFilter) orderStatusFilter.addEventListener("change", function() { renderOrders(); });
+        renderOrders();
+      })();
 
       loadProducts();
     })();
