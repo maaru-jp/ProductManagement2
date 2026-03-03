@@ -44,7 +44,9 @@
 6. **執行身分**：我。
 7. **誰可以存取**：**任何人**（前端才能從 GitHub Pages / 本機開啟的網頁呼叫）。
 8. 按 **部署**，完成後複製 **網頁應用程式 URL**。
-9. 到專案前端的 `assets/app.jsx`，把 `API_URL` 常數改成這個 URL。
+9. **務必**把這個 URL 貼到專案裡這兩個地方，否則後台無法寫入試算表、顧客頁也讀不到商品：
+   - **後台**：`admin.html` 裡搜尋 `API_READ` 與 `API_WRITE`，將兩處的 `https://script.google.com/macros/s/.../exec` 換成你的 URL（本機開發時會用 `/api`、`/api-write`，可略過）。
+   - **顧客頁**：`js/app.jsx` 裡搜尋 `API_URL`，將該常數的值換成同一個 URL。
 
 ## API 回傳格式
 
