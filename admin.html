@@ -796,15 +796,17 @@
             <input type="text" name="character" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：酷洛米、凱蒂貓" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆）</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆，每筆可填對應圖片網址）</label>
             <div id="variantListContainer" class="space-y-2">
-              <div class="variant-item-row flex gap-2">
-                <input type="text" class="variant-item w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：酷洛米" />
+              <div class="variant-item-row flex flex-wrap gap-2 items-start">
+                <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="規格名稱，例：酷洛米" />
+                <input type="text" class="variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="該規格圖片 URL（選填）" />
                 <button type="button" class="variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" title="移除">✕</button>
               </div>
             </div>
             <button type="button" id="btnAddVariant" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50">+ 新增規格品項</button>
             <input type="hidden" name="variant" id="variantValue" value="" />
+            <input type="hidden" name="variantImages" id="variantImagesValue" value="" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格 *</label>
@@ -857,11 +859,6 @@
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">圖片 URL</label>
             <input type="url" name="image" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://..." />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">規格圖片（選填）</label>
-            <input type="text" name="variantImages" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="多張請用逗號分隔，順序對應上方規格，例：https://a.jpg, https://b.jpg, https://c.jpg" />
-            <p class="text-xs text-slate-400 mt-0.5">顧客頁選不同規格時會切換為對應的圖，順序需與規格品項一致。</p>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">描述</label>
@@ -1861,26 +1858,46 @@
 
       function syncVariantToHidden() {
         var container = document.getElementById("variantListContainer");
-        var hidden = document.getElementById("variantValue");
-        if (!container || !hidden) return;
-        var items = [].map.call(container.querySelectorAll(".variant-item"), function(inp) {
-          return (inp.value || "").trim();
-        }).filter(Boolean);
-        hidden.value = items.join(", ");
+        var hiddenVariant = document.getElementById("variantValue");
+        var hiddenImages = document.getElementById("variantImagesValue");
+        if (!container || !hiddenVariant) return;
+        var rows = container.querySelectorAll(".variant-item-row");
+        var names = [];
+        var urls = [];
+        rows.forEach(function(row) {
+          var nameInp = row.querySelector(".variant-item");
+          var urlInp = row.querySelector(".variant-image");
+          names.push((nameInp && nameInp.value) ? nameInp.value.trim() : "");
+          urls.push((urlInp && urlInp.value) ? urlInp.value.trim() : "");
+        });
+        hiddenVariant.value = names.filter(Boolean).join(", ");
+        if (hiddenImages) hiddenImages.value = urls.join(", ");
       }
 
-      function renderVariantList(variantStr) {
+      function escapeAttr(s) {
+        return (s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function renderVariantList(variantStr, variantImagesStr) {
         var container = document.getElementById("variantListContainer");
+        var hiddenImages = document.getElementById("variantImagesValue");
         if (!container) return;
         var parts = (variantStr || "").split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
+        var urlParts = (variantImagesStr != null && variantImagesStr !== undefined ? String(variantImagesStr) : "").split(/[,，、\n]/).map(function(s) { return s.trim(); });
         if (parts.length === 0) parts = [""];
-        container.innerHTML = parts.map(function(val) {
-          return "<div class=\"variant-item-row flex gap-2\">" +
-            "<input type=\"text\" class=\"variant-item w-full rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"例：酷洛米\" value=\"" + (val || "").replace(/"/g, "&quot;") + "\" />" +
+        container.innerHTML = parts.map(function(val, i) {
+          var url = urlParts[i] != null ? urlParts[i] : "";
+          return "<div class=\"variant-item-row flex flex-wrap gap-2 items-start\">" +
+            "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：酷洛米\" value=\"" + escapeAttr(val) + "\" />" +
+            "<input type=\"text\" class=\"variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"該規格圖片 URL（選填）\" value=\"" + escapeAttr(url) + "\" />" +
             "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>" +
             "</div>";
         }).join("");
         container.querySelectorAll(".variant-item").forEach(function(inp) {
+          inp.addEventListener("input", syncVariantToHidden);
+          inp.addEventListener("change", syncVariantToHidden);
+        });
+        container.querySelectorAll(".variant-image").forEach(function(inp) {
           inp.addEventListener("input", syncVariantToHidden);
           inp.addEventListener("change", syncVariantToHidden);
         });
@@ -1891,6 +1908,7 @@
             if (rows.length > 1 && row) { row.remove(); syncVariantToHidden(); }
           });
         });
+        syncVariantToHidden();
       }
 
       function setFormValues(obj) {
@@ -1905,9 +1923,10 @@
           var el = form.querySelector("[name=" + key + "]");
           if (el) el.checked = (obj[key] === "Y" || obj[key] === true || obj[key] === "1");
         });
-        renderVariantList(obj && obj.variant != null ? obj.variant : "");
-        var variantHidden = document.getElementById("variantValue");
-        if (variantHidden) variantHidden.value = (obj && obj.variant != null ? obj.variant : "") || "";
+        renderVariantList(
+          obj && obj.variant != null ? obj.variant : "",
+          obj && obj.variantImages != null ? obj.variantImages : ""
+        );
         if (obj && obj.status != null) updateStatusToggle(obj.status);
         updateCalculatedFields();
       }
@@ -2064,13 +2083,16 @@
           var container = document.getElementById("variantListContainer");
           if (!container) return;
           var row = document.createElement("div");
-          row.className = "variant-item-row flex gap-2";
-          row.innerHTML = "<input type=\"text\" class=\"variant-item w-full rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"例：酷洛米\" />" +
+          row.className = "variant-item-row flex flex-wrap gap-2 items-start";
+          row.innerHTML = "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：酷洛米\" />" +
+            "<input type=\"text\" class=\"variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"該規格圖片 URL（選填）\" />" +
             "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>";
           container.appendChild(row);
-          var inp = row.querySelector(".variant-item");
+          var nameInp = row.querySelector(".variant-item");
+          var urlInp = row.querySelector(".variant-image");
           var removeBtn = row.querySelector(".variant-item-remove");
-          if (inp) { inp.addEventListener("input", syncVariantToHidden); inp.addEventListener("change", syncVariantToHidden); }
+          if (nameInp) { nameInp.addEventListener("input", syncVariantToHidden); nameInp.addEventListener("change", syncVariantToHidden); }
+          if (urlInp) { urlInp.addEventListener("input", syncVariantToHidden); urlInp.addEventListener("change", syncVariantToHidden); }
           if (removeBtn) {
             removeBtn.addEventListener("click", function() {
               var rows = container.querySelectorAll(".variant-item-row");
