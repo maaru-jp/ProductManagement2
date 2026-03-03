@@ -126,7 +126,7 @@ function buildRowFromProduct(headers, product) {
 
 /**
  * 從試算表組出前端要的 { products: [...], rate: number }。
- * 台幣售價直接來自商品工作表的「售價」/「台幣售價」欄位，不再依賴「設定」工作表匯率。
+ * 台幣售價來自商品工作表的「售價」/「台幣售價」；匯率來自「設定」工作表（有則用於日幣換算）。
  */
 function getApiData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -139,7 +139,7 @@ function getApiData() {
     }
   }
   return {
-    rate: null,
+    rate: getRate(ss),
     products: products
   };
 }
