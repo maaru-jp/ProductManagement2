@@ -98,7 +98,13 @@ function formatTWDFromJPY(jpy, rate) {
 }
 
 const API_URL =
-  "https://script.googleusercontent.com/macros/echo?user_content_key=AY5xjrTS-qEphaiBZpDtZQiI4E_L4Ge4iew16KNpZjrnxlTW9Un0pCjTYDgyjxahCWPMth1rKbw4LC2adRlvAfht8Yjg7lZHaSNf2S-SriWDDtPkvZ0ZAn44OhpAap08hwkyQnBZgk4So2daHtOKP07hH3WXCLBCTE0KweDPxOqKTj3iuBwAcZ3A6a2yB3lhKShH_c4yHGiNFo8kDU6geRbf5a0XtAG5j6s2v3vrQw-ebi9metYny89Q59EvXqqNicsMMaWcLpxHBU26yHqiKu9XQ0GZLvMhgA&lib=MCN1sfGqsjw8Wsi0FJVsTJbQ42JGSsI5e";
+  "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
+
+// 本機開發時用同源的 /api，由 server.py 代為請求 Google，避免 CORS
+const isLocalDev =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+const API_URL_LOCAL = "/api";
 
 // 在 GitHub Pages 等跨站環境下，Google 試算表 API 常因 CORS 被擋，失敗時改經由此 proxy 重試
 const CORS_PROXY_PREFIX = "https://corsproxy.io/?";
@@ -134,6 +140,8 @@ function normalizeItem(row, index) {
   const variant = row.variant ?? row.規格 ?? row.顏色 ?? row.option ?? "";
   const category = row.category ?? row.分類 ?? "";
   const subcategory = row.subcategory ?? row.子分類 ?? "";
+  const character = row.character ?? row.角色 ?? row.角色名稱 ?? "";
+  const status = (row.status ?? row.狀態 ?? "上架").toString().trim() || "上架";
   const isHot = toBoolFlag(row.hot ?? row.熱銷);
   const isRecommended = toBoolFlag(row.recommended ?? row.推薦);
   const publishedAt = row.publishedAt ?? row.上架日期 ?? row.上架時間 ?? null;
@@ -155,6 +163,8 @@ function normalizeItem(row, index) {
     variant,
     category,
     subcategory,
+    character,
+    status,
     isHot,
     isRecommended,
     isNew,
@@ -175,22 +185,31 @@ function useProducts() {
       setLoading(true);
       setError(null);
       let lastError = null;
-      const urlsToTry = [
-        API_URL,
-        CORS_PROXY_PREFIX + encodeURIComponent(API_URL),
-      ];
+      const urlsToTry = isLocalDev
+        ? [API_URL_LOCAL, API_URL, CORS_PROXY_PREFIX + encodeURIComponent(API_URL)]
+        : [API_URL, CORS_PROXY_PREFIX + encodeURIComponent(API_URL)];
       for (const url of urlsToTry) {
         if (cancelled) break;
         try {
+          // 不要加自訂 header，否則會觸發 CORS preflight，Google Script 常不回應
           const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) throw new Error("HTTP " + res.status);
           const text = await res.text();
-          if (!res.ok) {
-            throw new Error("HTTP " + res.status);
+          const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
+          if (
+            text.trimStart().startsWith("<") ||
+            contentType.includes("text/html")
+          ) {
+            throw new Error(
+              "API 回傳了 HTML 而非 JSON，請確認：1) 試算表已部署為「網頁應用程式」且「誰可以存取」選「任何人」；2) 前端的 API_URL 是否為正確的「網頁應用程式 URL」；3) 首次開啟部署連結時是否已在瀏覽器授權。"
+            );
           }
-          if (text.trimStart().startsWith("<")) {
-            throw new Error("HTML_RESPONSE");
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (parseErr) {
+            throw new Error("API 回傳的內容不是有效的 JSON：" + (text.slice(0, 80) + (text.length > 80 ? "…" : "")));
           }
-          const data = JSON.parse(text);
           if (!cancelled) {
             console.log("Raw API data:", data);
             const apiRate = toNumberOrNull(data?.rate);
@@ -205,33 +224,28 @@ function useProducts() {
             const normalized = rows
               .map((row, idx) => normalizeItem(row, idx))
               .filter((x) => x && x.name);
-            setProducts(normalized);
-            if (!cancelled && rows.length > 0 && normalized.length === 0) {
-              console.warn("API 有回傳筆數但無有效商品，請確認試算表第一列為標題且含「商品名稱」欄位，第二列起有商品名稱。", rows);
-            }
+            const onlyListed = normalized.filter(
+              (x) => (x.status || "").trim() === "" || (x.status || "").trim().toLowerCase() === "上架"
+            );
+            setProducts(onlyListed);
           }
           lastError = null;
           break;
         } catch (err) {
           lastError = err;
-          console.warn("Fetch attempt failed:", url === API_URL ? "direct" : "via proxy", err);
+          console.warn("Fetch attempt failed:", url === API_URL_LOCAL ? "local /api" : url === API_URL ? "direct" : "via proxy", err);
         }
       }
       if (!cancelled) {
         if (lastError) {
-          let msg = lastError?.message || "無法載入商品資料";
-          if (msg === "HTML_RESPONSE" || (msg.includes("Unexpected token '<'") && msg.includes("DOCTYPE"))) {
-            msg =
-              "API 回傳了網頁而非資料。請確認：① 網址是否為 Google「部署」→「網頁應用程式」的完整 URL；② 以試算表擁有者身分在瀏覽器開啟該 URL 一次，若有「授權」畫面請按授權，完成後再重新整理商店頁面。";
-          } else {
-            const hint =
-              window.location.hostname.includes("github.io") ||
-              window.location.hostname === "localhost"
-                ? " 若在 GitHub 上仍無法載入，請在 Google Apps Script 的 doGet 回傳時加上 CORS 標頭（見專案說明）。"
-                : "";
-            msg = msg + hint;
-          }
-          setError(msg);
+          const msg =
+            lastError?.message || "無法載入商品資料";
+          const hint =
+            window.location.hostname.includes("github.io") ||
+            window.location.hostname === "localhost"
+              ? " 若在 GitHub 上仍無法載入，請在 Google 試算表「擴充功能」→「Apps Script」的 doGet 回傳時加上 CORS 標頭（見專案說明）。"
+              : "";
+          setError(msg + hint);
         }
         setLoading(false);
       }
@@ -371,28 +385,64 @@ const CATEGORY_MENU = [
   },
 ];
 
-function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate }) {
+// 商品款式角色（點擊後列出該角色所有商品）
+const CHARACTER_LIST = [
+  { value: "", label: "全部" },
+  { value: "酷洛米", label: "酷洛米" },
+  { value: "凱蒂貓", label: "凱蒂貓" },
+  { value: "大耳狗", label: "大耳狗" },
+  { value: "Hello Kitty", label: "Hello Kitty" },
+  { value: "My Melody", label: "My Melody" },
+  { value: "Cinnamoroll", label: "Cinnamoroll" },
+  { value: "HANGYODON", label: "HANGYODON" },
+  { value: "Pompompurin", label: "Pompompurin" },
+  { value: "Little Twin Stars", label: "Little Twin Stars" },
+  { value: "Pochacco", label: "Pochacco" },
+  { value: "TUXEDOSAM", label: "TUXEDOSAM" },
+  { value: "雙星仙子", label: "雙星仙子" },
+];
+
+// 店舗內分類：字串為單一項目，{ label, children } 為有子選單的項目
+const STORE_CATEGORIES = [
+  "全商品一覧",
+  "新上架商品",
+  "HOT預購商品",
+  { label: "絨毛玩偶", children: ["玩偶公仔", "吊飾娃娃"] },
+  { label: "包包時尚小物", children: ["托特包", "手提包", "肩背包", "斜背包"] },
+  { label: "美妝用品", children: ["化妝包", "梳子", "鏡子", "美容小物", "其他美妝用品"] },
+  { label: "飾品配件", children: ["髮飾", "飾品盒", "鑰匙圈", "眼鏡盒", "手錶", "其他時尚飾品"] },
+  { label: "服飾專區", children: ["上衣", "睡衣", "襪子", "其他服飾"] },
+  {
+    label: "文具用品",
+    children: ["年曆×手帳本", "筆記本×日記本×活頁紙", "便條紙", "貼紙", "文件收納", "辦公事務用品", "明信片", "其他文具用品"],
+  },
+  { label: "3C用品", children: ["手機殼", "充電配件", "其他3C周邊"] },
+  { label: "居家生活", children: ["抱枕×靠枕", "居家裝飾品", "毛毯", "室內鞋", "收納用品"] },
+  { label: "兒童專區", children: ["便當盒", "水壺", "手帕毛巾", "兒童小包"] },
+  "廚房用品",
+  "浴室用品",
+  { label: "旅行用品", children: ["行李吊牌", "行李束帶", "旅行收納物", "旅用小物×其他"] },
+  { label: "戶外用品", children: ["雨傘", "戶外用品"] },
+  "使用者指南",
+];
+
+function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate, selectedCharacter = "" }) {
   const searchRef = React.useRef(null);
-  const [expandedKeys, setExpandedKeys] = React.useState(() => new Set(CATEGORY_MENU.map((c) => c.value)));
+  const characterCarouselRef = React.useRef(null);
+  const [expandedStoreKey, setExpandedStoreKey] = React.useState(null);
 
   React.useEffect(() => {
     if (open && searchRef.current) searchRef.current.focus();
   }, [open]);
 
-  function toggleExpand(value) {
-    setExpandedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
-    });
+  function scrollCharacterCarousel(direction) {
+    if (!characterCarouselRef.current) return;
+    const step = 80;
+    characterCarouselRef.current.scrollBy({ left: direction === "left" ? -step : step, behavior: "smooth" });
   }
 
-  const linkClass =
-    "flex items-center justify-between w-full py-3.5 px-4 text-left text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors";
-  const subLinkClass =
-    "flex items-center w-full py-2.5 pl-6 pr-4 text-left text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors";
-  const divider = "border-b border-slate-600/60";
+  const storeCategoryClass =
+    "flex items-center justify-between w-full py-3.5 px-4 text-left text-sm text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100";
 
   return (
     <>
@@ -404,37 +454,40 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
         aria-hidden={!open}
       >
         <div
-          className="absolute inset-0 bg-black/40"
+          className="absolute inset-0 bg-slate-900/20"
           onClick={onClose}
           aria-label="關閉選單"
         />
       </div>
       <aside
         className={[
-          "fixed left-0 top-0 z-40 h-full w-[280px] max-w-[85vw] bg-slate-800 shadow-xl",
+          "fixed left-0 top-0 z-40 h-full w-[300px] max-w-[90vw] bg-white shadow-xl border-r border-slate-200",
           "flex flex-col transition-transform duration-200 ease-out",
           open ? "translate-x-0" : "-translate-x-full",
         ].join(" ")}
         aria-label="商品分類選單"
       >
-        <div className="p-4 border-b border-slate-600/60 flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-400 tracking-widest uppercase">
-            分類選單
-          </span>
+        {/* Header：左側 X，右側品牌名 */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="w-9 h-9 rounded-full border border-slate-500 text-slate-400 hover:text-white hover:border-slate-400 flex items-center justify-center"
+            className="w-9 h-9 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center transition-colors"
             aria-label="關閉"
           >
             ✕
           </button>
+          <span className="text-sm font-semibold text-slate-900 tracking-wide uppercase">MENU</span>
         </div>
 
         <div className="flex-1 overflow-auto">
-          <div className="p-3">
-            <div className="relative rounded-lg bg-slate-700/80 border border-slate-600">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
+          {/* 搜尋欄：放大鏡在輸入關鍵字框左邊 */}
+          <div className="p-3 border-b border-slate-100">
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white focus-within:ring-1 focus-within:ring-slate-300 focus-within:border-slate-300">
+              <span
+                className="shrink-0 w-9 h-9 flex items-center justify-center text-slate-500"
+                aria-hidden
+              >
                 🔍
               </span>
               <input
@@ -442,94 +495,134 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                 type="text"
                 value={searchKeyword}
                 onChange={(e) => onSearchChange(e.target.value)}
-                placeholder="商品關鍵字"
-                className="w-full bg-transparent pl-9 pr-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none rounded-lg"
+                placeholder="輸入關鍵字"
+                className="flex-1 min-w-0 py-2.5 pr-3 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none border-0"
               />
             </div>
           </div>
 
-          <nav className="py-1">
-            <div className={divider}>
+          {/* 所有角色：圓形可左右滑動，點擊列出該角色所有商品 */}
+          <div className="px-4 pt-2 pb-4">
+            <p className="text-xs font-semibold text-slate-500 tracking-wider mb-3 text-center">
+              所有角色
+            </p>
+            <div className="relative flex items-center">
               <button
                 type="button"
-                onClick={() => { onNavigate("/"); onClose(); }}
-                className={linkClass}
+                onClick={() => scrollCharacterCarousel("left")}
+                className="shrink-0 w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 absolute left-0 z-10 shadow-sm"
+                aria-label="往左"
               >
-                商店首頁
+                ‹
               </button>
-            </div>
-            <div className={divider}>
-              <button
-                type="button"
-                onClick={() => { onNavigate("/"); onClose(); }}
-                className={linkClass}
+              <div
+                ref={characterCarouselRef}
+                className="flex gap-3 overflow-x-auto scroll-smooth scrollbar-hide py-2 px-10"
+                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
               >
-                卡通角色大賞
-              </button>
-            </div>
-            <div className={divider}>
-              <button
-                type="button"
-                onClick={() => { onNavigate("/"); onClose(); }}
-                className={linkClass}
-              >
-                <span>HOT新品推薦</span>
-              </button>
-            </div>
-            <div className={divider}>
-              <button
-                type="button"
-                onClick={() => { onNavigate("/?section=ideas"); onClose(); }}
-                className={linkClass}
-              >
-                點子選單
-              </button>
-            </div>
-
-            {CATEGORY_MENU.map((item) => (
-              <div key={item.value} className={divider}>
-                <button
-                  type="button"
-                  onClick={() => toggleExpand(item.value)}
-                  className={linkClass}
-                  aria-expanded={expandedKeys.has(item.value)}
-                >
-                  <span>{item.label}</span>
-                  <span
-                    className={[
-                      "text-slate-500 transition-transform",
-                      expandedKeys.has(item.value) ? "rotate-180" : "",
-                    ].join(" ")}
-                    aria-hidden
-                  >
-                    ▼
-                  </span>
-                </button>
-                {item.children && expandedKeys.has(item.value) ? (
-                  <div className="py-0.5">
-                    {item.children.map((sub) => (
-                      <button
-                        key={sub.value}
-                        type="button"
-                        onClick={() => {
-                          onNavigate(
-                            "/?category=" +
-                              encodeURIComponent(item.value) +
-                              "&subcategory=" +
-                              encodeURIComponent(sub.value)
-                          );
-                          onClose();
-                        }}
-                        className={subLinkClass}
+                {CHARACTER_LIST.map((char) => {
+                  const isSelected = (char.value || "").trim() === (selectedCharacter || "").trim();
+                  return (
+                    <button
+                      key={char.value || "all"}
+                      type="button"
+                      onClick={() => {
+                        if ((char.value || "").trim())
+                          onNavigate("/?character=" + encodeURIComponent(char.value));
+                        else
+                          onNavigate("/");
+                        onClose();
+                      }}
+                      className={[
+                        "shrink-0 flex flex-col items-center gap-1.5 transition-colors",
+                        isSelected ? "opacity-100" : "opacity-90 hover:opacity-100",
+                      ].join(" ")}
+                    >
+                      <span
+                        className={[
+                          "w-12 h-12 rounded-full flex items-center justify-center text-slate-700 text-sm font-medium border-2 transition-colors",
+                          isSelected
+                            ? "bg-slate-200 border-slate-400 ring-2 ring-slate-300"
+                            : "bg-slate-100 border-slate-200 group-hover:bg-slate-200",
+                        ].join(" ")}
                       >
-                        {sub.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+                        {char.label.slice(0, 1)}
+                      </span>
+                      <span className="text-[10px] text-slate-600 text-center max-w-[48px] leading-tight">
+                        {char.label}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            ))}
-          </nav>
+              <button
+                type="button"
+                onClick={() => scrollCharacterCarousel("right")}
+                className="shrink-0 w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 absolute right-0 z-10 shadow-sm"
+                aria-label="往右"
+              >
+                ›
+              </button>
+            </div>
+          </div>
+
+          {/* 店舗內分類：垂直列表 + 右箭頭 */}
+          <div className="border-t border-slate-200 pt-2">
+            <p className="px-4 text-xs font-semibold text-slate-500 tracking-wider mb-1">
+              店舗內分類
+            </p>
+            <nav className="py-1">
+              {STORE_CATEGORIES.map((item) => {
+                const label = typeof item === "string" ? item : item.label;
+                const children = typeof item === "string" ? null : item.children;
+                const isExpanded = expandedStoreKey === label;
+
+                if (children && children.length > 0) {
+                  return (
+                    <div key={label} className="border-b border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedStoreKey(isExpanded ? null : label)}
+                        className={storeCategoryClass}
+                      >
+                        <span>{label}</span>
+                        <span className={["text-slate-400 transition-transform", isExpanded ? "rotate-90" : ""].join(" ")}>›</span>
+                      </button>
+                      {isExpanded ? (
+                        <div>
+                          {children.map((sub) => (
+                            <button
+                              key={sub}
+                              type="button"
+                              onClick={() => {
+                                onNavigate("/?category=" + encodeURIComponent(label) + "&subcategory=" + encodeURIComponent(sub));
+                                onClose();
+                              }}
+                              className="flex items-center justify-between w-full py-2.5 pl-6 pr-4 text-left text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0"
+                            >
+                              <span>{sub}</span>
+                              <span className="text-slate-400">›</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => { onNavigate("/"); onClose(); }}
+                    className={storeCategoryClass}
+                  >
+                    <span>{label}</span>
+                    <span className="text-slate-400">›</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
         </div>
       </aside>
     </>
@@ -617,7 +710,7 @@ function ProductCard({ product, rate }) {
           </div>
         )}
 
-        {product.isHot || product.isRecommended || product.isNew ? (
+        {(product.isHot || product.isRecommended || product.isNew || product.character) ? (
           <div className="absolute top-3 left-3 flex flex-wrap gap-1">
             {product.isHot ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-rose-600 text-white shadow-sm">
@@ -632,6 +725,11 @@ function ProductCard({ product, rate }) {
             {product.isNew ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-600 text-white shadow-sm">
                 新品
+              </span>
+            ) : null}
+            {product.character ? (
+              <span className="text-[11px] px-2 py-1 rounded-full bg-slate-600 text-white shadow-sm">
+                {product.character}
               </span>
             ) : null}
           </div>
@@ -662,14 +760,13 @@ function parseSearchParams(searchString) {
   }
 }
 
-function HomePage({ products, rate, loading, error, search: routeSearch }) {
+function HomePage({ products, rate, loading, error, search: routeSearch, searchKeyword = "", onSearchChange, onNavigateHome }) {
   const CATEGORY_KEY = "maarushop_home_category_v1";
-  const SEARCH_KEY = "maarushop_home_search_v1";
   const SORT_KEY = "maarushop_home_sort_v1";
   const params = React.useMemo(() => parseSearchParams(routeSearch || ""), [routeSearch]);
   const categoryFromUrl = params.category ?? null;
   const subcategoryFromUrl = params.subcategory ?? null;
-  const searchFromUrl = params.q ?? null;
+  const characterFromUrl = params.character ?? null;
 
   const [selectedCategory, setSelectedCategory] = React.useState(() => {
     if (categoryFromUrl) return categoryFromUrl;
@@ -680,22 +777,15 @@ function HomePage({ products, rate, loading, error, search: routeSearch }) {
     }
   });
 
-  const [search, setSearch] = React.useState(() => {
-    if (searchFromUrl !== null) return searchFromUrl;
-    try {
-      return localStorage.getItem(SEARCH_KEY) || "";
-    } catch {
-      return "";
-    }
-  });
+  const [selectedSubcategory, setSelectedSubcategory] = React.useState(subcategoryFromUrl || "");
 
-  // 當網址列上的 category / q 改變時，同步到 state
+  // 當網址列上的 category / subcategory 改變時，同步到 state
   React.useEffect(() => {
     if (categoryFromUrl !== null) setSelectedCategory(categoryFromUrl);
   }, [categoryFromUrl]);
   React.useEffect(() => {
-    if (searchFromUrl !== null) setSearch(searchFromUrl);
-  }, [searchFromUrl]);
+    setSelectedSubcategory(subcategoryFromUrl || "");
+  }, [subcategoryFromUrl]);
 
   const [sortMode, setSortMode] = React.useState(() => {
     try {
@@ -712,14 +802,6 @@ function HomePage({ products, rate, loading, error, search: routeSearch }) {
       // ignore
     }
   }, [selectedCategory]);
-
-  React.useEffect(() => {
-    try {
-      localStorage.setItem(SEARCH_KEY, search);
-    } catch {
-      // ignore
-    }
-  }, [search]);
 
   React.useEffect(() => {
     try {
@@ -757,7 +839,16 @@ function HomePage({ products, rate, loading, error, search: routeSearch }) {
         (p) => (p?.subcategory || "").trim() === subcategoryFromUrl
       );
     }
-    const q = search.trim().toLowerCase();
+    if (characterFromUrl) {
+      const charFilter = (characterFromUrl || "").trim();
+      result = result.filter((p) => {
+        const pChar = (
+          (p?.character ?? p?.raw?.character ?? p?.raw?.角色 ?? p?.raw?.角色名稱 ?? "") + ""
+        ).trim();
+        return pChar === charFilter;
+      });
+    }
+    const q = (searchKeyword || "").trim().toLowerCase();
     if (!q) return result;
 
     return result.filter((p) => {
@@ -765,7 +856,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch }) {
       const variant = (p?.variant || "").toLowerCase();
       return name.includes(q) || variant.includes(q);
     });
-  }, [products, selectedCategory, subcategoryFromUrl, search]);
+  }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword]);
 
   const uniqueProducts = React.useMemo(() => {
     const base = getUniqueProductsByName(filteredProducts);
@@ -787,61 +878,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch }) {
     <main className="max-w-6xl mx-auto px-4 py-8">
       {!loading && !error && (
         <div className="mb-6 space-y-3">
-          {categories.length > 0 ? (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-slate-800 tracking-[0.25em] uppercase">
-                  Category
-                </p>
-              </div>
-              <div className="flex gap-2 overflow-auto pb-1">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCategory("ALL")}
-                  className={[
-                    "shrink-0 text-xs px-3.5 py-2 rounded-full border transition-colors whitespace-nowrap",
-                    selectedCategory === "ALL"
-                      ? "bg-slate-900 text-white border-slate-900"
-                      : "bg-white text-slate-700 border-slate-200 hover:border-slate-900",
-                  ].join(" ")}
-                >
-                  全部
-                </button>
-                {categories.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setSelectedCategory(c)}
-                    className={[
-                      "shrink-0 text-xs px-3.5 py-2 rounded-full border transition-colors whitespace-nowrap",
-                      selectedCategory === c
-                        ? "bg-slate-900 text-white border-slate-900"
-                        : "bg-white text-slate-700 border-slate-200 hover:border-slate-900",
-                    ].join(" ")}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="max-w-xs sm:max-w-sm">
-              <label className="block mb-1 text-xs font-semibold text-slate-800 tracking-[0.25em] uppercase">
-                Search
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜尋商品名稱或規格…"
-                  className="w-full rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-slate-900"
-                />
-              </div>
-            </div>
-
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end">
             <div className="sm:text-right">
               <label className="block mb-1 text-xs font-semibold text-slate-800 tracking-[0.25em] uppercase">
                 Sort
@@ -909,9 +946,14 @@ function HomePage({ products, rate, loading, error, search: routeSearch }) {
       )}
 
       {!loading && !error && uniqueProducts.length === 0 && (
-        <p className="text-center text-sm text-slate-500">
-          目前沒有可顯示的商品。
-        </p>
+        <div className="text-center text-sm text-slate-500 space-y-1">
+          <p>目前沒有可顯示的商品。</p>
+          {characterFromUrl ? (
+            <p className="text-xs">
+              篩選角色「{characterFromUrl}」：請確認試算表「角色」欄是否填寫與左側選單完全一致的名稱（如 酷洛米、凱蒂貓、大耳狗）。
+            </p>
+          ) : null}
+        </div>
       )}
 
       <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -998,6 +1040,12 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
             <h1 className="text-lg font-semibold tracking-tight">
               {mainProduct.name}
             </h1>
+
+            {(mainProduct.character || selectedItem?.character) ? (
+              <p className="text-sm text-slate-500">
+                角色：{mainProduct.character || selectedItem?.character}
+              </p>
+            ) : null}
 
             {selectedItem?.price != null ? (
               <div className="space-y-0.5">
@@ -1462,6 +1510,14 @@ function App() {
     navigateTo(full);
   };
 
+  const homeParams = React.useMemo(() => parseSearchParams(route.search || ""), [route.search]);
+
+  // 從網址 ?q= 同步到左側搜尋（例如從連結開啟時）
+  React.useEffect(() => {
+    if (route.name !== "home") return;
+    if (homeParams.q != null) setSidebarSearch(homeParams.q);
+  }, [route.name, homeParams.q]);
+
   let page = null;
   if (route.name === "home") {
     page = (
@@ -1471,6 +1527,9 @@ function App() {
         loading={loading}
         error={error}
         search={route.search}
+        searchKeyword={sidebarSearch}
+        onSearchChange={setSidebarSearch}
+        onNavigateHome={navigateTo}
       />
     );
   } else if (route.name === "product") {
@@ -1499,6 +1558,7 @@ function App() {
         searchKeyword={sidebarSearch}
         onSearchChange={setSidebarSearch}
         onNavigate={handleMenuNavigate}
+        selectedCharacter={homeParams.character || ""}
       />
       {page}
       <CartDrawer
