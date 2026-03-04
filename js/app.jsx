@@ -1018,19 +1018,17 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   );
 }
 
-// 試算表「規格」欄：多個規格用逗號分隔（例：酷洛米,大耳狗 或 酷洛米, 大耳狗）→ 顧客頁會顯示為多個選項
+// 試算表「規格」欄：多個規格用逗號分隔（單欄「凱蒂貓,美樂,布丁狗」或分欄 規格1/2/3）→ 顧客頁會顯示為多個選項
 function splitVariantString(variantStr) {
   if (variantStr == null || variantStr === "") return [];
   const s = String(variantStr).trim();
   if (!s) return [];
-  // 全形逗號、頓號、分號、換行等先換成半形逗號，再依逗號拆分
-  const normalized = s
-    .replace(/[\uFF0C\u3000\u00A0，、;；\n\r\u30FB\u2027\u201A\u2039]/g, ",")
-    .replace(/\s+/g, ",");
-  let parts = normalized.split(/[,]+/).map((part) => part.trim()).filter(Boolean);
-  // 若只得到一筆但內容裡還有逗號（未正規化到的字元），再拆一次，確保「酷洛米,大耳狗」一定變成兩選項
-  if (parts.length === 1 && /[,，]/.test(parts[0])) {
-    parts = parts[0].split(/[,，]+/).map((p) => p.trim()).filter(Boolean);
+  // 依「逗號、頓號、分號、空白、換行」任一或多個拆分，支援單欄「凱蒂貓, 美樂, 布丁狗」與分欄合併後的字串
+  const sep = /[,，、;；\s\n\r\uFF0C\u3000\u00A0]+/;
+  let parts = s.split(sep).map((part) => part.trim()).filter(Boolean);
+  // 若只得到一筆但內容裡還有分隔符，再拆一次
+  if (parts.length === 1 && sep.test(parts[0])) {
+    parts = parts[0].split(sep).map((p) => p.trim()).filter(Boolean);
   }
   return parts;
 }
