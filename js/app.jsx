@@ -145,8 +145,9 @@ function normalizeItem(row, index) {
   const rawSelling =
     row.sellingPrice ?? row.售價 ?? row.台幣售價 ?? row["台幣售價"] ?? null;
   const sellingPrice = toNumberOrNull(rawSelling);
-  // 顧客頁商品卡主圖：優先使用試算表「圖片URL」欄位，有填則不顯示 No Image
+  // 顧客頁商品卡主圖：優先使用試算表「商品主圖」／「圖片URL」欄位，有填則不顯示 No Image
   const image =
+    row["商品主圖"] ??
     row["圖片URL"] ??
     row.imageUrl ??
     row.image ??
