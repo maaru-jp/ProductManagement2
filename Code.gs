@@ -26,9 +26,7 @@ function doGet(e) {
     var data = getApiData();
     var json = JSON.stringify(data);
     return ContentService.createTextOutput(json)
-      .setMimeType(ContentService.MimeType.JSON)
-      .setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-      .setHeader("Pragma", "no-cache");
+      .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     Logger.log(err);
     var errorBody = JSON.stringify({
