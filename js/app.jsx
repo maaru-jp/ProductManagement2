@@ -1001,17 +1001,16 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   );
 }
 
-// 試算表「規格」欄：多個規格用逗號分隔（例：凱蒂貓, 酷洛米）→ 顧客頁會顯示為多個選項
+// 試算表「規格」欄：多個規格用逗號或頓號分隔（例：凱蒂貓, 美樂地 或 凱蒂貓、美樂地）→ 顧客頁會顯示為多個選項
 function splitVariantString(variantStr) {
-  if (!variantStr || typeof variantStr !== "string") return [];
-  // 先將全形逗號、頓號等統一為半形逗號，再拆分，避免試算表貼上後只顯示成一個選項
-  const normalized = String(variantStr)
-    .replace(/[\uFF0C，、;；]/g, ",")
-    .replace(/\n/g, ",");
-  return normalized
-    .split(/[,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  if (variantStr == null || variantStr === "") return [];
+  const s = String(variantStr).trim();
+  if (!s) return [];
+  // 全形逗號、頓號、分號、換行、不間斷空格、日文・等先換成半形逗號，再依逗號拆分
+  const normalized = s
+    .replace(/[\uFF0C\u3000\u00A0，、;；\n\r\u30FB\u2027\u201A\u2039]/g, ",")
+    .replace(/\s+/g, ",");
+  return normalized.split(/[,]+/).map((part) => part.trim()).filter(Boolean);
 }
 
 function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
@@ -1022,37 +1021,49 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
   }, [products, decodedName]);
 
   const group = React.useMemo(() => {
-    const expanded = [];
+    if (!baseGroup.length) return [];
+    const p0 = baseGroup[0];
+    const allParts = [];
+    const seen = new Set();
     for (const p of baseGroup) {
       const rawV = p.variant ?? p.規格 ?? "";
       const variantStr = Array.isArray(rawV)
         ? rawV.map((v) => String(v).trim()).filter(Boolean).join(",")
         : String(rawV || "");
       const parts = splitVariantString(variantStr);
-      if (parts.length <= 1) {
-        expanded.push({ ...p, variant: parts[0] || variantStr || "單一規格" });
-      } else {
-        let variantImgList =
-          p.variantImages && Array.isArray(p.variantImages)
-            ? p.variantImages
-            : typeof p.variantImages === "string"
-              ? splitVariantString(p.variantImages)
-              : [];
-        parts.forEach((part, i) => {
-          const variantImage =
-            variantImgList[i] && String(variantImgList[i]).trim()
-              ? variantImgList[i]
-              : p.image;
-          expanded.push({
-            ...p,
-            variant: part,
-            image: variantImage || p.image,
-            sku: [p.name, part, p.price ?? ""].join("||"),
-          });
-        });
+      for (const part of parts) {
+        if (part && !seen.has(part)) {
+          seen.add(part);
+          allParts.push(part);
+        }
       }
     }
-    return expanded;
+    if (allParts.length === 0) {
+      const rawV = p0.variant ?? p0.規格 ?? "";
+      const v = Array.isArray(rawV) ? rawV.join(",") : String(rawV || "").trim();
+      return [{ ...p0, variant: v || "單一規格", sku: [p0.name, v || "單一規格", p0.price ?? ""].join("||") }];
+    }
+    if (allParts.length === 1) {
+      return [{ ...p0, variant: allParts[0], sku: [p0.name, allParts[0], p0.price ?? ""].join("||") }];
+    }
+    const variantImgList =
+      p0.variantImages && Array.isArray(p0.variantImages)
+        ? p0.variantImages
+        : typeof p0.variantImages === "string"
+          ? splitVariantString(p0.variantImages)
+          : [];
+    return allParts.map((part, i) => {
+      const variantImage =
+        variantImgList[i] && String(variantImgList[i]).trim()
+          ? variantImgList[i]
+          : p0.image;
+      return {
+        ...p0,
+        variant: part,
+        image: variantImage || p0.image,
+        sku: [p0.name, part, p0.price ?? ""].join("||"),
+      };
+    });
   }, [baseGroup]);
 
   if (!decodedName) {
