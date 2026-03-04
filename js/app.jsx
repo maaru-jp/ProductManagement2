@@ -146,14 +146,16 @@ function normalizeItem(row, index) {
     row.sellingPrice ?? row.售價 ?? row.台幣售價 ?? row["台幣售價"] ?? null;
   const sellingPrice = toNumberOrNull(rawSelling);
   // 顧客頁商品卡主圖：優先使用試算表「商品主圖」／「圖片URL」欄位，有填則不顯示 No Image
-  const image =
+  const image = (
     row["商品主圖"] ??
     row["圖片URL"] ??
     row.imageUrl ??
     row.image ??
     row.圖片 ??
+    row["主圖"] ??
     row.Image ??
-    "";
+    ""
+  ).toString().trim();
   const rawVariantImages =
     row.variantImages ?? row.規格圖片 ?? row["規格圖片"] ?? "";
   const variantImages = Array.isArray(rawVariantImages)
@@ -185,7 +187,7 @@ function normalizeItem(row, index) {
   const category = row.category ?? row.分類 ?? "";
   const subcategory = row.subcategory ?? row.子分類 ?? "";
   const character = row.character ?? row.角色 ?? row.角色名稱 ?? "";
-  const stockType = (row.stockType ?? row.現貨預購 ?? row["現貨預購"] ?? "").toString().trim();
+  const stockType = (row.stockType ?? row.貨況 ?? row["貨況"] ?? row.現貨預購 ?? row["現貨預購"] ?? row["現貨/預購"] ?? "").toString().trim();
   const status = (row.status ?? row.狀態 ?? "上架").toString().trim() || "上架";
   const isHot = toBoolFlag(row.hot ?? row.熱銷);
   const isRecommended = toBoolFlag(row.recommended ?? row.推薦);
@@ -745,9 +747,9 @@ function ProductCard({ product, rate }) {
       className="product-card group block bg-white rounded-2xl overflow-hidden border border-slate-200 hover:border-slate-900 transition-colors duration-200"
     >
       <div className="scan-target relative aspect-[4/5] bg-slate-100 overflow-hidden">
-        {product.image ? (
+        {(product.image || (product.variantImages && product.variantImages[0])) ? (
           <img
-            src={product.image}
+            src={product.image || (product.variantImages && product.variantImages[0]) || ""}
             alt={product.name}
             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
