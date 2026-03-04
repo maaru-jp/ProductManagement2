@@ -736,6 +736,24 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
   );
 }
 
+function StockTag({ value, size = "sm" }) {
+  if (!value || !String(value).trim()) return null;
+  const v = String(value).trim();
+  const isPreorder = v === "預購";
+  const isStock = v === "現貨";
+  const base = size === "md" ? "text-xs px-2.5 py-1" : "text-[11px] px-2 py-0.5";
+  const styles = isPreorder
+    ? "bg-violet-100 text-violet-800 border border-violet-200"
+    : isStock
+      ? "bg-amber-100 text-amber-800 border border-amber-200"
+      : "bg-slate-100 text-slate-700 border border-slate-200";
+  return (
+    <span className={"inline-block rounded-md font-medium " + base + " " + styles}>
+      {v}
+    </span>
+  );
+}
+
 function ProductCard({ product, rate }) {
   const twd = getDisplayPrice(product, rate);
 
@@ -791,9 +809,7 @@ function ProductCard({ product, rate }) {
         </h2>
         {(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購) ? (
           <p className="pt-0.5">
-            <span className="inline-block text-[11px] px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
-              {String(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購 || "").trim()}
-            </span>
+            <StockTag value={String(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購 || "").trim()} size="sm" />
           </p>
         ) : null}
         <div className="pt-1">
@@ -1172,9 +1188,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
 
             {(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況) ? (
               <p className="pt-0.5">
-                <span className="inline-block text-xs px-2.5 py-1 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
-                  {String(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況 || "").trim()}
-                </span>
+                <StockTag value={String(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況 || "").trim()} size="md" />
               </p>
             ) : null}
 
