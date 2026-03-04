@@ -1001,11 +1001,15 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   );
 }
 
-// 試算表「規格」欄：多個規格用逗號分隔（例：凱蒂貓, 美樂）→ 顧客頁會顯示為多個選項
+// 試算表「規格」欄：多個規格用逗號分隔（例：凱蒂貓, 酷洛米）→ 顧客頁會顯示為多個選項
 function splitVariantString(variantStr) {
   if (!variantStr || typeof variantStr !== "string") return [];
-  return variantStr
-    .split(/[,，、\n;；]+/)
+  // 先將全形逗號、頓號等統一為半形逗號，再拆分，避免試算表貼上後只顯示成一個選項
+  const normalized = String(variantStr)
+    .replace(/[\uFF0C，、;；]/g, ",")
+    .replace(/\n/g, ",");
+  return normalized
+    .split(/[,]+/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -1032,7 +1036,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
           p.variantImages && Array.isArray(p.variantImages)
             ? p.variantImages
             : typeof p.variantImages === "string"
-              ? p.variantImages.split(/[,，、\n;；]+/).map((s) => s.trim()).filter(Boolean)
+              ? splitVariantString(p.variantImages)
               : [];
         parts.forEach((part, i) => {
           const variantImage =
