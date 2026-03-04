@@ -105,7 +105,7 @@ function buildRowFromProduct(headers, product) {
     "利潤": "profit", "profit": "profit",
     "成本": "cost", "cost": "cost",
     "庫存": "stock", "stock": "stock",
-    "圖片": "image", "圖片URL": "image", "image": "image", "imageUrl": "image",
+    "圖片": "image", "圖片URL": "image", "商品主圖": "image", "image": "image", "imageUrl": "image",
     "規格圖片": "variantImages", "variantImages": "variantImages",
     "描述": "description", "說明": "description", "content": "description", "description": "description",
     "商品介紹": "introduction", "介紹": "introduction", "intro": "introduction", "introduction": "introduction",
@@ -224,7 +224,7 @@ function buildKeyMap(headers) {
     ["利潤", "profit"],
     ["成本", "cost"],
     ["庫存", "stock"],
-    ["圖片", "圖片URL", "image", "Image", "imageUrl"],
+    ["圖片", "圖片URL", "商品主圖", "image", "Image", "imageUrl"],
     ["規格圖片", "variantImages"],
     ["描述", "說明", "content", "description"],
     ["商品介紹", "介紹", "intro", "introduction"],
@@ -243,12 +243,14 @@ function buildKeyMap(headers) {
     ["狀態", "status"]
   ];
   for (var c = 0; c < headers.length; c++) {
-    var h = (headers[c] || "").toString().trim();
+    var raw = (headers[c] || "").toString().trim();
+    var h = raw.replace(/\*+/g, "").trim();
     if (!h) continue;
     for (var a = 0; a < aliases.length; a++) {
       var group = aliases[a];
       for (var g = 0; g < group.length; g++) {
-        if (h === group[g] || h.toLowerCase() === group[g].toLowerCase()) {
+        var alias = (group[g] || "").toString().trim();
+        if (h === alias || h.toLowerCase() === alias.toLowerCase()) {
           map[c] = group[group.length - 1];
           break;
         }
