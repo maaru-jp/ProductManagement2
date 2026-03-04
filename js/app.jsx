@@ -161,7 +161,9 @@ function normalizeItem(row, index) {
     ? rawVariantStock.map((x) => Math.max(0, toNumberOrNull(x) ?? 0))
     : typeof rawVariantStock === "string"
       ? rawVariantStock.split(/[,，、\s]+/).map((s) => Math.max(0, toNumberOrNull(s.trim()) ?? 0))
-      : [];
+      : (typeof rawVariantStock === "number" && !Number.isNaN(rawVariantStock))
+        ? [Math.max(0, rawVariantStock)]
+        : [];
   // 後台只填「庫存」、未填「規格庫存」時，用主庫存作為唯一數量，顧客頁才能顯示/更新
   if (variantStock.length === 0) {
     const mainStock = toNumberOrNull(row.stock ?? row.庫存 ?? row["庫存"]);
@@ -1145,7 +1147,12 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
         }
       }
     }
-    let stockList = Array.isArray(p0.variantStock) ? p0.variantStock : (typeof (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存) === "string" ? (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存 || "").split(/[,，、\s]+/).map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0)) : []);
+    const rawStock = p0.variantStock ?? p0.raw?.variantStock ?? p0.raw?.規格庫存;
+    let stockList = Array.isArray(rawStock)
+      ? rawStock.map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0))
+      : typeof rawStock === "string"
+        ? rawStock.split(/[,，、\s]+/).map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0))
+        : (typeof rawStock === "number" && !Number.isNaN(rawStock)) ? [Math.max(0, rawStock)] : [];
     if (stockList.length === 0 && (p0.stock != null || p0.raw?.stock != null || p0.raw?.庫存 != null)) {
       const mainStock = Math.max(0, parseInt(String(p0.stock ?? p0.raw?.stock ?? p0.raw?.庫存 ?? 0).trim(), 10) || 0);
       stockList = [mainStock];
@@ -1441,7 +1448,8 @@ function CartDrawer({
     lines.push("MAARU 日本萌GO代購登記清單：");
     lines.push("");
 
-    for (const it of items) {
+    items.forEach((it, index) => {
+      const num = index + 1;
       const name = (it.name || "").trim();
       const variant = (it.variant || "").trim();
       const qty = Number(it.qty || 0);
@@ -1450,11 +1458,11 @@ function CartDrawer({
       const lineTWD = unitTWD != null ? unitTWD * qty : null;
 
       if (lineTWD != null) {
-        lines.push(`${lineName} × ${qty}  NT$${Math.round(lineTWD).toLocaleString("zh-TW")}`);
+        lines.push(`${num}. ${lineName} × ${qty}  NT$${Math.round(lineTWD).toLocaleString("zh-TW")}`);
       } else {
-        lines.push(`${lineName} × ${qty}  NT$—`);
+        lines.push(`${num}. ${lineName} × ${qty}  NT$—`);
       }
-    }
+    });
 
     lines.push("");
     if (totalTWD != null && Number.isFinite(totalTWD)) {
@@ -1546,7 +1554,7 @@ function CartDrawer({
             {items.length === 0 ? (
               <p className="text-sm text-slate-500">購物車目前是空的。</p>
             ) : (
-              items.map((it) => (
+              items.map((it, index) => (
                 <div
                   key={it.key}
                   className="flex gap-3 rounded-2xl border border-slate-200 p-3"
@@ -1562,7 +1570,9 @@ function CartDrawer({
                     ) : null}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium line-clamp-2">{it.name}</p>
+                    <p className="text-sm font-medium line-clamp-2">
+                      <span className="text-slate-400 font-normal tabular-nums">{index + 1}.</span> {it.name}
+                    </p>
                     {it.variant ? (
                       <p className="text-xs text-slate-500 mt-0.5">{it.variant}</p>
                     ) : null}
