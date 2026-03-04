@@ -329,21 +329,25 @@ function useProducts() {
     fetchDataRef.current = fetchData;
     fetchData();
 
-    // 切回分頁時重新取得，顧客頁馬上依試算表新狀態顯示
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && fetchDataRef.current) fetchDataRef.current(true);
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
-    // 每 15 秒輪詢一次（帶快取破壞參數），後台編輯庫存/上架下架後顧客頁會顯示最新
-    const interval = setInterval(() => {
+    // 切回分頁或視窗取得焦點時立即重新取得，顧客頁馬上依試算表新狀態顯示
+    const refetch = () => {
       if (fetchDataRef.current) fetchDataRef.current(true);
-    }, 15000);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    const onFocus = () => refetch();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+
+    // 每 5 秒輪詢一次（帶快取破壞參數），後台編輯規格庫存後顧客頁會較快顯示最新數字
+    const interval = setInterval(refetch, 5000);
 
     return () => {
       cancelled = true;
       fetchDataRef.current = null;
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
       clearInterval(interval);
     };
   }, []);
@@ -763,6 +767,7 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
           aria-label="回首頁並重新整理"
         >
           <span className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 bg-white/50 border border-white/60 flex items-center justify-center">
+            {/* 品牌 logo：請將 logo_tondiv.jpg 放在與 index.html 同目錄，否則會 404 */}
             <img
               src="./logo_tondiv.jpg"
               alt="Maaru"
