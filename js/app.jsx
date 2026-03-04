@@ -157,11 +157,17 @@ function normalizeItem(row, index) {
     ""
   ).toString().trim();
   const rawVariantStock = row.variantStock ?? row.規格庫存 ?? row["規格庫存"] ?? "";
-  const variantStock = Array.isArray(rawVariantStock)
+  let variantStock = Array.isArray(rawVariantStock)
     ? rawVariantStock.map((x) => Math.max(0, toNumberOrNull(x) ?? 0))
     : typeof rawVariantStock === "string"
       ? rawVariantStock.split(/[,，、\s]+/).map((s) => Math.max(0, toNumberOrNull(s.trim()) ?? 0))
       : [];
+  // 後台只填「庫存」、未填「規格庫存」時，用主庫存作為唯一數量，顧客頁才能顯示/更新
+  if (variantStock.length === 0) {
+    const mainStock = toNumberOrNull(row.stock ?? row.庫存 ?? row["庫存"]);
+    if (mainStock !== null && mainStock !== undefined) variantStock = [Math.max(0, mainStock)];
+  }
+  const stock = variantStock.length > 0 ? variantStock[0] : toNumberOrNull(row.stock ?? row.庫存 ?? row["庫存"]);
   const rawVariantImages =
     row.variantImages ?? row.規格圖片 ?? row["規格圖片"] ?? "";
   const variantImages = Array.isArray(rawVariantImages)
@@ -214,6 +220,7 @@ function normalizeItem(row, index) {
     image,
     variantImages,
     variantStock,
+    stock,
     description,
     introduction,
     variant,
@@ -238,17 +245,25 @@ function useProducts() {
   React.useEffect(() => {
     let cancelled = false;
 
-    async function fetchData() {
-      setLoading(true);
-      setError(null);
+    function addCacheBust(url) {
+      const sep = url.indexOf("?") >= 0 ? "&" : "?";
+      return url + sep + "_t=" + Date.now();
+    }
+
+    async function fetchData(silent = false) {
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       let lastError = null;
-      const urlsToTry = isLocalDev
+      const baseUrls = isLocalDev
         ? [API_URL_LOCAL, API_URL, CORS_PROXY_PREFIX + encodeURIComponent(API_URL)]
         : [API_URL, CORS_PROXY_PREFIX + encodeURIComponent(API_URL)];
+      const urlsToTry = baseUrls.map(addCacheBust);
       for (const url of urlsToTry) {
         if (cancelled) break;
         try {
-          // 不要加自訂 header，否則會觸發 CORS preflight，Google Script 常不回應
+          // 不要加自訂 header，否則會觸發 CORS preflight，Google Script 常不回應；每次帶 _t 避免快取舊資料
           const res = await fetch(url, { cache: "no-store" });
           if (!res.ok) throw new Error("HTTP " + res.status);
           const text = await res.text();
@@ -310,8 +325,19 @@ function useProducts() {
 
     fetchData();
 
+    // 切回分頁時重新取得，顧客頁馬上依試算表新狀態顯示
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchData(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    // 每 15 秒輪詢一次（帶快取破壞參數），後台編輯庫存/上架下架後顧客頁會顯示最新
+    const interval = setInterval(() => fetchData(true), 15000);
+
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(interval);
     };
   }, []);
 
@@ -1085,7 +1111,11 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
         }
       }
     }
-    const stockList = Array.isArray(p0.variantStock) ? p0.variantStock : (typeof (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存) === "string" ? (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存 || "").split(/[,，、\s]+/).map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0)) : []);
+    let stockList = Array.isArray(p0.variantStock) ? p0.variantStock : (typeof (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存) === "string" ? (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存 || "").split(/[,，、\s]+/).map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0)) : []);
+    if (stockList.length === 0 && (p0.stock != null || p0.raw?.stock != null || p0.raw?.庫存 != null)) {
+      const mainStock = Math.max(0, parseInt(String(p0.stock ?? p0.raw?.stock ?? p0.raw?.庫存 ?? 0).trim(), 10) || 0);
+      stockList = [mainStock];
+    }
     if (allParts.length === 0) {
       const rawV = p0.variant ?? p0.規格 ?? "";
       const v = Array.isArray(rawV) ? rawV.join(",") : String(rawV || "").trim();
