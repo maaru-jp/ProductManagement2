@@ -156,6 +156,12 @@ function normalizeItem(row, index) {
     row.Image ??
     ""
   ).toString().trim();
+  const rawVariantStock = row.variantStock ?? row.規格庫存 ?? row["規格庫存"] ?? "";
+  const variantStock = Array.isArray(rawVariantStock)
+    ? rawVariantStock.map((x) => Math.max(0, toNumberOrNull(x) ?? 0))
+    : typeof rawVariantStock === "string"
+      ? rawVariantStock.split(/[,，、\s]+/).map((s) => Math.max(0, toNumberOrNull(s.trim()) ?? 0))
+      : [];
   const rawVariantImages =
     row.variantImages ?? row.規格圖片 ?? row["規格圖片"] ?? "";
   const variantImages = Array.isArray(rawVariantImages)
@@ -207,6 +213,7 @@ function normalizeItem(row, index) {
     sellingPrice,
     image,
     variantImages,
+    variantStock,
     description,
     introduction,
     variant,
@@ -1078,13 +1085,16 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
         }
       }
     }
+    const stockList = Array.isArray(p0.variantStock) ? p0.variantStock : (typeof (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存) === "string" ? (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存 || "").split(/[,，、\s]+/).map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0)) : []);
     if (allParts.length === 0) {
       const rawV = p0.variant ?? p0.規格 ?? "";
       const v = Array.isArray(rawV) ? rawV.join(",") : String(rawV || "").trim();
-      return [{ ...p0, variant: v || "單一規格", sku: [p0.name, v || "單一規格", p0.price ?? ""].join("||") }];
+      const qty = stockList[0];
+      return [{ ...p0, variant: v || "單一規格", sku: [p0.name, v || "單一規格", p0.price ?? ""].join("||"), variantStockQty: qty !== undefined ? qty : null }];
     }
     if (allParts.length === 1) {
-      return [{ ...p0, variant: allParts[0], sku: [p0.name, allParts[0], p0.price ?? ""].join("||") }];
+      const qty = stockList[0];
+      return [{ ...p0, variant: allParts[0], sku: [p0.name, allParts[0], p0.price ?? ""].join("||"), variantStockQty: qty !== undefined ? qty : null }];
     }
     const variantImgList =
       p0.variantImages && Array.isArray(p0.variantImages)
@@ -1097,11 +1107,13 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
         variantImgList[i] && String(variantImgList[i]).trim()
           ? variantImgList[i]
           : p0.image;
+      const stock = stockList[i] !== undefined ? stockList[i] : null;
       return {
         ...p0,
         variant: part,
         image: variantImage || p0.image,
         sku: [p0.name, part, p0.price ?? ""].join("||"),
+        variantStockQty: stock,
       };
     });
   }, [baseGroup]);
@@ -1188,7 +1200,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
 
             {(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況) ? (
               <p className="pt-0.5">
-                <StockTag value={String(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況 || "").trim()} size="md" />
+                <StockTag value={String(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況 || "").trim()} size="sm" />
               </p>
             ) : null}
 
@@ -1231,14 +1243,20 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                     {group.map((item, index) => {
                       const label =
                         item.variant || (group.length === 1 ? "單一規格" : `款式 ${index + 1}`);
+                      const isSoldOut = item.variantStockQty !== undefined && item.variantStockQty !== null && item.variantStockQty === 0;
                       return (
                         <label
                           key={item.sku || item.id || index}
                           className={[
-                            "flex items-center justify-between gap-3 rounded-xl border px-3 py-2 cursor-pointer",
-                            selectedSku === item.sku
+                            "flex items-center justify-between gap-3 rounded-xl border px-3 py-2",
+                            isSoldOut ? "cursor-not-allowed opacity-70 bg-slate-50 border-slate-200" : "cursor-pointer",
+                            selectedSku === item.sku && !isSoldOut
                               ? "border-slate-900 bg-slate-50"
-                              : "border-slate-200 bg-white hover:border-slate-900",
+                              : selectedSku === item.sku && isSoldOut
+                                ? "border-slate-300 bg-slate-100"
+                                : !isSoldOut
+                                  ? "border-slate-200 bg-white hover:border-slate-900"
+                                  : "border-slate-200 bg-white",
                           ].join(" ")}
                         >
                           <span className="flex items-center gap-2 text-sm text-slate-700 min-w-0">
@@ -1246,7 +1264,8 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                               type="radio"
                               name="variant"
                               checked={selectedSku === item.sku}
-                              onChange={() => setSelectedSku(item.sku)}
+                              onChange={() => !isSoldOut && setSelectedSku(item.sku)}
+                              disabled={isSoldOut}
                             />
                             {item.image ? (
                               <span className="w-8 h-8 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
@@ -1259,6 +1278,9 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                               </span>
                             ) : null}
                             <span>{label}</span>
+                            {isSoldOut ? (
+                              <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded">已售完</span>
+                            ) : null}
                           </span>
                           <span className="text-xs text-slate-500">
                             {getDisplayPrice(item, rate) || ""}
@@ -1270,14 +1292,19 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                 </div>
               ) : null}
 
-              <button
-                type="button"
-                onClick={() => selectedItem && onAddToCart(selectedItem, 1)}
-                disabled={!selectedItem}
-                className="w-full rounded-xl bg-slate-900 text-white text-sm py-3 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed"
-              >
-                加入購物車
-              </button>
+              {(() => {
+                const selectedSoldOut = selectedItem && selectedItem.variantStockQty !== undefined && selectedItem.variantStockQty !== null && selectedItem.variantStockQty === 0;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => selectedItem && !selectedSoldOut && onAddToCart(selectedItem, 1)}
+                    disabled={!selectedItem || selectedSoldOut}
+                    className="w-full rounded-xl bg-slate-900 text-white text-sm py-3 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                  >
+                    {selectedSoldOut ? "已售完" : "加入購物車"}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
