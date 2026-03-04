@@ -90,8 +90,25 @@ function jsonResponse(obj) {
   return output;
 }
 
-/** 依試算表標題列順序，從 product 物件組出一列陣列（寫入用） */
+/** 將規格字串拆成陣列（與顧客頁邏輯一致），用於寫入規格1～規格4 */
+function splitVariantForWrite(variantStr) {
+  if (variantStr == null || variantStr === "") return [];
+  var s = String(variantStr).trim();
+  if (!s) return [];
+  var normalized = s
+    .replace(/[\uFF0C\u3000\u00A0，、;；\n\r\u30FB\u2027\u201A\u2039]/g, ",")
+    .replace(/\s+/g, ",");
+  var parts = normalized.split(/[,]+/).map(function(p) { return p.trim(); }).filter(function(p) { return p; });
+  return parts;
+}
+
+/** 依試算表標題列順序，從 product 物件組出一列陣列（寫入用）。規格1～規格4 會由 variant 拆開寫入。 */
 function buildRowFromProduct(headers, product) {
+  var fullToHalf = function(str) {
+    return String(str).replace(/[\uFF10-\uFF19]/g, function(ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    });
+  };
   var headerToKey = {
     "序號": "id", "編號": "id", "id": "id", "ID": "id",
     "商品名稱": "name", "品名": "name", "title": "name",
@@ -113,13 +130,24 @@ function buildRowFromProduct(headers, product) {
     "推薦": "recommended", "recommended": "recommended",
     "新品": "isNew", "isNew": "isNew",
     "上架日期": "publishedAt", "上架時間": "publishedAt", "publishedAt": "publishedAt",
-    "狀態": "status", "status": "status"
+    "狀態": "status", "status": "status",
+    "貨況": "stockType", "現貨預購": "stockType", "現貨/預購": "stockType", "stockType": "stockType"
   };
+  var variantStr = product.variant != null ? String(product.variant).trim() : (product.規格 != null ? String(product.規格).trim() : "");
+  var variantParts = splitVariantForWrite(variantStr);
   var row = [];
   for (var i = 0; i < headers.length; i++) {
-    var h = headers[i];
-    var key = headerToKey[h] || headerToKey[h.toLowerCase()];
-    var val = key ? (product[key] != null ? product[key] : "") : "";
+    var rawH = (headers[i] || "").toString().trim();
+    var h = fullToHalf(rawH.replace(/\*+/g, "")).trim();
+    var val = "";
+    if (h === "規格1") { val = variantParts[0] != null ? variantParts[0] : ""; }
+    else if (h === "規格2") { val = variantParts[1] != null ? variantParts[1] : ""; }
+    else if (h === "規格3") { val = variantParts[2] != null ? variantParts[2] : ""; }
+    else if (h === "規格4") { val = variantParts[3] != null ? variantParts[3] : ""; }
+    else {
+      var key = headerToKey[h] || headerToKey[h.toLowerCase()];
+      val = key ? (product[key] != null ? product[key] : "") : "";
+    }
     row.push(val === null || val === undefined ? "" : val);
   }
   return row;
@@ -202,6 +230,13 @@ function getProducts(ss) {
     delete obj.variant2;
     delete obj.variant3;
     delete obj.variant4;
+    if (obj.imageUrl != null && obj.imageUrl !== "" && (obj.image == null || obj.image === "")) {
+      obj.image = obj.imageUrl;
+    }
+    if (obj.stockType != null && obj.stockType !== "") {
+      obj.stockType = String(obj.stockType).trim();
+      obj["現貨預購"] = obj.stockType;
+    }
     if (obj.name || obj["商品名稱"] || obj.title || obj["品名"]) {
       list.push(obj);
     }
@@ -240,16 +275,22 @@ function buildKeyMap(headers) {
     ["推薦", "recommended"],
     ["新品", "isNew"],
     ["上架日期", "上架時間", "publishedAt"],
-    ["狀態", "status"]
+    ["狀態", "status"],
+    ["貨況", "現貨預購", "現貨/預購", "stockType"]
   ];
+  var fullToHalf = function(s) {
+    return String(s).replace(/[\uFF10-\uFF19]/g, function(ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    });
+  };
   for (var c = 0; c < headers.length; c++) {
     var raw = (headers[c] || "").toString().trim();
-    var h = raw.replace(/\*+/g, "").trim();
+    var h = fullToHalf(raw.replace(/\*+/g, "")).trim();
     if (!h) continue;
     for (var a = 0; a < aliases.length; a++) {
       var group = aliases[a];
       for (var g = 0; g < group.length; g++) {
-        var alias = (group[g] || "").toString().trim();
+        var alias = fullToHalf((group[g] || "").toString().trim());
         if (h === alias || h.toLowerCase() === alias.toLowerCase()) {
           map[c] = group[group.length - 1];
           break;
