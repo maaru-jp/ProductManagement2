@@ -2415,6 +2415,7 @@
           showMessage("請輸入商品名稱", true);
           return;
         }
+        if (!product.status || String(product.status).trim() === "") product.status = "上架";
         var priceNum = product.price;
         if (priceNum === "" || priceNum === undefined || priceNum === null || (typeof priceNum === "number" && !Number.isFinite(priceNum))) {
           showMessage("請輸入日幣價格", true);
