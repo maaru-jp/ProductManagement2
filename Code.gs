@@ -191,6 +191,17 @@ function getProducts(ss) {
         obj[key] = typeof val === "string" ? val.trim() : val;
       }
     }
+    // 若有規格1、規格2 等分欄，合併成單一規格字串（逗號分隔），顧客頁才能拆成多個選項
+    var variantParts = [obj.variant, obj.variant1, obj.variant2, obj.variant3, obj.variant4].filter(function(x) {
+      return x !== undefined && x !== null && String(x).trim() !== "";
+    });
+    if (variantParts.length > 0) {
+      obj.variant = variantParts.map(function(x) { return String(x).trim(); }).join(", ");
+    }
+    delete obj.variant1;
+    delete obj.variant2;
+    delete obj.variant3;
+    delete obj.variant4;
     if (obj.name || obj["商品名稱"] || obj.title || obj["品名"]) {
       list.push(obj);
     }
@@ -218,6 +229,10 @@ function buildKeyMap(headers) {
     ["描述", "說明", "content", "description"],
     ["商品介紹", "介紹", "intro", "introduction"],
     ["規格", "顏色", "option", "variant"],
+    ["規格1", "variant1"],
+    ["規格2", "variant2"],
+    ["規格3", "variant3"],
+    ["規格4", "variant4"],
     ["分類", "category"],
     ["子分類", "subcategory"],
     ["角色", "角色名稱", "character"],
