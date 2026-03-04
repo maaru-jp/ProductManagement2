@@ -236,6 +236,7 @@ function getProducts(ss) {
     if (obj.stockType != null && obj.stockType !== "") {
       obj.stockType = String(obj.stockType).trim();
       obj["現貨預購"] = obj.stockType;
+      obj["貨況"] = obj.stockType;
     }
     if (obj.name || obj["商品名稱"] || obj.title || obj["品名"]) {
       list.push(obj);
