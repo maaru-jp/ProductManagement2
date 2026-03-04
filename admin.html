@@ -862,10 +862,6 @@
             </div>
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">角色</label>
-            <input type="text" name="character" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：酷洛米、凱蒂貓" />
-          </div>
-          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆，每筆可填對應圖片網址；現貨時可填各規格數量，0 則顧客頁顯示已售完）</label>
             <div id="variantListContainer" class="space-y-2">
               <div class="variant-item-row flex flex-wrap gap-2 items-start">
@@ -1806,7 +1802,8 @@
       function loadProducts() {
         var tbody = document.getElementById("tableBody");
         tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
-        fetch(API_READ)
+        var url = API_READ + (API_READ.indexOf("?") >= 0 ? "&" : "?") + "_t=" + Date.now();
+        fetch(url)
           .then(function(r) { return r.json(); })
           .then(function(data) {
             products = data.products || [];
@@ -1843,7 +1840,9 @@
       }
       function yesNo(v) { return (v === "Y" || v === "1" || v === true) ? "Y" : ""; }
       tbody.innerHTML = list.map(function(p, idx) {
-        var rowNum = products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2;
+        var productIndex = products.indexOf(p);
+        if (productIndex < 0) productIndex = idx;
+        var rowNum = productIndex + 2;
         var name = p.name || p.商品名稱 || "";
         var price = p.price != null ? p.price : p.priceTWD != null ? p.priceTWD : p.日幣價格 != null ? p.日幣價格 : "";
         var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : p.台幣售價 != null ? p.台幣售價 : "";
@@ -1866,43 +1865,56 @@
             "<td class=\"py-3 px-4\">" + escapeHtml(String(stock)) + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(publishedAt) + "</td>" +
             "<td class=\"py-3 px-4\"><div class=\"product-status-track " + (isListed ? "on" : "off") + "\" data-row=\"" + rowNum + "\" data-status=\"" + (isListed ? "上架" : "下架") + "\" title=\"" + (isListed ? "上架中（點擊切換為下架）" : "已下架（點擊切換為上架）") + "\" role=\"button\" tabindex=\"0\"><span class=\"product-status-knob\"></span></div></td>" +
-            "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
+            "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\" data-index=\"" + productIndex + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
             "</tr>";
         }).join("");
         tbody.querySelectorAll(".edit-btn").forEach(function(btn) {
           btn.addEventListener("click", function() {
+            var dataIndex = this.getAttribute("data-index");
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
-            var p = products[rowIndex - 2];
+            var productIndex = dataIndex !== null && dataIndex !== "" ? parseInt(dataIndex, 10) : (rowIndex - 2);
+            if (productIndex < 0 || productIndex >= products.length) return;
+            var p = products[productIndex];
             if (!p) return;
             openModal(true);
-            document.getElementById("editRowIndex").value = rowIndex;
+            document.getElementById("editRowIndex").value = String(productIndex + 2);
             document.getElementById("modalTitle").textContent = "編輯商品";
-            setFormValues({
-              name: p.name || p.商品名稱,
-              category: p.category || p.分類,
-              subcategory: p.subcategory || p.子分類,
-              character: p.character || p.角色,
-              variant: p.variant || p.規格,
-              price: p.price != null ? p.price : p.日幣價格,
-              sellingPrice: p.sellingPrice != null ? p.sellingPrice : p.售價 || p.台幣售價,
-              rate: p.rate != null ? p.rate : p.匯率,
-              profit: p.profit != null ? p.profit : p.利潤,
-              cost: p.cost != null ? p.cost : p.成本,
-              stock: p.stock != null ? p.stock : p.庫存,
-              status: (p.status || p.狀態 || "上架").toString().trim() || "上架",
-              stockType: p.stockType || p.貨況 || p.現貨預購 || "",
-              image: p.image || p.圖片,
-              variantImages: (p.variantImages != null ? p.variantImages : p.規格圖片 != null ? p.規格圖片 : ""),
-              variantStock: (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : ""),
-              description: p.description || p.描述,
-              introduction: p.introduction || p.商品介紹,
-              publishedAt: p.publishedAt || p.上架日期 || "",
-              hot: p.hot || p.熱銷 || "",
-              recommended: p.recommended || p.推薦 || "",
-              isNew: p.isNew || p.新品 || ""
-            });
-            document.getElementById("marginSelect").value = "custom";
-            updateSellingPriceByMargin();
+            var v = function(eng, zh) { var a = p[eng]; var b = p[zh]; if (a !== undefined && a !== null && a !== "") return a; if (b !== undefined && b !== null && b !== "") return b; return ""; };
+            var n = function(eng, zh) { var a = p[eng]; var b = p[zh]; if (a !== undefined && a !== null && Number.isFinite(Number(a))) return Number(a); if (b !== undefined && b !== null && Number.isFinite(Number(b))) return Number(b); return ""; };
+            var variantImgs = p.variantImages != null ? p.variantImages : p.規格圖片;
+            var variantStk = p.variantStock != null ? p.variantStock : p.規格庫存;
+            if (Array.isArray(variantImgs)) variantImgs = variantImgs.join(",");
+            if (Array.isArray(variantStk)) variantStk = variantStk.join(",");
+            var payload = {
+              name: String(v("name", "商品名稱") || ""),
+              category: String(v("category", "分類") || ""),
+              subcategory: String(v("subcategory", "子分類") || ""),
+              variant: String(v("variant", "規格") || ""),
+              price: n("price", "日幣價格"),
+              sellingPrice: p.sellingPrice != null && p.sellingPrice !== "" ? p.sellingPrice : (p.售價 != null && p.售價 !== "" ? p.售價 : (p.台幣售價 != null && p.台幣售價 !== "" ? p.台幣售價 : "")),
+              rate: n("rate", "匯率") || "",
+              profit: n("profit", "利潤") || "",
+              cost: n("cost", "成本") || "",
+              stock: n("stock", "庫存") !== "" ? n("stock", "庫存") : "",
+              status: ((p.status || p.狀態 || "上架") + "").trim() || "上架",
+              stockType: String(p.stockType || p.貨況 || p.現貨預購 || ""),
+              image: String(v("image", "圖片") || ""),
+              variantImages: String(variantImgs != null && variantImgs !== "" ? variantImgs : ""),
+              variantStock: String(variantStk != null && variantStk !== "" ? variantStk : ""),
+              description: String(v("description", "描述") || ""),
+              introduction: String(v("introduction", "商品介紹") || ""),
+              publishedAt: fmtDate(p.publishedAt || p.上架日期),
+              hot: (p.hot === "Y" || p.hot === true || p.hot === "1" || p.熱銷 === "Y" || p.熱銷 === true) ? "Y" : "",
+              recommended: (p.recommended === "Y" || p.recommended === true || p.推薦 === "Y" || p.推薦 === true) ? "Y" : "",
+              isNew: (p.isNew === "Y" || p.isNew === true || p.新品 === "Y" || p.新品 === true) ? "Y" : ""
+            };
+            var marginSelect = document.getElementById("marginSelect");
+            if (marginSelect) marginSelect.value = "custom";
+            setFormValues(payload);
+            setTimeout(function() {
+              updateSellingPriceByMargin();
+              updateCalculatedFields();
+            }, 0);
           });
         });
         tbody.querySelectorAll(".delete-btn").forEach(function(btn) {
@@ -2031,7 +2043,16 @@
       }
 
       var SUBCATEGORY_BY_CATEGORY = {
-        "絨毛玩偶": ["玩偶公仔", "吊飾娃娃"]
+        "絨毛玩偶": ["玩偶公仔", "吊飾娃娃"],
+        "包包時尚小物": ["托特包", "手提包", "肩背包", "斜背包"],
+        "美妝用品": ["托特包", "手提包", "肩背包", "斜背包"],
+        "飾品配件": ["髮飾", "飾品", "飾品收納盒", "眼鏡盒", "鑰匙圈", "手錶", "其他時尚飾品"],
+        "服飾專區": ["上衣", "褲子", "襪子", "其他服飾"],
+        "文具用品": ["年曆", "手帳本", "筆款", "筆盒", "便條紙", "貼紙", "文件收納相關", "辦公事務用品"],
+        "3C用品": ["手機殼"],
+        "居家生活": ["環保餐具", "水壺", "便當袋", "料理用具", "廚房收納"],
+        "兒童專區": ["便當袋", "水壺"],
+        "旅行用品": ["行李吊牌", "行李箱束帶", "旅用收納物", "雨傘", "雨具"]
       };
       function updateSubcategoryOptions(categoryValue) {
         var sel = document.getElementById("productSubcategorySelect");
@@ -2119,27 +2140,69 @@
         syncVariantToHidden();
       }
 
+      var FORM_FIELD_NAMES = ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"];
       function setFormValues(obj) {
         var form = document.getElementById("productForm");
-        updateSubcategoryOptions(obj && obj.category ? obj.category : "");
-        Object.keys(obj || {}).forEach(function(key) {
-          if (key === "hot" || key === "recommended" || key === "isNew" || key === "variant") return;
-          var input = form.querySelector("[name=" + key + "]");
-          if (input) input.value = obj[key] != null ? obj[key] : "";
-        });
+        var isEmpty = !obj || Object.keys(obj).length === 0;
+        if (isEmpty) {
+          updateSubcategoryOptions("");
+          FORM_FIELD_NAMES.forEach(function(key) {
+            if (key === "variant" || key === "variantImages" || key === "variantStock") return;
+            var input = form.querySelector("[name=" + key + "]");
+            if (input) input.value = "";
+          });
+          renderVariantList("", "", "");
+          var si = document.getElementById("statusInput");
+          if (si) si.value = "上架";
+        } else {
+          var categoryVal = String(obj.category != null && obj.category !== undefined ? obj.category : (obj.分類 != null ? obj.分類 : "")).trim();
+          var subcategoryVal = String(obj.subcategory != null && obj.subcategory !== undefined ? obj.subcategory : (obj.子分類 != null ? obj.子分類 : "")).trim();
+          updateSubcategoryOptions(categoryVal);
+          var catSel = form.querySelector("[name=\"category\"]");
+          var subSel = form.querySelector("[name=\"subcategory\"]");
+          if (catSel) {
+            catSel.value = categoryVal;
+            if (catSel.value !== categoryVal && categoryVal) {
+              var opt = document.createElement("option");
+              opt.value = categoryVal;
+              opt.textContent = categoryVal;
+              catSel.appendChild(opt);
+              catSel.value = categoryVal;
+            }
+          }
+          if (subSel) {
+            subSel.value = subcategoryVal;
+            if (subSel.value !== subcategoryVal && subcategoryVal) {
+              var subOpt = document.createElement("option");
+              subOpt.value = subcategoryVal;
+              subOpt.textContent = subcategoryVal;
+              subSel.appendChild(subOpt);
+              subSel.value = subcategoryVal;
+            }
+          }
+          Object.keys(obj).forEach(function(key) {
+            if (key === "hot" || key === "recommended" || key === "isNew" || key === "variant" || key === "category" || key === "subcategory") return;
+            var input = form.querySelector("[name=" + key + "]");
+            if (!input) return;
+            var val = obj[key];
+            if (val == null || val === undefined) val = "";
+            else if (typeof val === "number" && !Number.isFinite(val)) val = "";
+            else if (typeof val !== "string" && typeof val !== "number") val = String(val);
+            input.value = val;
+          });
+          var vStr = (obj.variant != null && obj.variant !== undefined) ? String(obj.variant) : "";
+          var vImgStr = (obj.variantImages != null && obj.variantImages !== undefined) ? (Array.isArray(obj.variantImages) ? obj.variantImages.join(",") : String(obj.variantImages)) : "";
+          var vStockStr = (obj.variantStock != null && obj.variantStock !== undefined) ? (Array.isArray(obj.variantStock) ? obj.variantStock.join(",") : String(obj.variantStock)) : "";
+          renderVariantList(vStr, vImgStr, vStockStr);
+          if (obj.status != null) {
+            var si = document.getElementById("statusInput");
+            if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
+          }
+        }
         ["hot", "recommended", "isNew"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
-          if (el) el.checked = (obj[key] === "Y" || obj[key] === true || obj[key] === "1");
+          if (el) el.checked = (obj && (obj[key] === "Y" || obj[key] === true || obj[key] === "1"));
         });
-        renderVariantList(
-          obj && obj.variant != null ? obj.variant : "",
-          obj && obj.variantImages != null ? obj.variantImages : "",
-          obj && obj.variantStock != null ? obj.variantStock : ""
-        );
-        if (obj && obj.status != null) {
-          var si = document.getElementById("statusInput");
-          if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
-        }
         updateCalculatedFields();
       }
 
@@ -2236,7 +2299,7 @@
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
+        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
