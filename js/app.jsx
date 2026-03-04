@@ -242,13 +242,10 @@ function useProducts() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
 
+  const fetchDataRef = React.useRef(null);
+
   React.useEffect(() => {
     let cancelled = false;
-
-    function addCacheBust(url) {
-      const sep = url.indexOf("?") >= 0 ? "&" : "?";
-      return url + sep + "_t=" + Date.now();
-    }
 
     async function fetchData(silent = false) {
       if (!silent) {
@@ -256,14 +253,16 @@ function useProducts() {
         setError(null);
       }
       let lastError = null;
-      const baseUrls = isLocalDev
-        ? [API_URL_LOCAL, API_URL, CORS_PROXY_PREFIX + encodeURIComponent(API_URL)]
-        : [API_URL, CORS_PROXY_PREFIX + encodeURIComponent(API_URL)];
-      const urlsToTry = baseUrls.map(addCacheBust);
+      const t = Date.now();
+      const sep = API_URL.indexOf("?") >= 0 ? "&" : "?";
+      const apiUrlWithBust = API_URL + sep + "_t=" + t;
+      const urlsToTry = isLocalDev
+        ? [API_URL_LOCAL + (API_URL_LOCAL.indexOf("?") >= 0 ? "&" : "?") + "_t=" + t, apiUrlWithBust, CORS_PROXY_PREFIX + encodeURIComponent(apiUrlWithBust)]
+        : [apiUrlWithBust, CORS_PROXY_PREFIX + encodeURIComponent(apiUrlWithBust)];
       for (const url of urlsToTry) {
         if (cancelled) break;
         try {
-          // 不要加自訂 header，否則會觸發 CORS preflight，Google Script 常不回應；每次帶 _t 避免快取舊資料
+          // 不要加自訂 header，否則會觸發 CORS preflight；URL 已帶 _t 讓 Google／proxy 不回傳快取
           const res = await fetch(url, { cache: "no-store" });
           if (!res.ok) throw new Error("HTTP " + res.status);
           const text = await res.text();
@@ -323,25 +322,33 @@ function useProducts() {
       }
     }
 
+    fetchDataRef.current = fetchData;
     fetchData();
 
     // 切回分頁時重新取得，顧客頁馬上依試算表新狀態顯示
     const onVisible = () => {
-      if (document.visibilityState === "visible") fetchData(true);
+      if (document.visibilityState === "visible" && fetchDataRef.current) fetchDataRef.current(true);
     };
     document.addEventListener("visibilitychange", onVisible);
 
     // 每 15 秒輪詢一次（帶快取破壞參數），後台編輯庫存/上架下架後顧客頁會顯示最新
-    const interval = setInterval(() => fetchData(true), 15000);
+    const interval = setInterval(() => {
+      if (fetchDataRef.current) fetchDataRef.current(true);
+    }, 15000);
 
     return () => {
       cancelled = true;
+      fetchDataRef.current = null;
       document.removeEventListener("visibilitychange", onVisible);
       clearInterval(interval);
     };
   }, []);
 
-  return { products, rate, loading, error };
+  const refetch = React.useCallback(function refetchProducts() {
+    if (fetchDataRef.current) fetchDataRef.current(true);
+  }, []);
+
+  return { products, rate, loading, error, refetch };
 }
 
 function getUniqueProductsByName(products) {
@@ -712,11 +719,11 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
   );
 }
 
-function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
+function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
   return (
     <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200">
       <div className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-[1fr_auto_1fr] items-center">
-        <div className="flex justify-start">
+        <div className="flex justify-start items-center gap-2">
           <button
             type="button"
             onClick={onOpenMenu}
@@ -725,6 +732,17 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
           >
             <span className="text-lg leading-none">☰</span>
           </button>
+          {onRefetch && (
+            <button
+              type="button"
+              onClick={onRefetch}
+              className="inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors text-slate-600"
+              aria-label="重新載入商品與庫存"
+              title="重新載入商品與庫存（後台有更新時可按此）"
+            >
+              <span className="text-lg leading-none">🔄</span>
+            </button>
+          )}
         </div>
 
         <Link
@@ -1651,7 +1669,7 @@ function NotFoundPage() {
 }
 
 function App() {
-  const { products, rate, loading, error } = useProducts();
+  const { products, rate, loading, error, refetch } = useProducts();
   const path = useHashPath();
   const route = React.useMemo(() => getRoute(path), [path]);
 
@@ -1777,6 +1795,7 @@ function App() {
         cartCount={cartCount}
         onOpenCart={() => setCartOpen(true)}
         onOpenMenu={() => setMenuOpen(true)}
+        onRefetch={refetch}
       />
       <CategorySidebar
         open={menuOpen}
