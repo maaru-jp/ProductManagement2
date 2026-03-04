@@ -205,8 +205,8 @@ function buildRowFromProduct(headers, product) {
 }
 
 /**
- * 從試算表組出前端要的 { products: [...], rate: number }。
- * 台幣售價來自商品工作表的「售價」/「台幣售價」；匯率來自「設定」工作表（有則用於日幣換算）。
+ * 從試算表組出前端要的 { products: [...], rate: number, characters: [...] }。
+ * 台幣售價來自商品工作表的「售價」/「台幣售價」；匯率來自「設定」工作表；角色來自「角色」工作表。
  */
 function getApiData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -220,8 +220,38 @@ function getApiData() {
   }
   return {
     rate: getRate(ss),
-    products: products
+    products: products,
+    characters: getCharacters(ss)
   };
+}
+
+/**
+ * 從「角色」工作表讀取角色名稱與圖片，回傳 [{ name, image }, ...]。
+ * 工作表名稱：角色；第一列為標題，支援「角色」「角色圖片」或「角色名稱」「圖片」等欄位名。
+ */
+function getCharacters(ss) {
+  var sheet = ss.getSheetByName("角色");
+  if (!sheet) return [];
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+  var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
+  var nameCol = -1;
+  var imageCol = -1;
+  for (var c = 0; c < headers.length; c++) {
+    var h = headers[c];
+    if (h === "角色" || h === "角色名稱" || h === "name" || h === "名稱") nameCol = c;
+    if (h === "角色圖片" || h === "圖片" || h === "image" || h === "圖片URL" || h === "url") imageCol = c;
+  }
+  if (nameCol < 0) return [];
+  var list = [];
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var name = row[nameCol] != null ? String(row[nameCol]).trim() : "";
+    if (!name) continue;
+    var image = imageCol >= 0 && row[imageCol] != null ? String(row[imageCol]).trim() : "";
+    list.push({ name: name, image: image });
+  }
+  return list;
 }
 
 /**
