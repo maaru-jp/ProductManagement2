@@ -242,11 +242,12 @@
                   <th class="text-left py-3 px-4 font-medium text-slate-600">庫存</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">上架日期</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">現貨/預購</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">操作</th>
                 </tr>
               </thead>
               <tbody id="tableBody">
-                <tr><td colspan="11" class="py-8 text-center text-slate-500">載入中...</td></tr>
+                <tr><td colspan="12" class="py-8 text-center text-slate-500">載入中...</td></tr>
               </tbody>
             </table>
           </div>
@@ -855,6 +856,14 @@
               <div id="statusTrack" class="on"><span id="statusKnob"></span></div>
               <span id="statusLabel" class="text-sm font-medium text-emerald-600">上架中</span>
             </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">現貨／預購</label>
+            <select name="stockType" id="stockTypeSelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="">請選擇</option>
+              <option value="現貨">現貨</option>
+              <option value="預購">預購</option>
+            </select>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">商品主圖</label>
@@ -1760,6 +1769,7 @@
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
         var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
         var isListed = status === "上架";
+        var stockType = (p.stockType || p.現貨預購 || "").toString().trim();
         return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\">" +
             "<td class=\"py-3 px-4 text-slate-500\">" + rowNum + "</td>" +
             "<td class=\"py-3 px-4\"><img src=\"" + (img || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E") + "\" alt=\"\" class=\"w-10 h-10 object-cover rounded\" onerror=\"this.src='data:image/svg+xml,%26%23x3C%3Bsvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27 fill=%27%23cbd5e1%27%26%23x3E%26%23x3C%3Brect width=%2740%27 height=%2740%27/%26%23x3E%26%23x3C%3B/svg%26%23x3E%3B'\" /></td>" +
@@ -1771,6 +1781,7 @@
             "<td class=\"py-3 px-4\">" + escapeHtml(String(stock)) + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(publishedAt) + "</td>" +
             "<td class=\"py-3 px-4\"><span class=\"status-tag " + (isListed ? "text-emerald-600" : "text-slate-400") + " text-xs\">" + (isListed ? "上架中" : "已下架") + "</span></td>" +
+            "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(stockType || "—") + "</td>" +
             "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
             "</tr>";
         }).join("");
@@ -1795,6 +1806,7 @@
               cost: p.cost != null ? p.cost : p.成本,
               stock: p.stock != null ? p.stock : p.庫存,
               status: (p.status || p.狀態 || "上架").toString().trim() || "上架",
+              stockType: p.stockType || p.現貨預購 || "",
               image: p.image || p.圖片,
               variantImages: (p.variantImages != null ? p.variantImages : p.規格圖片 != null ? p.規格圖片 : ""),
               description: p.description || p.描述,
@@ -2040,7 +2052,7 @@
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "image", "variantImages", "description", "introduction", "publishedAt"].forEach(function(key) {
+        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "description", "introduction", "publishedAt"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
@@ -2177,7 +2189,7 @@
 
       document.getElementById("btnExport").addEventListener("click", function() {
         if (products.length === 0) { showMessage("尚無商品可匯出", true); return; }
-        var headers = ["商品名稱", "分類", "子分類", "角色", "規格", "日幣價格", "售價", "利潤", "成本", "庫存", "圖片", "描述"];
+        var headers = ["商品名稱", "分類", "子分類", "角色", "規格", "日幣價格", "售價", "利潤", "成本", "庫存", "現貨預購", "圖片", "描述"];
         var rows = [headers.join(",")];
         products.forEach(function(p) {
           var row = [
@@ -2191,6 +2203,7 @@
             (p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : ""),
             (p.cost != null ? p.cost : p.成本 != null ? p.成本 : ""),
             (p.stock != null ? p.stock : p.庫存 != null ? p.庫存 : ""),
+            (p.stockType || p.現貨預購 || ""),
             (p.image || p.圖片 || ""),
             (p.description || p.描述 || "").replace(/"/g, '""')
           ];
