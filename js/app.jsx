@@ -145,19 +145,20 @@ function normalizeItem(row, index) {
   const rawSelling =
     row.sellingPrice ?? row.售價 ?? row.台幣售價 ?? row["台幣售價"] ?? null;
   const sellingPrice = toNumberOrNull(rawSelling);
+  // 顧客頁商品卡主圖：優先使用試算表「圖片URL」欄位，有填則不顯示 No Image
   const image =
+    row["圖片URL"] ??
+    row.imageUrl ??
     row.image ??
     row.圖片 ??
-    row.imageUrl ??
     row.Image ??
-    row["圖片URL"] ??
     "";
   const rawVariantImages =
     row.variantImages ?? row.規格圖片 ?? row["規格圖片"] ?? "";
   const variantImages = Array.isArray(rawVariantImages)
     ? rawVariantImages.filter((u) => u && String(u).trim())
     : typeof rawVariantImages === "string"
-      ? rawVariantImages.split(/[,，、\n]/).map((s) => s.trim()).filter(Boolean)
+      ? rawVariantImages.split(/[,，、\n;；]+/).map((s) => s.trim()).filter(Boolean)
       : [];
   const description =
     row.description ?? row.描述 ?? row.說明 ?? row.content ?? "";
@@ -167,7 +168,10 @@ function normalizeItem(row, index) {
     row.介紹 ??
     row.intro ??
     "";
-  const variant = row.variant ?? row.規格 ?? row.顏色 ?? row.option ?? "";
+  const rawVariant = row.variant ?? row.規格 ?? row.顏色 ?? row.option ?? "";
+  const variant = Array.isArray(rawVariant)
+    ? rawVariant.map((v) => String(v).trim()).filter(Boolean).join(",")
+    : (rawVariant != null && rawVariant !== "" ? String(rawVariant).trim() : "");
   const category = row.category ?? row.分類 ?? "";
   const subcategory = row.subcategory ?? row.子分類 ?? "";
   const character = row.character ?? row.角色 ?? row.角色名稱 ?? "";
@@ -997,10 +1001,11 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   );
 }
 
+// 試算表「規格」欄：多個規格用逗號分隔（例：凱蒂貓, 美樂）→ 顧客頁會顯示為多個選項
 function splitVariantString(variantStr) {
   if (!variantStr || typeof variantStr !== "string") return [];
   return variantStr
-    .split(/[,，、\n]/)
+    .split(/[,，、\n;；]+/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -1015,15 +1020,19 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
   const group = React.useMemo(() => {
     const expanded = [];
     for (const p of baseGroup) {
-      const parts = splitVariantString(p.variant || p.規格 || "");
+      const rawV = p.variant ?? p.規格 ?? "";
+      const variantStr = Array.isArray(rawV)
+        ? rawV.map((v) => String(v).trim()).filter(Boolean).join(",")
+        : String(rawV || "");
+      const parts = splitVariantString(variantStr);
       if (parts.length <= 1) {
-        expanded.push(p);
+        expanded.push({ ...p, variant: parts[0] || variantStr || "單一規格" });
       } else {
         let variantImgList =
           p.variantImages && Array.isArray(p.variantImages)
             ? p.variantImages
             : typeof p.variantImages === "string"
-              ? p.variantImages.split(/[,，、\n]/).map((s) => s.trim()).filter(Boolean)
+              ? p.variantImages.split(/[,，、\n;；]+/).map((s) => s.trim()).filter(Boolean)
               : [];
         parts.forEach((part, i) => {
           const variantImage =
@@ -1074,7 +1083,11 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
     return group.find((g) => g.sku === selectedSku) || group[0];
   }, [group, selectedSku]);
 
-  const displayImage = selectedItem?.image || mainProduct?.image || "";
+  const displayImage =
+    selectedItem?.image ||
+    mainProduct?.image ||
+    (mainProduct?.variantImages && mainProduct.variantImages[0]) ||
+    "";
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-8">
