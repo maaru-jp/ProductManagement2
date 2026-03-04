@@ -1018,16 +1018,21 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   );
 }
 
-// 試算表「規格」欄：多個規格用逗號或頓號分隔（例：凱蒂貓, 美樂地 或 凱蒂貓、美樂地）→ 顧客頁會顯示為多個選項
+// 試算表「規格」欄：多個規格用逗號分隔（例：酷洛米,大耳狗 或 酷洛米, 大耳狗）→ 顧客頁會顯示為多個選項
 function splitVariantString(variantStr) {
   if (variantStr == null || variantStr === "") return [];
   const s = String(variantStr).trim();
   if (!s) return [];
-  // 全形逗號、頓號、分號、換行、不間斷空格、日文・等先換成半形逗號，再依逗號拆分
+  // 全形逗號、頓號、分號、換行等先換成半形逗號，再依逗號拆分
   const normalized = s
     .replace(/[\uFF0C\u3000\u00A0，、;；\n\r\u30FB\u2027\u201A\u2039]/g, ",")
     .replace(/\s+/g, ",");
-  return normalized.split(/[,]+/).map((part) => part.trim()).filter(Boolean);
+  let parts = normalized.split(/[,]+/).map((part) => part.trim()).filter(Boolean);
+  // 若只得到一筆但內容裡還有逗號（未正規化到的字元），再拆一次，確保「酷洛米,大耳狗」一定變成兩選項
+  if (parts.length === 1 && /[,，]/.test(parts[0])) {
+    parts = parts[0].split(/[,，]+/).map((p) => p.trim()).filter(Boolean);
+  }
+  return parts;
 }
 
 function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
