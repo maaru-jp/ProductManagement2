@@ -26,7 +26,9 @@ function doGet(e) {
     var data = getApiData();
     var json = JSON.stringify(data);
     return ContentService.createTextOutput(json)
-      .setMimeType(ContentService.MimeType.JSON);
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+      .setHeader("Pragma", "no-cache");
   } catch (err) {
     Logger.log(err);
     var errorBody = JSON.stringify({
@@ -194,6 +196,9 @@ function buildRowFromProduct(headers, product) {
     else {
       var key = headerToKey[h] || headerToKey[h.toLowerCase()];
       val = key ? (product[key] != null ? product[key] : "") : "";
+      if ((h === "狀態" || (key && key === "status")) && (val === "" || val == null || String(val).trim() === "")) {
+        val = "上架";
+      }
     }
     row.push(val === null || val === undefined ? "" : val);
   }
@@ -359,6 +364,9 @@ function getProducts(ss) {
     var hasSplitStock = stockParts.some(function(x) { return x !== ""; });
     if (hasSplitStock) {
       obj.variantStock = stockParts.map(function(x) { return x === "" ? "0" : String(x); }).join(",");
+      obj["規格庫存"] = obj.variantStock;
+    } else if (obj.variantStock != null && obj.variantStock !== "") {
+      obj.variantStock = String(obj.variantStock).trim();
       obj["規格庫存"] = obj.variantStock;
     }
     delete obj.variantStock1;
