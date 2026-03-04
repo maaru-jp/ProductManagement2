@@ -754,19 +754,34 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
           </button>
         </div>
 
-        <Link
-          to="/"
-          className="flex items-center justify-center transition-transform duration-150 hover:opacity-90 active:scale-95"
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="flex items-center justify-center gap-3 mx-auto px-4 py-2.5 rounded-2xl bg-white/40 backdrop-blur-xl border border-white/60 shadow-lg shadow-slate-200/50 transition-all duration-300 hover:bg-white/60 hover:shadow-xl hover:shadow-slate-200/60 active:scale-95"
+          aria-label="回首頁並重新整理"
         >
-          <div className="flex flex-col leading-tight text-center">
-            <span className="text-sm font-semibold tracking-[0.2em] uppercase">
+          <span className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 bg-white/50 border border-white/60 flex items-center justify-center">
+            <img
+              src="./logo_tondiv.jpg"
+              alt="Maaru"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.target.style.display = "none";
+                const fallback = e.target.nextElementSibling;
+                if (fallback) fallback.style.display = "block";
+              }}
+            />
+            <span className="hidden text-slate-600 font-semibold text-lg" style={{ display: "none" }}>M</span>
+          </span>
+          <div className="flex flex-col leading-tight text-left">
+            <span className="text-sm font-semibold tracking-[0.2em] uppercase text-slate-800">
               Maaru
             </span>
-            <span className="text-xs text-slate-500 tracking-[0.15em] uppercase">
+            <span className="text-xs text-slate-600/90 tracking-[0.15em] uppercase">
               Select Shop
             </span>
           </div>
-        </Link>
+        </button>
 
         <div className="flex justify-end">
           <button
