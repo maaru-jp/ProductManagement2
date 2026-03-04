@@ -169,13 +169,23 @@ function normalizeItem(row, index) {
     row.介紹 ??
     row.intro ??
     "";
-  const rawVariant = row.variant ?? row.規格 ?? row.顏色 ?? row.option ?? "";
+  let rawVariant = row.variant ?? row.規格 ?? row.顏色 ?? row.option ?? "";
+  if (rawVariant == null || String(rawVariant).trim() === "") {
+    const parts = [
+      row.規格1 ?? row.variant1,
+      row.規格2 ?? row.variant2,
+      row.規格3 ?? row.variant3,
+      row.規格4 ?? row.variant4,
+    ].filter((x) => x != null && String(x).trim() !== "");
+    rawVariant = parts.length ? parts.map((x) => String(x).trim()).join(", ") : "";
+  }
   const variant = Array.isArray(rawVariant)
     ? rawVariant.map((v) => String(v).trim()).filter(Boolean).join(",")
     : (rawVariant != null && rawVariant !== "" ? String(rawVariant).trim() : "");
   const category = row.category ?? row.分類 ?? "";
   const subcategory = row.subcategory ?? row.子分類 ?? "";
   const character = row.character ?? row.角色 ?? row.角色名稱 ?? "";
+  const stockType = (row.stockType ?? row.現貨預購 ?? row["現貨預購"] ?? "").toString().trim();
   const status = (row.status ?? row.狀態 ?? "上架").toString().trim() || "上架";
   const isHot = toBoolFlag(row.hot ?? row.熱銷);
   const isRecommended = toBoolFlag(row.recommended ?? row.推薦);
@@ -201,6 +211,7 @@ function normalizeItem(row, index) {
     category,
     subcategory,
     character,
+    stockType,
     status,
     isHot,
     isRecommended,
@@ -747,7 +758,7 @@ function ProductCard({ product, rate }) {
           </div>
         )}
 
-        {(product.isHot || product.isRecommended || product.isNew || product.character) ? (
+        {(product.isHot || product.isRecommended || product.isNew || product.character || product.stockType) ? (
           <div className="absolute top-3 left-3 flex flex-wrap gap-1">
             {product.isHot ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-rose-600 text-white shadow-sm">
@@ -762,6 +773,11 @@ function ProductCard({ product, rate }) {
             {product.isNew ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-600 text-white shadow-sm">
                 新品
+              </span>
+            ) : null}
+            {product.stockType ? (
+              <span className="text-[11px] px-2 py-1 rounded-full bg-amber-600 text-white shadow-sm">
+                {product.stockType}
               </span>
             ) : null}
             {product.character ? (
@@ -1144,6 +1160,12 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
             {(mainProduct.character || selectedItem?.character) ? (
               <p className="text-sm text-slate-500">
                 角色：{mainProduct.character || selectedItem?.character}
+              </p>
+            ) : null}
+
+            {(mainProduct.stockType || selectedItem?.stockType) ? (
+              <p className="text-sm text-slate-600 font-medium">
+                {mainProduct.stockType || selectedItem?.stockType}
               </p>
             ) : null}
 
