@@ -604,10 +604,11 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                 {(characters.length > 0
                   ? (() => {
                       const byName = new Map(characters.map((c) => [c.name, c]));
+                      const allChar = characters.find((c) => (c.name || "").trim() === "全部");
                       const ordered = CHARACTER_ORDER.filter((name) => byName.has(name));
-                      const rest = characters.filter((c) => !CHARACTER_ORDER.includes(c.name));
+                      const rest = characters.filter((c) => !CHARACTER_ORDER.includes(c.name) && (c.name || "").trim() !== "全部");
                       return [
-                        { value: "", label: "全部", image: null },
+                        { value: "", label: "全部", image: (allChar && allChar.image && String(allChar.image).trim()) ? allChar.image : null },
                         ...ordered.map((name) => {
                           const c = byName.get(name);
                           return { value: c.name, label: c.name, image: c.image || null };
@@ -829,7 +830,7 @@ function ProductCard({ product, rate }) {
           </div>
         )}
 
-        {(product.isHot || product.isRecommended || product.isNew || product.character) ? (
+        {(product.isHot || product.isRecommended || product.isNew) ? (
           <div className="absolute top-3 left-3 flex flex-wrap gap-1">
             {product.isHot ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-rose-600 text-white shadow-sm">
@@ -844,11 +845,6 @@ function ProductCard({ product, rate }) {
             {product.isNew ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-600 text-white shadow-sm">
                 新品
-              </span>
-            ) : null}
-            {product.character ? (
-              <span className="text-[11px] px-2 py-1 rounded-full bg-slate-600 text-white shadow-sm">
-                {product.character}
               </span>
             ) : null}
           </div>
@@ -963,23 +959,28 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
         (p) => (p?.subcategory || "").trim() === subcategoryFromUrl
       );
     }
+    const q = (searchKeyword || "").trim().toLowerCase();
+    // 有輸入搜尋關鍵字時：依「商品名稱」與「規格」匹配，不分角色列出所有符合項目（例如搜尋「吊飾娃娃」即列出名稱或規格含吊飾娃娃的所有商品）
+    if (q) {
+      result = result.filter((p) => {
+        const name = (p?.name || "").toLowerCase();
+        const variant = (p?.variant || "").toLowerCase();
+        return name.includes(q) || variant.includes(q);
+      });
+      return result;
+    }
+    // 未搜尋時：角色篩選（點「全部」= 所有上架商品；點單一角色 = 角色欄或規格含該角色的商品）
     if (characterFromUrl) {
       const charFilter = (characterFromUrl || "").trim();
       result = result.filter((p) => {
         const pChar = (
           (p?.character ?? p?.raw?.character ?? p?.raw?.角色 ?? p?.raw?.角色名稱 ?? "") + ""
         ).trim();
-        return pChar === charFilter;
+        const variantStr = (p?.variant ?? p?.raw?.規格 ?? "").toString().trim();
+        return pChar === charFilter || variantStr.includes(charFilter);
       });
     }
-    const q = (searchKeyword || "").trim().toLowerCase();
-    if (!q) return result;
-
-    return result.filter((p) => {
-      const name = (p?.name || "").toLowerCase();
-      const variant = (p?.variant || "").toLowerCase();
-      return name.includes(q) || variant.includes(q);
-    });
+    return result;
   }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword]);
 
   const uniqueProducts = React.useMemo(() => {
@@ -1239,12 +1240,6 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
             <h1 className="text-lg font-semibold tracking-tight">
               {mainProduct.name}
             </h1>
-
-            {(mainProduct.character || selectedItem?.character) ? (
-              <p className="text-sm text-slate-500">
-                角色：{mainProduct.character || selectedItem?.character}
-              </p>
-            ) : null}
 
             {(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況) ? (
               <p className="pt-0.5">
