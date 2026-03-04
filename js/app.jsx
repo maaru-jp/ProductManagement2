@@ -239,6 +239,7 @@ function normalizeItem(row, index) {
 function useProducts() {
   const [products, setProducts] = React.useState([]);
   const [rate, setRate] = React.useState(null);
+  const [characters, setCharacters] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
 
@@ -299,6 +300,7 @@ function useProducts() {
               (x) => (x.status || "").trim() === "" || (x.status || "").trim().toLowerCase() === "上架"
             );
             setProducts(onlyListed);
+            setCharacters(Array.isArray(data.characters) ? data.characters : []);
           }
           lastError = null;
           break;
@@ -348,7 +350,7 @@ function useProducts() {
     if (fetchDataRef.current) fetchDataRef.current(true);
   }, []);
 
-  return { products, rate, loading, error, refetch };
+  return { products, rate, characters, loading, error, refetch };
 }
 
 function getUniqueProductsByName(products) {
@@ -516,7 +518,7 @@ const STORE_CATEGORIES = [
   "使用者指南",
 ];
 
-function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate, selectedCharacter = "" }) {
+function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate, selectedCharacter = "", characters = [] }) {
   const searchRef = React.useRef(null);
   const characterCarouselRef = React.useRef(null);
   const [expandedStoreKey, setExpandedStoreKey] = React.useState(null);
@@ -591,7 +593,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
             </div>
           </div>
 
-          {/* 所有角色：圓形可左右滑動，點擊列出該角色所有商品 */}
+          {/* 所有角色：圓形可左右滑動，點擊列出該角色所有商品；圖片來自試算表「角色」工作表 */}
           <div className="px-4 pt-2 pb-4">
             <p className="text-xs font-semibold text-slate-500 tracking-wider mb-3 text-center">
               所有角色
@@ -610,7 +612,10 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                 className="flex gap-3 overflow-x-auto scroll-smooth scrollbar-hide py-2 px-10"
                 style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
               >
-                {CHARACTER_LIST.map((char) => {
+                {(characters.length > 0
+                  ? [{ value: "", label: "全部", image: null }, ...characters.map((c) => ({ value: c.name, label: c.name, image: c.image || null }))]
+                  : CHARACTER_LIST.map((c) => ({ value: c.value, label: c.label, image: null }))
+                ).map((char) => {
                   const isSelected = (char.value || "").trim() === (selectedCharacter || "").trim();
                   return (
                     <button
@@ -630,13 +635,26 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                     >
                       <span
                         className={[
-                          "w-12 h-12 rounded-full flex items-center justify-center text-slate-700 text-sm font-medium border-2 transition-colors",
-                          isSelected
-                            ? "bg-slate-200 border-slate-400 ring-2 ring-slate-300"
-                            : "bg-slate-100 border-slate-200 group-hover:bg-slate-200",
+                          "w-12 h-12 rounded-full flex items-center justify-center text-slate-700 text-sm font-medium border-2 transition-colors overflow-hidden bg-slate-100 border-slate-200",
+                          isSelected ? "ring-2 ring-slate-300 border-slate-400" : "group-hover:bg-slate-200",
                         ].join(" ")}
                       >
-                        {char.label.slice(0, 1)}
+                        {char.image && char.image.trim() ? (
+                          <img
+                            src={char.image}
+                            alt={char.label}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            onError={(e) => {
+                              e.target.style.display = "none";
+                              const fallback = e.target.parentElement.querySelector(".char-fallback");
+                              if (fallback) fallback.style.display = "";
+                            }}
+                          />
+                        ) : null}
+                        <span className={"char-fallback " + (char.image && char.image.trim() ? "hidden" : "")} style={{ display: char.image && char.image.trim() ? "none" : undefined }}>
+                          {char.label ? char.label.slice(0, 1) : ""}
+                        </span>
                       </span>
                       <span className="text-[10px] text-slate-600 text-center max-w-[48px] leading-tight">
                         {char.label}
@@ -1661,7 +1679,7 @@ function NotFoundPage() {
 }
 
 function App() {
-  const { products, rate, loading, error, refetch } = useProducts();
+  const { products, rate, characters, loading, error, refetch } = useProducts();
   const path = useHashPath();
   const route = React.useMemo(() => getRoute(path), [path]);
 
@@ -1796,6 +1814,7 @@ function App() {
         onSearchChange={setSidebarSearch}
         onNavigate={handleMenuNavigate}
         selectedCharacter={homeParams.character || ""}
+        characters={characters}
       />
       {page}
       <CartDrawer
