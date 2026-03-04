@@ -736,7 +736,7 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
             <button
               type="button"
               onClick={onRefetch}
-              className="inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors text-slate-600"
+              className="inline-flex items-center justify-center w-11 h-11 text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded transition-colors"
               aria-label="重新載入商品與庫存"
               title="重新載入商品與庫存（後台有更新時可按此）"
             >
@@ -747,17 +747,9 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
 
         <Link
           to="/"
-          className="flex items-center space-x-2 justify-center transition-transform duration-150 hover:opacity-90 active:scale-95"
+          className="flex items-center justify-center transition-transform duration-150 hover:opacity-90 active:scale-95"
         >
-          <div className="w-11 h-11 rounded-full overflow-hidden bg-slate-900 flex items-center justify-center">
-            <img
-              src="./品牌logo_tondiv.jpg"
-              alt="Maaru 品牌 Logo"
-              className="w-full h-full object-contain"
-              loading="lazy"
-            />
-          </div>
-          <div className="flex flex-col leading-tight text-left">
+          <div className="flex flex-col leading-tight text-center">
             <span className="text-sm font-semibold tracking-[0.2em] uppercase">
               Maaru
             </span>
