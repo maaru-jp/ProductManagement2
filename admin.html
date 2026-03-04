@@ -797,17 +797,19 @@
             <input type="text" name="character" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：酷洛米、凱蒂貓" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆，每筆可填對應圖片網址）</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆，每筆可填對應圖片網址；現貨時可填各規格數量，0 則顧客頁顯示已售完）</label>
             <div id="variantListContainer" class="space-y-2">
               <div class="variant-item-row flex flex-wrap gap-2 items-start">
                 <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="規格名稱，例：酷洛米" />
                 <input type="text" class="variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="該規格圖片 URL（選填）" />
+                <input type="number" class="variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm" placeholder="數量" min="0" step="1" title="現貨時填，0＝已售完" />
                 <button type="button" class="variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" title="移除">✕</button>
               </div>
             </div>
             <button type="button" id="btnAddVariant" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50">+ 新增規格品項</button>
             <input type="hidden" name="variant" id="variantValue" value="" />
             <input type="hidden" name="variantImages" id="variantImagesValue" value="" />
+            <input type="hidden" name="variantStock" id="variantStockValue" value="" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格 *</label>
@@ -1809,6 +1811,7 @@
               stockType: p.stockType || p.貨況 || p.現貨預購 || "",
               image: p.image || p.圖片,
               variantImages: (p.variantImages != null ? p.variantImages : p.規格圖片 != null ? p.規格圖片 : ""),
+              variantStock: (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : ""),
               description: p.description || p.描述,
               introduction: p.introduction || p.商品介紹,
               publishedAt: p.publishedAt || p.上架日期 || "",
@@ -1872,36 +1875,45 @@
         var container = document.getElementById("variantListContainer");
         var hiddenVariant = document.getElementById("variantValue");
         var hiddenImages = document.getElementById("variantImagesValue");
+        var hiddenStock = document.getElementById("variantStockValue");
         if (!container || !hiddenVariant) return;
         var rows = container.querySelectorAll(".variant-item-row");
         var names = [];
         var urls = [];
+        var qtys = [];
         rows.forEach(function(row) {
           var nameInp = row.querySelector(".variant-item");
           var urlInp = row.querySelector(".variant-image");
+          var qtyInp = row.querySelector(".variant-qty");
           names.push((nameInp && nameInp.value) ? nameInp.value.trim() : "");
           urls.push((urlInp && urlInp.value) ? urlInp.value.trim() : "");
+          var q = (qtyInp && qtyInp.value !== "" && qtyInp.value !== null) ? parseInt(qtyInp.value, 10) : "";
+          qtys.push((q === "" || isNaN(q)) ? "" : Math.max(0, q));
         });
         hiddenVariant.value = names.filter(Boolean).join(", ");
         if (hiddenImages) hiddenImages.value = urls.join(", ");
+        if (hiddenStock) hiddenStock.value = qtys.map(function(q) { return q === "" ? "0" : q; }).join(", ");
       }
 
       function escapeAttr(s) {
         return (s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
 
-      function renderVariantList(variantStr, variantImagesStr) {
+      function renderVariantList(variantStr, variantImagesStr, variantStockStr) {
         var container = document.getElementById("variantListContainer");
         var hiddenImages = document.getElementById("variantImagesValue");
         if (!container) return;
         var parts = (variantStr || "").split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
         var urlParts = (variantImagesStr != null && variantImagesStr !== undefined ? String(variantImagesStr) : "").split(/[,，、\n]/).map(function(s) { return s.trim(); });
+        var stockParts = (variantStockStr != null && variantStockStr !== undefined ? String(variantStockStr) : "").split(/[,，、\s]/).map(function(s) { var n = parseInt(s, 10); return isNaN(n) ? "" : Math.max(0, n); });
         if (parts.length === 0) parts = [""];
         container.innerHTML = parts.map(function(val, i) {
           var url = urlParts[i] != null ? urlParts[i] : "";
+          var qty = stockParts[i] !== undefined && stockParts[i] !== "" ? stockParts[i] : "";
           return "<div class=\"variant-item-row flex flex-wrap gap-2 items-start\">" +
             "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：酷洛米\" value=\"" + escapeAttr(val) + "\" />" +
             "<input type=\"text\" class=\"variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"該規格圖片 URL（選填）\" value=\"" + escapeAttr(url) + "\" />" +
+            "<input type=\"number\" class=\"variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"數量\" min=\"0\" step=\"1\" title=\"現貨時填，0＝已售完\" value=\"" + escapeAttr(String(qty)) + "\" />" +
             "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>" +
             "</div>";
         }).join("");
@@ -1910,6 +1922,10 @@
           inp.addEventListener("change", syncVariantToHidden);
         });
         container.querySelectorAll(".variant-image").forEach(function(inp) {
+          inp.addEventListener("input", syncVariantToHidden);
+          inp.addEventListener("change", syncVariantToHidden);
+        });
+        container.querySelectorAll(".variant-qty").forEach(function(inp) {
           inp.addEventListener("input", syncVariantToHidden);
           inp.addEventListener("change", syncVariantToHidden);
         });
@@ -1937,7 +1953,8 @@
         });
         renderVariantList(
           obj && obj.variant != null ? obj.variant : "",
-          obj && obj.variantImages != null ? obj.variantImages : ""
+          obj && obj.variantImages != null ? obj.variantImages : "",
+          obj && obj.variantStock != null ? obj.variantStock : ""
         );
         if (obj && obj.status != null) updateStatusToggle(obj.status);
         updateCalculatedFields();
@@ -2052,7 +2069,7 @@
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "description", "introduction", "publishedAt"].forEach(function(key) {
+        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
@@ -2098,13 +2115,16 @@
           row.className = "variant-item-row flex flex-wrap gap-2 items-start";
           row.innerHTML = "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：酷洛米\" />" +
             "<input type=\"text\" class=\"variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"該規格圖片 URL（選填）\" />" +
+            "<input type=\"number\" class=\"variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"數量\" min=\"0\" step=\"1\" title=\"現貨時填，0＝已售完\" />" +
             "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>";
           container.appendChild(row);
           var nameInp = row.querySelector(".variant-item");
           var urlInp = row.querySelector(".variant-image");
+          var qtyInp = row.querySelector(".variant-qty");
           var removeBtn = row.querySelector(".variant-item-remove");
           if (nameInp) { nameInp.addEventListener("input", syncVariantToHidden); nameInp.addEventListener("change", syncVariantToHidden); }
           if (urlInp) { urlInp.addEventListener("input", syncVariantToHidden); urlInp.addEventListener("change", syncVariantToHidden); }
+          if (qtyInp) { qtyInp.addEventListener("input", syncVariantToHidden); qtyInp.addEventListener("change", syncVariantToHidden); }
           if (removeBtn) {
             removeBtn.addEventListener("click", function() {
               var rows = container.querySelectorAll(".variant-item-row");
