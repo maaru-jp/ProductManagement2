@@ -50,6 +50,9 @@ function doPost(e) {
     var action = body.action || "append";
     var product = body.product || {};
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+      return jsonResponse({ error: true, message: "無法取得試算表，請從試算表「擴充功能 → Apps Script」開啟並部署（需綁定至試算表）" });
+    }
     var sheet = CONFIG.sheetName ? ss.getSheetByName(CONFIG.sheetName) : ss.getSheets()[0];
     if (!sheet) {
       return jsonResponse({ error: true, message: "找不到商品工作表" });
@@ -210,6 +213,9 @@ function buildRowFromProduct(headers, product) {
  */
 function getApiData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    return { rate: null, products: [], characters: [], error: "無法取得試算表，請從 Google 試算表依「擴充功能 → Apps Script」開啟並部署此腳本（需綁定至試算表）" };
+  }
   var products = getProducts(ss);
   for (var i = 0; i < products.length; i++) {
     var p = products[i];
@@ -230,6 +236,7 @@ function getApiData() {
  * 工作表名稱：角色；第一列為標題，支援「角色」「角色圖片」或「角色名稱」「圖片」等欄位名。
  */
 function getCharacters(ss) {
+  if (!ss) return [];
   var sheet = ss.getSheetByName("角色");
   if (!sheet) return [];
   var data = sheet.getDataRange().getValues();
@@ -258,6 +265,7 @@ function getCharacters(ss) {
  * 從「設定」工作表讀匯率（數字），沒有則回傳 null。
  */
 function getRate(ss) {
+  if (!ss) return null;
   var name = CONFIG.rateSheetName || "設定";
   var sheet = ss.getSheetByName(name);
   if (!sheet) return null;
@@ -309,6 +317,7 @@ function getRowAsObject(sheet, rowIndex, headers) {
  * 標題支援中英文對照（會轉成前端認識的 key）。
  */
 function getProducts(ss) {
+  if (!ss) return [];
   var name = CONFIG.sheetName;
   var sheet = name ? ss.getSheetByName(name) : ss.getSheets()[0];
   if (!sheet) return [];
