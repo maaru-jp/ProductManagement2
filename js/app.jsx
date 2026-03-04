@@ -760,7 +760,7 @@ function ProductCard({ product, rate }) {
           </div>
         )}
 
-        {(product.isHot || product.isRecommended || product.isNew || product.character || product.stockType) ? (
+        {(product.isHot || product.isRecommended || product.isNew || product.character) ? (
           <div className="absolute top-3 left-3 flex flex-wrap gap-1">
             {product.isHot ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-rose-600 text-white shadow-sm">
@@ -777,11 +777,6 @@ function ProductCard({ product, rate }) {
                 新品
               </span>
             ) : null}
-            {product.stockType ? (
-              <span className="text-[11px] px-2 py-1 rounded-full bg-amber-600 text-white shadow-sm">
-                {product.stockType}
-              </span>
-            ) : null}
             {product.character ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-slate-600 text-white shadow-sm">
                 {product.character}
@@ -794,6 +789,13 @@ function ProductCard({ product, rate }) {
         <h2 className="text-sm font-medium text-slate-900 line-clamp-2">
           {product.name}
         </h2>
+        {(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購) ? (
+          <p className="pt-0.5">
+            <span className="inline-block text-[11px] px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+              {String(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購 || "").trim()}
+            </span>
+          </p>
+        ) : null}
         <div className="pt-1">
           {twd ? (
             <p className="text-sm text-slate-900">{twd}</p>
@@ -1168,9 +1170,11 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
               </p>
             ) : null}
 
-            {(mainProduct.stockType || selectedItem?.stockType) ? (
-              <p className="text-sm text-slate-600 font-medium">
-                {mainProduct.stockType || selectedItem?.stockType}
+            {(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況) ? (
+              <p className="pt-0.5">
+                <span className="inline-block text-xs px-2.5 py-1 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                  {String(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況 || "").trim()}
+                </span>
               </p>
             ) : null}
 
