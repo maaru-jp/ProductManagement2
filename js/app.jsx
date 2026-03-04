@@ -473,21 +473,14 @@ const CATEGORY_MENU = [
   },
 ];
 
-// 商品款式角色（點擊後列出該角色所有商品）
+// 左側欄角色顯示順序（與試算表「角色」工作表搭配時會依此排序，並帶入對應圖片）
+const CHARACTER_ORDER = [
+  "凱蒂貓", "美樂蒂", "酷洛米", "大耳狗", "布丁狗", "帕恰狗", "雙子星", "山姆企鵝",
+  "人魚漢頓", "貝克鴨", "可樂鈴", "小麥粉", "兔媽媽", "蛋黃哥", "花丸幽靈", "丹尼爾",
+];
 const CHARACTER_LIST = [
-  { value: "", label: "全部" },
-  { value: "酷洛米", label: "酷洛米" },
-  { value: "凱蒂貓", label: "凱蒂貓" },
-  { value: "大耳狗", label: "大耳狗" },
-  { value: "Hello Kitty", label: "Hello Kitty" },
-  { value: "My Melody", label: "My Melody" },
-  { value: "Cinnamoroll", label: "Cinnamoroll" },
-  { value: "HANGYODON", label: "HANGYODON" },
-  { value: "Pompompurin", label: "Pompompurin" },
-  { value: "Little Twin Stars", label: "Little Twin Stars" },
-  { value: "Pochacco", label: "Pochacco" },
-  { value: "TUXEDOSAM", label: "TUXEDOSAM" },
-  { value: "雙星仙子", label: "雙星仙子" },
+  { value: "", label: "全部", image: null },
+  ...CHARACTER_ORDER.map((name) => ({ value: name, label: name, image: null })),
 ];
 
 // 店舗內分類：字串為單一項目，{ label, children } 為有子選單的項目
@@ -609,8 +602,20 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                 style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
               >
                 {(characters.length > 0
-                  ? [{ value: "", label: "全部", image: null }, ...characters.map((c) => ({ value: c.name, label: c.name, image: c.image || null }))]
-                  : CHARACTER_LIST.map((c) => ({ value: c.value, label: c.label, image: null }))
+                  ? (() => {
+                      const byName = new Map(characters.map((c) => [c.name, c]));
+                      const ordered = CHARACTER_ORDER.filter((name) => byName.has(name));
+                      const rest = characters.filter((c) => !CHARACTER_ORDER.includes(c.name));
+                      return [
+                        { value: "", label: "全部", image: null },
+                        ...ordered.map((name) => {
+                          const c = byName.get(name);
+                          return { value: c.name, label: c.name, image: c.image || null };
+                        }),
+                        ...rest.map((c) => ({ value: c.name, label: c.name, image: c.image || null })),
+                      ];
+                    })()
+                  : CHARACTER_LIST
                 ).map((char) => {
                   const isSelected = (char.value || "").trim() === (selectedCharacter || "").trim();
                   return (
@@ -644,7 +649,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                             onError={(e) => {
                               e.target.style.display = "none";
                               const fallback = e.target.parentElement.querySelector(".char-fallback");
-                              if (fallback) fallback.style.display = "";
+                              if (fallback) fallback.style.display = "flex";
                             }}
                           />
                         ) : null}
@@ -879,7 +884,7 @@ function parseSearchParams(searchString) {
   }
 }
 
-function HomePage({ products, rate, characters = [], loading, error, search: routeSearch, searchKeyword = "", onSearchChange, onNavigateHome }) {
+function HomePage({ products, rate, loading, error, search: routeSearch, searchKeyword = "", onSearchChange, onNavigateHome }) {
   const CATEGORY_KEY = "maarushop_home_category_v1";
   const SORT_KEY = "maarushop_home_sort_v1";
   const params = React.useMemo(() => parseSearchParams(routeSearch || ""), [routeSearch]);
@@ -993,64 +998,8 @@ function HomePage({ products, rate, characters = [], loading, error, search: rou
     return arr;
   }, [filteredProducts, sortMode]);
 
-  const characterList = characters.length > 0
-    ? [{ value: "", label: "全部", image: null }, ...characters.map((c) => ({ value: c.name, label: c.name, image: c.image || null }))]
-    : CHARACTER_LIST.map((c) => ({ value: c.value, label: c.label, image: null }));
-
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
-      {/* 最上方角色圓圈：讀試算表「角色」工作表，顯示對應圖片 */}
-      {!loading && characterList.length > 0 && (
-        <section className="mb-8" aria-label="角色篩選">
-          <p className="text-xs font-semibold text-slate-500 tracking-wider mb-3 text-center">所有角色</p>
-          <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
-            {characterList.map((char) => {
-              const isSelected = (char.value || "").trim() === (characterFromUrl || "").trim();
-              return (
-                <button
-                  key={char.value || "all"}
-                  type="button"
-                  onClick={() => {
-                    if ((char.value || "").trim())
-                      onNavigateHome("?character=" + encodeURIComponent(char.value));
-                    else
-                      onNavigateHome("/");
-                  }}
-                  className="shrink-0 flex flex-col items-center gap-2 transition-opacity hover:opacity-100 opacity-90"
-                >
-                  <span
-                    className={[
-                      "w-16 h-16 rounded-full flex items-center justify-center overflow-hidden border-2 bg-slate-100 border-slate-200 flex-shrink-0 relative",
-                      isSelected ? "ring-2 ring-slate-400 border-slate-500 ring-offset-2" : "hover:border-slate-300",
-                    ].join(" ")}
-                  >
-                    {char.image && char.image.trim() ? (
-                      <img
-                        src={char.image}
-                        alt={char.label}
-                        className="w-full h-full object-cover object-center"
-                        loading="lazy"
-                        onError={(e) => {
-                          e.target.style.display = "none";
-                          const fallback = e.target.parentElement.querySelector(".char-fallback");
-                          if (fallback) fallback.style.display = "flex";
-                        }}
-                      />
-                    ) : null}
-                    <span className={"char-fallback absolute inset-0 flex items-center justify-center text-slate-700 font-medium " + (char.image && char.image.trim() ? "hidden" : "")} style={{ display: char.image && char.image.trim() ? "none" : "flex" }}>
-                      {char.label ? char.label.slice(0, 1) : ""}
-                    </span>
-                  </span>
-                  <span className="text-xs text-slate-600 text-center max-w-[4rem] leading-tight truncate">
-                    {char.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
       {!loading && !error && (
         <div className="mb-6 space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end">
@@ -1819,7 +1768,6 @@ function App() {
       <HomePage
         products={products}
         rate={rate}
-        characters={characters}
         loading={loading}
         error={error}
         search={route.search}
