@@ -131,7 +131,8 @@ function buildRowFromProduct(headers, product) {
     "新品": "isNew", "isNew": "isNew",
     "上架日期": "publishedAt", "上架時間": "publishedAt", "publishedAt": "publishedAt",
     "狀態": "status", "status": "status",
-    "貨況": "stockType", "現貨預購": "stockType", "現貨/預購": "stockType", "stockType": "stockType"
+    "貨況": "stockType", "現貨預購": "stockType", "現貨/預購": "stockType", "stockType": "stockType",
+    "規格庫存": "variantStock", "variantStock": "variantStock"
   };
   var variantStr = product.variant != null ? String(product.variant).trim() : (product.規格 != null ? String(product.規格).trim() : "");
   var variantParts = splitVariantForWrite(variantStr);
@@ -277,7 +278,8 @@ function buildKeyMap(headers) {
     ["新品", "isNew"],
     ["上架日期", "上架時間", "publishedAt"],
     ["狀態", "status"],
-    ["貨況", "現貨預購", "現貨/預購", "stockType"]
+    ["貨況", "現貨預購", "現貨/預購", "stockType"],
+    ["規格庫存", "variantStock"]
   ];
   var fullToHalf = function(s) {
     return String(s).replace(/[\uFF10-\uFF19]/g, function(ch) {
