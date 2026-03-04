@@ -8,20 +8,26 @@
 
 第一列為**標題列**，支援以下欄位名稱（中英文皆可）：
 
-| 用途     | 可用的欄位名稱                         |
-|----------|----------------------------------------|
-| 編號     | 序號、編號、id、ID                     |
-| 商品名稱 | 商品名稱、品名、title、name            |
-| 價格     | 日幣價格、價格、price、priceTWD        |
-| 圖片     | 圖片、圖片URL、image、imageUrl         |
-| 描述     | 描述、說明、content、description       |
-| 商品介紹 | 商品介紹、介紹、intro、introduction    |
-| 規格     | 規格、顏色、option、variant            |
-| 分類     | 分類、category                         |
-| 熱銷     | 熱銷、hot（填 TRUE/是/1 表示熱銷）    |
-| 推薦     | 推薦、recommended                      |
-| 新品     | 新品、isNew                            |
-| 上架日期 | 上架日期、上架時間、publishedAt        |
+| 用途     | 可用的欄位名稱                                         |
+|----------|--------------------------------------------------------|
+| 編號     | 序號、編號、id、ID                                     |
+| 商品名稱 | 商品名稱、品名、title、name                            |
+| 日幣價格 | 日幣價格、價格、price、售價(JPY)                       |
+| 台幣售價 | 售價、台幣售價、sellingPrice、售價(TW)                |
+| 主圖     | 商品主圖、圖片、圖片URL、image、imageUrl               |
+| 規格     | 規格、顏色、option、variant（多個用逗號分隔）          |
+| 規格分欄 | 規格1、規格2、規格3、規格4（各欄填一個，API 會合併）   |
+| 規格圖片 | 規格圖片、variantImages                               |
+| 描述     | 描述、說明、content、description                       |
+| 商品介紹 | 商品介紹、介紹、intro、introduction                    |
+| 分類     | 分類、category；子分類、subcategory                    |
+| 角色     | 角色、角色名稱、character                              |
+| 現貨預購 | 現貨預購、stockType（填 現貨 或 預購）                 |
+| 熱銷     | 熱銷、hot（填 Y/1 表示是）                             |
+| 推薦     | 推薦、recommended                                     |
+| 新品     | 新品、isNew                                            |
+| 上架日期 | 上架日期、上架時間、publishedAt                        |
+| 狀態     | 狀態、status（上架／下架）                             |
 
 第二列起為一筆筆商品資料。
 
