@@ -346,11 +346,7 @@ function useProducts() {
     };
   }, []);
 
-  const refetch = React.useCallback(function refetchProducts() {
-    if (fetchDataRef.current) fetchDataRef.current(true);
-  }, []);
-
-  return { products, rate, characters, loading, error, refetch };
+  return { products, rate, characters, loading, error };
 }
 
 function getUniqueProductsByName(products) {
@@ -635,7 +631,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                     >
                       <span
                         className={[
-                          "w-12 h-12 rounded-full flex items-center justify-center text-slate-700 text-sm font-medium border-2 transition-colors overflow-hidden bg-slate-100 border-slate-200",
+                          "w-14 h-14 rounded-full flex items-center justify-center text-slate-700 text-sm font-medium border-2 transition-colors overflow-hidden bg-slate-100 border-slate-200 relative",
                           isSelected ? "ring-2 ring-slate-300 border-slate-400" : "group-hover:bg-slate-200",
                         ].join(" ")}
                       >
@@ -643,7 +639,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                           <img
                             src={char.image}
                             alt={char.label}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover object-center"
                             loading="lazy"
                             onError={(e) => {
                               e.target.style.display = "none";
@@ -652,7 +648,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                             }}
                           />
                         ) : null}
-                        <span className={"char-fallback " + (char.image && char.image.trim() ? "hidden" : "")} style={{ display: char.image && char.image.trim() ? "none" : undefined }}>
+                        <span className={"char-fallback absolute inset-0 flex items-center justify-center " + (char.image && char.image.trim() ? "hidden" : "")} style={{ display: char.image && char.image.trim() ? "none" : "flex" }}>
                           {char.label ? char.label.slice(0, 1) : ""}
                         </span>
                       </span>
@@ -737,11 +733,11 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
   );
 }
 
-function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
+function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
   return (
     <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200">
       <div className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-[1fr_auto_1fr] items-center">
-        <div className="flex justify-start items-center gap-2">
+        <div className="flex justify-start">
           <button
             type="button"
             onClick={onOpenMenu}
@@ -750,17 +746,6 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
           >
             <span className="text-lg leading-none">☰</span>
           </button>
-          {onRefetch && (
-            <button
-              type="button"
-              onClick={onRefetch}
-              className="inline-flex items-center justify-center w-11 h-11 text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded transition-colors"
-              aria-label="重新載入商品與庫存"
-              title="重新載入商品與庫存（後台有更新時可按此）"
-            >
-              <span className="text-lg leading-none">🔄</span>
-            </button>
-          )}
         </div>
 
         <Link
@@ -894,7 +879,7 @@ function parseSearchParams(searchString) {
   }
 }
 
-function HomePage({ products, rate, loading, error, search: routeSearch, searchKeyword = "", onSearchChange, onNavigateHome }) {
+function HomePage({ products, rate, characters = [], loading, error, search: routeSearch, searchKeyword = "", onSearchChange, onNavigateHome }) {
   const CATEGORY_KEY = "maarushop_home_category_v1";
   const SORT_KEY = "maarushop_home_sort_v1";
   const params = React.useMemo(() => parseSearchParams(routeSearch || ""), [routeSearch]);
@@ -1008,8 +993,64 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
     return arr;
   }, [filteredProducts, sortMode]);
 
+  const characterList = characters.length > 0
+    ? [{ value: "", label: "全部", image: null }, ...characters.map((c) => ({ value: c.name, label: c.name, image: c.image || null }))]
+    : CHARACTER_LIST.map((c) => ({ value: c.value, label: c.label, image: null }));
+
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
+      {/* 最上方角色圓圈：讀試算表「角色」工作表，顯示對應圖片 */}
+      {!loading && characterList.length > 0 && (
+        <section className="mb-8" aria-label="角色篩選">
+          <p className="text-xs font-semibold text-slate-500 tracking-wider mb-3 text-center">所有角色</p>
+          <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
+            {characterList.map((char) => {
+              const isSelected = (char.value || "").trim() === (characterFromUrl || "").trim();
+              return (
+                <button
+                  key={char.value || "all"}
+                  type="button"
+                  onClick={() => {
+                    if ((char.value || "").trim())
+                      onNavigateHome("?character=" + encodeURIComponent(char.value));
+                    else
+                      onNavigateHome("/");
+                  }}
+                  className="shrink-0 flex flex-col items-center gap-2 transition-opacity hover:opacity-100 opacity-90"
+                >
+                  <span
+                    className={[
+                      "w-16 h-16 rounded-full flex items-center justify-center overflow-hidden border-2 bg-slate-100 border-slate-200 flex-shrink-0 relative",
+                      isSelected ? "ring-2 ring-slate-400 border-slate-500 ring-offset-2" : "hover:border-slate-300",
+                    ].join(" ")}
+                  >
+                    {char.image && char.image.trim() ? (
+                      <img
+                        src={char.image}
+                        alt={char.label}
+                        className="w-full h-full object-cover object-center"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.target.style.display = "none";
+                          const fallback = e.target.parentElement.querySelector(".char-fallback");
+                          if (fallback) fallback.style.display = "flex";
+                        }}
+                      />
+                    ) : null}
+                    <span className={"char-fallback absolute inset-0 flex items-center justify-center text-slate-700 font-medium " + (char.image && char.image.trim() ? "hidden" : "")} style={{ display: char.image && char.image.trim() ? "none" : "flex" }}>
+                      {char.label ? char.label.slice(0, 1) : ""}
+                    </span>
+                  </span>
+                  <span className="text-xs text-slate-600 text-center max-w-[4rem] leading-tight truncate">
+                    {char.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {!loading && !error && (
         <div className="mb-6 space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end">
@@ -1679,7 +1720,7 @@ function NotFoundPage() {
 }
 
 function App() {
-  const { products, rate, characters, loading, error, refetch } = useProducts();
+  const { products, rate, characters, loading, error } = useProducts();
   const path = useHashPath();
   const route = React.useMemo(() => getRoute(path), [path]);
 
@@ -1778,6 +1819,7 @@ function App() {
       <HomePage
         products={products}
         rate={rate}
+        characters={characters}
         loading={loading}
         error={error}
         search={route.search}
@@ -1805,7 +1847,6 @@ function App() {
         cartCount={cartCount}
         onOpenCart={() => setCartOpen(true)}
         onOpenMenu={() => setMenuOpen(true)}
-        onRefetch={refetch}
       />
       <CategorySidebar
         open={menuOpen}
