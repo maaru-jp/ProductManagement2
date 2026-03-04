@@ -55,6 +55,20 @@ function doPost(e) {
       return jsonResponse({ error: true, message: "找不到商品工作表" });
     }
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return (h || "").toString().trim(); });
+    var fullToHalfHeader = function(s) {
+      return String(s).replace(/[\uFF10-\uFF19]/g, function(ch) {
+        return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+      }).replace(/\*+/g, "").trim();
+    };
+    var hasStockColumn = headers.some(function(h) {
+      var n = fullToHalfHeader(h);
+      return n === "庫存" || n.toLowerCase() === "stock";
+    });
+    if (!hasStockColumn && (action === "append" || action === "update")) {
+      var lastCol = sheet.getLastColumn();
+      sheet.getRange(1, lastCol + 1).setValue("庫存");
+      headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return (h || "").toString().trim(); });
+    }
 
     if (action === "delete" && body.rowIndex != null) {
       var delRow = parseInt(body.rowIndex, 10);
@@ -73,7 +87,7 @@ function doPost(e) {
     if (action === "update" && body.rowIndex != null) {
       var rowIndex = parseInt(body.rowIndex, 10);
       if (rowIndex >= 2 && rowIndex <= sheet.getLastRow()) {
-        sheet.getRange(rowIndex, 1, rowIndex, headers.length).setValues([row]);
+        sheet.getRange(rowIndex, 1, 1, headers.length).setValues([row]);
         return jsonResponse({ ok: true, message: "已更新商品" });
       }
     }
@@ -102,6 +116,18 @@ function splitVariantForWrite(variantStr) {
   return parts;
 }
 
+/** 將規格庫存字串拆成數字陣列，用於寫入規格1庫存～規格4庫存 */
+function splitVariantStockForWrite(variantStockStr) {
+  if (variantStockStr == null && variantStockStr !== 0) return [];
+  var s = String(variantStockStr).trim();
+  if (s === "") return [];
+  var parts = s.split(/[,，、\s]+/).map(function(p) {
+    var n = parseInt(String(p).trim(), 10);
+    return isNaN(n) ? "" : Math.max(0, n);
+  });
+  return parts;
+}
+
 /** 依試算表標題列順序，從 product 物件組出一列陣列（寫入用）。規格1～規格4 會由 variant 拆開寫入。 */
 function buildRowFromProduct(headers, product) {
   var fullToHalf = function(str) {
@@ -121,7 +147,7 @@ function buildRowFromProduct(headers, product) {
     "匯率": "rate", "rate": "rate",
     "利潤": "profit", "profit": "profit",
     "成本": "cost", "cost": "cost",
-    "庫存": "stock", "stock": "stock",
+    "庫存": "stock", "stock": "stock", "庫存總數": "stock",
     "圖片": "image", "圖片URL": "image", "商品主圖": "image", "image": "image", "imageUrl": "image",
     "規格圖片": "variantImages", "variantImages": "variantImages",
     "描述": "description", "說明": "description", "content": "description", "description": "description",
@@ -136,6 +162,16 @@ function buildRowFromProduct(headers, product) {
   };
   var variantStr = product.variant != null ? String(product.variant).trim() : (product.規格 != null ? String(product.規格).trim() : "");
   var variantParts = splitVariantForWrite(variantStr);
+  var variantStockStr = product.variantStock != null ? String(product.variantStock).trim() : (product.規格庫存 != null ? String(product.規格庫存).trim() : "");
+  var variantStockParts = splitVariantStockForWrite(variantStockStr);
+  var variantStockTotal = 0;
+  for (var k = 0; k < variantStockParts.length; k++) {
+    var v = variantStockParts[k];
+    if (v !== "" && v !== undefined && !isNaN(Number(v))) variantStockTotal += Number(v);
+  }
+  var stockFromForm = product.stock != null && product.stock !== "" ? Number(product.stock) : (product.庫存 != null && product.庫存 !== "" ? Number(product.庫存) : NaN);
+  if (isNaN(stockFromForm) || stockFromForm < 0) stockFromForm = NaN;
+  var effectiveStock = variantStockParts.length > 0 ? variantStockTotal : (isFinite(stockFromForm) ? stockFromForm : "");
   var row = [];
   for (var i = 0; i < headers.length; i++) {
     var rawH = (headers[i] || "").toString().trim();
@@ -145,11 +181,25 @@ function buildRowFromProduct(headers, product) {
     else if (h === "規格2") { val = variantParts[1] != null ? variantParts[1] : ""; }
     else if (h === "規格3") { val = variantParts[2] != null ? variantParts[2] : ""; }
     else if (h === "規格4") { val = variantParts[3] != null ? variantParts[3] : ""; }
+    else if (h === "規格1庫存") { val = variantStockParts[0] !== undefined && variantStockParts[0] !== "" ? variantStockParts[0] : ""; }
+    else if (h === "規格2庫存") { val = variantStockParts[1] !== undefined && variantStockParts[1] !== "" ? variantStockParts[1] : ""; }
+    else if (h === "規格3庫存") { val = variantStockParts[2] !== undefined && variantStockParts[2] !== "" ? variantStockParts[2] : ""; }
+    else if (h === "規格4庫存") { val = variantStockParts[3] !== undefined && variantStockParts[3] !== "" ? variantStockParts[3] : ""; }
+    else if (h === "庫存" || h === "庫存總數" || h.toLowerCase() === "stock") {
+      val = effectiveStock !== "" ? effectiveStock : "";
+    }
     else {
       var key = headerToKey[h] || headerToKey[h.toLowerCase()];
       val = key ? (product[key] != null ? product[key] : "") : "";
     }
     row.push(val === null || val === undefined ? "" : val);
+  }
+  for (var j = 0; j < headers.length; j++) {
+    var hj = fullToHalf((headers[j] || "").toString().trim().replace(/\*+/g, "")).trim();
+    var isStockCol = (hj === "庫存" || hj === "庫存總數" || hj.toLowerCase() === "stock" || hj.indexOf("庫存") >= 0);
+    if (isStockCol && (row[j] === "" || row[j] == null) && effectiveStock !== "") {
+      row[j] = effectiveStock;
+    }
   }
   return row;
 }
@@ -197,6 +247,34 @@ function getRate(ss) {
 }
 
 /**
+ * 讀取試算表某一列為物件（用於規格庫存累加時取得該列現有規格庫存）。
+ */
+function getRowAsObject(sheet, rowIndex, headers) {
+  var keyMap = buildKeyMap(headers);
+  var row = sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0];
+  var obj = {};
+  for (var c = 0; c < row.length; c++) {
+    var key = keyMap[c];
+    if (!key) continue;
+    var val = row[c];
+    if (val !== "" && val !== null && val !== undefined) {
+      obj[key] = typeof val === "string" ? val.trim() : val;
+    }
+  }
+  var stockParts = [
+    obj.variantStock1, obj.variantStock2, obj.variantStock3, obj.variantStock4
+  ].map(function(x) {
+    if (x === undefined || x === null) return "";
+    var n = parseInt(String(x).trim(), 10);
+    return isNaN(n) ? "" : Math.max(0, n);
+  });
+  if (stockParts.some(function(x) { return x !== ""; })) {
+    obj.variantStock = stockParts.map(function(x) { return x === "" ? "0" : String(x); }).join(",");
+  }
+  return obj;
+}
+
+/**
  * 從商品工作表讀取所有列，第一列為標題，轉成物件陣列。
  * 標題支援中英文對照（會轉成前端認識的 key）。
  */
@@ -231,6 +309,23 @@ function getProducts(ss) {
     delete obj.variant2;
     delete obj.variant3;
     delete obj.variant4;
+    // 若有規格1庫存～規格4庫存 分欄，合併成單一「規格庫存」字串（逗號分隔），與規格順序對應
+    var stockParts = [
+      obj.variantStock1, obj.variantStock2, obj.variantStock3, obj.variantStock4
+    ].map(function(x) {
+      if (x === undefined || x === null) return "";
+      var n = parseInt(String(x).trim(), 10);
+      return isNaN(n) ? "" : Math.max(0, n);
+    });
+    var hasSplitStock = stockParts.some(function(x) { return x !== ""; });
+    if (hasSplitStock) {
+      obj.variantStock = stockParts.map(function(x) { return x === "" ? "0" : String(x); }).join(",");
+      obj["規格庫存"] = obj.variantStock;
+    }
+    delete obj.variantStock1;
+    delete obj.variantStock2;
+    delete obj.variantStock3;
+    delete obj.variantStock4;
     if (obj.imageUrl != null && obj.imageUrl !== "" && (obj.image == null || obj.image === "")) {
       obj.image = obj.imageUrl;
     }
@@ -260,7 +355,7 @@ function buildKeyMap(headers) {
     ["匯率", "rate"],
     ["利潤", "profit"],
     ["成本", "cost"],
-    ["庫存", "stock"],
+    ["庫存", "庫存總數", "stock"],
     ["圖片", "圖片URL", "商品主圖", "image", "Image", "imageUrl"],
     ["規格圖片", "variantImages"],
     ["描述", "說明", "content", "description"],
@@ -270,6 +365,10 @@ function buildKeyMap(headers) {
     ["規格2", "variant2"],
     ["規格3", "variant3"],
     ["規格4", "variant4"],
+    ["規格1庫存", "variantStock1"],
+    ["規格2庫存", "variantStock2"],
+    ["規格3庫存", "variantStock3"],
+    ["規格4庫存", "variantStock4"],
     ["分類", "category"],
     ["子分類", "subcategory"],
     ["角色", "角色名稱", "character"],

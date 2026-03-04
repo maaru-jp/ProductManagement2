@@ -51,6 +51,33 @@
     }
     #statusTrack.on #statusKnob { transform: translateX(24px); }
     #statusTrack.off #statusKnob { transform: translateX(0); }
+    /* 表格內狀態滑動開關（一鍵切換上架/下架） */
+    .product-status-track {
+      display: inline-block;
+      width: 44px;
+      height: 22px;
+      border-radius: 9999px;
+      position: relative;
+      transition: background-color 0.2s ease;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .product-status-track.on { background-color: #10b981 !important; }
+    .product-status-track.off { background-color: #94a3b8 !important; }
+    .product-status-knob {
+      display: block;
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      top: 2px;
+      left: 2px;
+      border-radius: 9999px;
+      background-color: #fff !important;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+      transition: transform 0.2s ease;
+    }
+    .product-status-track.on .product-status-knob { transform: translateX(22px); }
+    .product-status-track.off .product-status-knob { transform: translateX(0); }
     /* KPI 卡片浮動效果 */
     .kpi-card {
       transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.2s ease;
@@ -84,6 +111,42 @@
     @keyframes layoutGlobalPanelIn {
       from { opacity: 0; transform: translateY(-6px); }
       to { opacity: 1; transform: translateY(0); }
+    }
+    /* 右上角動態即時通知 */
+    #notificationToaster {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      max-width: 22rem;
+      pointer-events: none;
+    }
+    .toast-item {
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      line-height: 1.4;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      background: #fff;
+      border-left: 4px solid rgb(16 185 129);
+      animation: toastIn 0.25s ease;
+    }
+    .toast-item.toast-error {
+      border-left-color: rgb(239 68 68);
+    }
+    .toast-item.toast-leaving {
+      animation: toastOut 0.2s ease forwards;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(100%); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes toastOut {
+      from { opacity: 1; transform: translateX(0); }
+      to { opacity: 0; transform: translateX(100%); }
     }
     #layoutSettingsGlobal input:focus,
     #layoutSettingsGlobal select:focus {
@@ -147,6 +210,7 @@
 
     <!-- 主內容 -->
     <main class="flex-1 p-6 min-h-0">
+      <div id="notificationToaster" aria-live="polite"></div>
       <!-- 總覽報表區塊 -->
       <section id="sectionReports" class="hidden">
         <div class="flex items-center justify-between mb-6">
@@ -207,9 +271,14 @@
             <svg class="section-title-icon text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
             商品管理
           </h2>
-          <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
-            前往官網 ↗
-          </a>
+          <div class="flex items-center gap-3">
+            <button type="button" id="btnSaveAllStatus" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed">
+              儲存所有變更
+            </button>
+            <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
+              前往官網 ↗
+            </a>
+          </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -242,12 +311,11 @@
                   <th class="text-left py-3 px-4 font-medium text-slate-600">庫存</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">上架日期</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">貨況</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">操作</th>
                 </tr>
               </thead>
               <tbody id="tableBody">
-                <tr><td colspan="12" class="py-8 text-center text-slate-500">載入中...</td></tr>
+                <tr><td colspan="11" class="py-8 text-center text-slate-500">載入中...</td></tr>
               </tbody>
             </table>
           </div>
@@ -756,8 +824,9 @@
     <div class="absolute inset-0 bg-black/50" id="modalBackdrop"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
       <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div class="p-6 border-b border-slate-200">
+        <div class="p-6 border-b border-slate-200 flex items-center justify-between">
           <h3 class="text-lg font-semibold" id="modalTitle">新增商品</h3>
+          <button type="button" id="modalCloseBtn" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" aria-label="關閉">✕</button>
         </div>
         <form id="productForm" class="p-6 space-y-4">
           <input type="hidden" id="editRowIndex" value="" />
@@ -851,14 +920,7 @@
             <label class="block text-xs font-medium text-slate-500 mb-1">庫存</label>
             <input type="number" name="stock" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="0" />
           </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">狀態</label>
-            <input type="hidden" name="status" id="statusInput" value="上架" />
-            <div id="statusToggle" class="flex items-center gap-3 cursor-pointer select-none" role="button" tabindex="0" aria-label="切換上架或下架">
-              <div id="statusTrack" class="on"><span id="statusKnob"></span></div>
-              <span id="statusLabel" class="text-sm font-medium text-emerald-600">上架中</span>
-            </div>
-          </div>
+          <input type="hidden" name="status" id="statusInput" value="上架" />
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">貨況</label>
             <select name="stockType" id="stockTypeSelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -897,9 +959,12 @@
               <span class="text-sm text-slate-600">新品</span>
             </label>
           </div>
-          <div class="flex justify-end gap-2 pt-4">
-            <button type="button" id="btnCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm">取消</button>
-            <button type="submit" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">儲存</button>
+          <div class="flex justify-between items-center gap-2 pt-4">
+            <button type="button" id="btnClearForm" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50">清空</button>
+            <div class="flex gap-2">
+              <button type="button" id="btnCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm">取消</button>
+              <button type="submit" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">儲存</button>
+            </div>
           </div>
         </form>
       </div>
@@ -1035,6 +1100,7 @@
       }
 
       var products = [];
+      var pendingStatusChanges = {};
       var searchKeyword = "";
 
       function setNavActive(navId) {
@@ -1715,11 +1781,26 @@
       });
 
       function showMessage(text, isError) {
-        var el = document.getElementById("message");
-        el.textContent = text;
-        el.className = "mb-3 text-sm " + (isError ? "text-red-600" : "text-slate-600");
-        el.classList.remove("hidden");
-        setTimeout(function() { el.classList.add("hidden"); }, 4000);
+        var toaster = document.getElementById("notificationToaster");
+        var legacy = document.getElementById("message");
+        if (legacy) {
+          legacy.textContent = text;
+          legacy.className = "mb-3 text-sm " + (isError ? "text-red-600" : "text-slate-600");
+          legacy.classList.remove("hidden");
+          setTimeout(function() { legacy.classList.add("hidden"); }, 4000);
+        }
+        if (!toaster) return;
+        var toast = document.createElement("div");
+        toast.className = "toast-item " + (isError ? "toast-error text-red-800" : "text-slate-700");
+        toast.setAttribute("role", "alert");
+        toast.textContent = text;
+        toaster.appendChild(toast);
+        setTimeout(function() {
+          toast.classList.add("toast-leaving");
+          setTimeout(function() {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+          }, 220);
+        }, 4000);
       }
 
       function loadProducts() {
@@ -1729,7 +1810,9 @@
           .then(function(r) { return r.json(); })
           .then(function(data) {
             products = data.products || [];
+            pendingStatusChanges = {};
             renderTable();
+            updateSaveAllStatusBtn();
           })
           .catch(function(err) {
             tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
@@ -1782,8 +1865,7 @@
             "<td class=\"py-3 px-4\">" + escapeHtml(String(cost)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(stock)) + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(publishedAt) + "</td>" +
-            "<td class=\"py-3 px-4\"><span class=\"status-tag " + (isListed ? "text-emerald-600" : "text-slate-400") + " text-xs\">" + (isListed ? "上架中" : "已下架") + "</span></td>" +
-            "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(stockType || "—") + "</td>" +
+            "<td class=\"py-3 px-4\"><div class=\"product-status-track " + (isListed ? "on" : "off") + "\" data-row=\"" + rowNum + "\" data-status=\"" + (isListed ? "上架" : "下架") + "\" title=\"" + (isListed ? "上架中（點擊切換為下架）" : "已下架（點擊切換為上架）") + "\" role=\"button\" tabindex=\"0\"><span class=\"product-status-knob\"></span></div></td>" +
             "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
             "</tr>";
         }).join("");
@@ -1845,6 +1927,101 @@
               });
           });
         });
+        tbody.querySelectorAll(".product-status-track").forEach(function(el) {
+          el.addEventListener("click", function(e) {
+            e.preventDefault();
+            var rowIndex = parseInt(this.getAttribute("data-row"), 10);
+            var p = products[rowIndex - 2];
+            if (!p) return;
+            var current = (this.getAttribute("data-status") || "上架").trim();
+            var next = current === "上架" ? "下架" : "上架";
+            p.status = next;
+            p.狀態 = next;
+            pendingStatusChanges[rowIndex] = next;
+            renderTable();
+            updateSaveAllStatusBtn();
+            showMessage(next === "上架" ? "已設為上架（僅畫面更新，請按「儲存所有變更」寫入試算表）" : "已設為下架（僅畫面更新，請按「儲存所有變更」寫入試算表）");
+          });
+          el.addEventListener("keydown", function(e) {
+            if (e.key === " " || e.key === "Enter") { e.preventDefault(); el.click(); }
+          });
+        });
+        updateSaveAllStatusBtn();
+      }
+
+      function updateSaveAllStatusBtn() {
+        var btn = document.getElementById("btnSaveAllStatus");
+        if (!btn) return;
+        var count = Object.keys(pendingStatusChanges).length;
+        if (count === 0) {
+          btn.disabled = true;
+          btn.className = "px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed";
+          btn.textContent = "儲存所有變更";
+        } else {
+          btn.disabled = false;
+          btn.className = "px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium hover:bg-slate-700";
+          btn.textContent = "儲存所有變更 (" + count + ")";
+        }
+      }
+
+      function saveAllStatusChanges() {
+        var rowIndices = Object.keys(pendingStatusChanges).map(function(k) { return parseInt(k, 10); }).filter(function(r) { return r >= 2; });
+        if (rowIndices.length === 0) {
+          updateSaveAllStatusBtn();
+          return;
+        }
+        var btn = document.getElementById("btnSaveAllStatus");
+        if (btn) { btn.disabled = true; btn.textContent = "儲存中..."; }
+        var chain = Promise.resolve();
+        rowIndices.forEach(function(rowIndex) {
+          var p = products[rowIndex - 2];
+          if (!p) return;
+          var next = pendingStatusChanges[rowIndex];
+          var product = {
+            name: p.name || p.商品名稱,
+            category: p.category || p.分類,
+            subcategory: p.subcategory || p.子分類,
+            character: p.character || p.角色,
+            variant: p.variant || p.規格,
+            price: p.price != null ? p.price : p.日幣價格,
+            sellingPrice: p.sellingPrice != null ? p.sellingPrice : p.售價,
+            rate: p.rate != null ? p.rate : p.匯率,
+            profit: p.profit != null ? p.profit : p.利潤,
+            cost: p.cost != null ? p.cost : p.成本,
+            stock: p.stock != null ? p.stock : p.庫存,
+            status: next,
+            stockType: p.stockType || p.貨況 || p.現貨預購 || "",
+            image: p.image || p.圖片,
+            variantImages: p.variantImages != null ? p.variantImages : p.規格圖片,
+            variantStock: p.variantStock != null ? p.variantStock : p.規格庫存,
+            description: p.description || p.描述,
+            introduction: p.introduction || p.商品介紹,
+            publishedAt: p.publishedAt || p.上架日期,
+            hot: p.hot || p.熱銷 ? "Y" : "",
+            recommended: p.recommended || p.推薦 ? "Y" : "",
+            isNew: p.isNew || p.新品 ? "Y" : ""
+          };
+          (function(ri, prod) {
+            chain = chain.then(function() {
+              return fetchWrite({ action: "update", rowIndex: ri, product: prod })
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                  if (res && res.error) throw new Error(res.message || "更新失敗");
+                  return res;
+                });
+            });
+          })(rowIndex, product);
+        });
+        chain
+          .then(function() {
+            pendingStatusChanges = {};
+            showMessage("已將所有狀態變更寫入試算表");
+            loadProducts();
+          })
+          .catch(function(err) {
+            showMessage("儲存失敗：" + (err.message || "網路錯誤"), true);
+            if (btn) updateSaveAllStatusBtn();
+          });
       }
 
       function escapeHtml(s) {
@@ -1893,6 +2070,9 @@
         hiddenVariant.value = names.filter(Boolean).join(", ");
         if (hiddenImages) hiddenImages.value = urls.join(", ");
         if (hiddenStock) hiddenStock.value = qtys.map(function(q) { return q === "" ? "0" : q; }).join(", ");
+        var total = qtys.reduce(function(sum, q) { return sum + (q === "" ? 0 : Number(q)); }, 0);
+        var stockInput = document.querySelector("input[name=\"stock\"]");
+        if (stockInput) stockInput.value = total;
       }
 
       function escapeAttr(s) {
@@ -1956,24 +2136,11 @@
           obj && obj.variantImages != null ? obj.variantImages : "",
           obj && obj.variantStock != null ? obj.variantStock : ""
         );
-        if (obj && obj.status != null) updateStatusToggle(obj.status);
+        if (obj && obj.status != null) {
+          var si = document.getElementById("statusInput");
+          if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
+        }
         updateCalculatedFields();
-      }
-
-      function updateStatusToggle(value) {
-        var isOn = (value || "上架").toString().trim() === "上架";
-        var input = document.getElementById("statusInput");
-        var track = document.getElementById("statusTrack");
-        var label = document.getElementById("statusLabel");
-        if (input) input.value = isOn ? "上架" : "下架";
-        if (track) {
-          track.classList.toggle("on", isOn);
-          track.classList.toggle("off", !isOn);
-        }
-        if (label) {
-          label.textContent = isOn ? "上架中" : "已下架";
-          label.className = "text-sm font-medium " + (isOn ? "text-emerald-600" : "text-slate-500");
-        }
       }
 
       function updateCalculatedFields() {
@@ -2093,7 +2260,8 @@
         document.getElementById("editRowIndex").value = "";
         if (!isEdit) {
           setFormValues({});
-          updateStatusToggle("上架");
+          var statusInput = document.getElementById("statusInput");
+          if (statusInput) statusInput.value = "上架";
           var marginSelect = document.getElementById("marginSelect");
           if (marginSelect) marginSelect.value = "";
         }
@@ -2105,6 +2273,8 @@
       }
 
       document.getElementById("btnAdd").addEventListener("click", function() { openModal(false); });
+      var btnSaveAllStatus = document.getElementById("btnSaveAllStatus");
+      if (btnSaveAllStatus) btnSaveAllStatus.addEventListener("click", saveAllStatusChanges);
 
       var btnAddVariant = document.getElementById("btnAddVariant");
       if (btnAddVariant) {
@@ -2143,14 +2313,6 @@
         });
       }
 
-      document.getElementById("statusToggle").addEventListener("click", function() {
-        var input = document.getElementById("statusInput");
-        var next = input.value === "上架" ? "下架" : "上架";
-        updateStatusToggle(next);
-      });
-      document.getElementById("statusToggle").addEventListener("keydown", function(e) {
-        if (e.key === " " || e.key === "Enter") { e.preventDefault(); this.click(); }
-      });
       function bindAutoCalc() {
         var priceEl = document.getElementById("priceInput");
         var rateEl = document.getElementById("rateInput");
@@ -2164,6 +2326,22 @@
       bindAutoCalc();
       document.getElementById("btnCancel").addEventListener("click", closeModal);
       document.getElementById("modalBackdrop").addEventListener("click", closeModal);
+      var modalCloseBtn = document.getElementById("modalCloseBtn");
+      if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeModal);
+
+      var btnClearForm = document.getElementById("btnClearForm");
+      if (btnClearForm) {
+        btnClearForm.addEventListener("click", function() {
+          document.getElementById("editRowIndex").value = "";
+          document.getElementById("modalTitle").textContent = "新增商品";
+          setFormValues({});
+          var statusInput = document.getElementById("statusInput");
+          if (statusInput) statusInput.value = "上架";
+          var marginSelect = document.getElementById("marginSelect");
+          if (marginSelect) marginSelect.value = "";
+          updateCalculatedFields();
+        });
+      }
 
       document.getElementById("productForm").addEventListener("submit", function(e) {
         e.preventDefault();
