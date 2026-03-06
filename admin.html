@@ -2368,7 +2368,10 @@
         fetchWrite(body)
           .then(function(r) {
             return r.text().then(function(t) {
-              try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "伺服器回傳的內容不是有效 JSON。" }; }
+              try { return t ? JSON.parse(t) : {}; } catch (e) {
+                var preview = (t && t.length) ? (t.length > 120 ? t.substring(0, 120) + "…" : t).replace(/\s+/g, " ") : "(無內容)";
+                return { error: true, message: "伺服器回傳的內容不是有效 JSON。預覽：" + preview };
+              }
             });
           })
           .then(function(res) {
