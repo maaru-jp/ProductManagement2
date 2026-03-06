@@ -719,7 +719,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
   );
 }
 
-function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
+function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick }) {
   return (
     <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200">
       <div className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-[1fr_auto_1fr] items-center">
@@ -734,11 +734,13 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
           </button>
         </div>
 
-        <Link
-          to="/"
-          className="flex items-center space-x-2 sm:space-x-3 justify-center transition-transform duration-150 hover:opacity-90 active:scale-95"
+        <button
+          type="button"
+          onClick={onLogoClick}
+          className="flex items-center space-x-2 sm:space-x-3 justify-center rounded-2xl px-2 py-1.5 sm:px-3 sm:py-2 transition-all duration-300 focus:outline-none focus:ring-0 hover:bg-white/60 hover:backdrop-blur-md hover:shadow-lg hover:shadow-slate-300/40 hover:border hover:border-white/70 active:scale-[0.98]"
+          aria-label="回首頁並重新整理"
         >
-          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden bg-slate-900 flex items-center justify-center shrink-0">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden bg-slate-900 flex items-center justify-center shrink-0 ring-2 ring-transparent hover:ring-white/50 transition-shadow duration-300">
             <img
               src="./品牌logo_tondiv.jpg"
               alt="Maaru 品牌 Logo"
@@ -747,14 +749,14 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
             />
           </div>
           <div className="flex flex-col leading-tight text-left">
-            <span className="text-sm sm:text-base font-semibold tracking-[0.2em] uppercase">
+            <span className="text-sm sm:text-base font-semibold tracking-[0.2em] uppercase text-slate-900">
               Maaru
             </span>
             <span className="text-xs sm:text-sm text-slate-500 tracking-[0.15em] uppercase">
               Select Shop
             </span>
           </div>
-        </Link>
+        </button>
 
         <div className="flex justify-end">
           <button
@@ -1784,6 +1786,10 @@ function App() {
         cartCount={cartCount}
         onOpenCart={() => setCartOpen(true)}
         onOpenMenu={() => setMenuOpen(true)}
+        onLogoClick={() => {
+          navigateTo("/");
+          refetch();
+        }}
       />
       <CategorySidebar
         open={menuOpen}
