@@ -319,13 +319,14 @@
                   <th class="text-left py-3 px-4 font-medium text-slate-600">利潤</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">成本</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">庫存</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">規格庫存</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">上架日期</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">操作</th>
                 </tr>
               </thead>
               <tbody id="tableBody">
-                <tr><td colspan="12" class="py-8 text-center text-slate-500">載入中...</td></tr>
+                <tr><td colspan="13" class="py-8 text-center text-slate-500">載入中...</td></tr>
               </tbody>
             </table>
           </div>
@@ -1823,7 +1824,7 @@
             updateSaveAllStatusBtn();
           })
           .catch(function(err) {
-            tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
+            tbody.innerHTML = "<tr><td colspan=\"13\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
           });
       }
 
@@ -1844,7 +1845,7 @@
         document.getElementById("selectAllProducts").checked = false;
         var delBtn = document.getElementById("btnDeleteSelected");
         if (delBtn) { delBtn.classList.add("hidden"); }
-        tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
+        tbody.innerHTML = "<tr><td colspan=\"13\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
         return;
       }
       function fmtDate(v) {
@@ -1869,6 +1870,12 @@
         var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
         var cost = p.cost != null ? p.cost : p.成本 != null ? p.成本 : "";
         var stock = p.stock != null ? p.stock : p.庫存 != null ? p.庫存 : "";
+        var variantStockStr = (p.variantStock != null && p.variantStock !== "") ? (Array.isArray(p.variantStock) ? p.variantStock.join(",") : String(p.variantStock)) : (p.規格庫存 != null ? String(p.規格庫存) : "");
+        if (stock === "" && variantStockStr) {
+          var sum = 0;
+          variantStockStr.split(/[,，、\s]/).forEach(function(s) { var n = parseInt(s, 10); if (!isNaN(n) && n >= 0) sum += n; });
+          stock = sum;
+        }
         var img = p.image || p.圖片 || "";
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
         var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
@@ -1884,6 +1891,7 @@
             "<td class=\"py-3 px-4\">" + escapeHtml(String(profit)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(cost)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(stock)) + "</td>" +
+            "<td class=\"py-3 px-4 text-slate-600 max-w-[120px] truncate\" title=\"" + escapeAttr(variantStockStr) + "\">" + escapeHtml(variantStockStr || "—") + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(publishedAt) + "</td>" +
             "<td class=\"py-3 px-4\"><div class=\"product-status-track " + (isListed ? "on" : "off") + "\" data-row=\"" + rowNum + "\" data-status=\"" + (isListed ? "上架" : "下架") + "\" title=\"" + (isListed ? "上架中（點擊切換為下架）" : "已下架（點擊切換為上架）") + "\" role=\"button\" tabindex=\"0\"><span class=\"product-status-knob\"></span></div></td>" +
             "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\" data-index=\"" + productIndex + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
