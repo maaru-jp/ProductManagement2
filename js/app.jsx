@@ -762,12 +762,12 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick }) {
           <button
             type="button"
             onClick={onOpenCart}
-            className="relative inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors focus:outline-none focus:ring-0"
+            className="relative inline-flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors focus:outline-none focus:ring-0"
             aria-label="開啟購物車"
           >
-            <span className="text-base">🛒</span>
+            <span className="text-base sm:text-lg">🛒</span>
             {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-slate-900 text-white text-[10px] leading-5 text-center">
+              <span className="absolute -top-0.5 -right-0.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-slate-900 text-white text-[10px] leading-5 text-center flex items-center justify-center">
                 {cartCount > 99 ? "99+" : cartCount}
               </span>
             )}
@@ -1787,8 +1787,8 @@ function App() {
         onOpenCart={() => setCartOpen(true)}
         onOpenMenu={() => setMenuOpen(true)}
         onLogoClick={() => {
-          navigateTo("/");
-          refetch();
+          window.location.hash = "#/";
+          window.location.reload();
         }}
       />
       <CategorySidebar
