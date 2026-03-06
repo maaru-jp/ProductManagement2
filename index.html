@@ -6,12 +6,15 @@
     <title>Maaru Shop</title>
 
     <!--
+      重要：請勿用「直接開啟檔案」(file://) 開啟本頁，否則會出現 CORS 錯誤、無法載入 JS 與 API。
+      請用本機伺服器開啟，例如在專案資料夾執行：npx serve .  或  python -m http.server 8080
+      然後在瀏覽器開啟 http://localhost:3000 或 http://localhost:8080
       開發時主控台可能出現的訊息說明：
-      - "Tracking Prevention blocked access to storage"：瀏覽器隱私功能阻擋第三方儲存（如 Safari），不影響本頁功能，可忽略。
-      - "cdn.tailwindcss.com should not be used in production"：正式環境請改為 PostCSS 或 Tailwind CLI 建置靜態 CSS。
-      - "in-browser Babel transformer"：正式環境請改為建置時預編譯 JSX，勿用瀏覽器即時編譯。
-      - "logo_tondiv.jpg 404"：請將 logo_tondiv.jpg 放在與 index.html 同目錄，或會顯示 fallback。
-      - 若出現 "Raw API data"：請強制重新整理（Ctrl+Shift+R）排除快取；本專案已不輸出該 log。
+      - "Tracking Prevention blocked access to storage"：瀏覽器隱私功能阻擋第三方儲存，可忽略。
+      - "cdn.tailwindcss.com should not be used in production"：正式環境請改為 PostCSS 或 Tailwind CLI。
+      - "in-browser Babel transformer"：正式環境請改為建置時預編譯 JSX。
+      - "logo_tondiv.jpg 404"：請將 logo_tondiv.jpg 放在與 index.html 同目錄，否則會顯示 fallback「M」。
+      - "[Intervention] Images loaded lazily"：瀏覽器說明圖片延遲載入，可忽略。
     -->
     <!-- Tailwind CSS (CDN)；正式上線改為 PostCSS/CLI：https://tailwindcss.com/docs/installation -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -21,6 +24,13 @@
   </head>
   <body class="min-h-screen text-slate-900">
     <div id="root"></div>
+    <script>
+      (function() {
+        if (window.location.protocol === "file:") {
+          document.getElementById("root").innerHTML = "<div style=\"max-width:480px;margin:2rem auto;padding:1.5rem;font-family:system-ui,sans-serif;background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;color:#92400e;\"><p style=\"font-weight:bold;margin:0 0 0.75rem 0;\">請勿直接開啟檔案 (file://)</p><p style=\"margin:0 0 0.75rem 0;font-size:0.9rem;\">用檔案總管雙擊 index.html 會造成 CORS 錯誤，無法載入商品與 API。</p><p style=\"margin:0 0 0.5rem 0;font-size:0.9rem;\"><strong>請改成本機伺服器開啟：</strong></p><ul style=\"margin:0;padding-left:1.25rem;font-size:0.85rem;\"><li>在專案資料夾開終端機，執行：<code style=\"background:#fff;padding:2px 6px;border-radius:4px;\">npx serve .</code></li><li>或執行：<code style=\"background:#fff;padding:2px 6px;border-radius:4px;\">python -m http.server 8080</code></li><li>再用瀏覽器開啟 <code style=\"background:#fff;padding:2px 6px;border-radius:4px;\">http://localhost:3000</code> 或 <code style=\"background:#fff;padding:2px 6px;border-radius:4px;\">http://localhost:8080</code></li></ul></div>";
+        }
+      })();
+    </script>
 
     <!-- React / ReactDOM (CDN, pin versions for stability) -->
     <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
