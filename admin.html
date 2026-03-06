@@ -272,9 +272,10 @@
             商品管理
           </h2>
           <div class="flex items-center gap-3">
-            <button type="button" id="btnSaveAllStatus" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed">
+            <button type="button" id="btnSaveAllStatus" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed" title="僅用於儲存「表格中上架／下架開關」的變更；編輯商品彈窗的儲存會直接寫入試算表，不需按此鈕">
               儲存所有變更
             </button>
+            <span class="text-xs text-slate-400 hidden sm:inline">（表格上架/下架開關）</span>
             <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
               前往官網 ↗
             </a>
@@ -287,6 +288,9 @@
           </button>
           <button type="button" id="btnExport" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
             匯出 CSV
+          </button>
+          <button type="button" id="btnDeleteSelected" class="px-4 py-2 rounded-lg border border-red-300 bg-white text-red-600 text-sm hover:bg-red-50 hidden">
+            刪除所選 (<span id="selectedCount">0</span>)
           </button>
           <div class="flex-1 flex items-center gap-2 min-w-0">
             <input type="text" id="searchInput" placeholder="搜尋商品名稱、分類、品牌..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm" />
@@ -301,6 +305,12 @@
             <table class="w-full text-sm">
               <thead class="bg-slate-50 border-b border-slate-200">
                 <tr>
+                  <th class="text-left py-3 px-4 w-12">
+                    <label class="flex items-center gap-1 cursor-pointer" title="全選／取消全選">
+                      <input type="checkbox" id="selectAllProducts" class="rounded border-slate-300 text-rose-500 focus:ring-rose-400" />
+                      <span class="text-slate-600 font-medium text-xs">勾選</span>
+                    </label>
+                  </th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">編號</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">主圖</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">名稱</th>
@@ -315,7 +325,7 @@
                 </tr>
               </thead>
               <tbody id="tableBody">
-                <tr><td colspan="11" class="py-8 text-center text-slate-500">載入中...</td></tr>
+                <tr><td colspan="12" class="py-8 text-center text-slate-500">載入中...</td></tr>
               </tbody>
             </table>
           </div>
@@ -1802,6 +1812,7 @@
       function loadProducts() {
         var tbody = document.getElementById("tableBody");
         tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
+        updateDeleteSelectedBtn();
         var url = API_READ + (API_READ.indexOf("?") >= 0 ? "&" : "?") + "_t=" + Date.now();
         fetch(url)
           .then(function(r) { return r.json(); })
@@ -1830,7 +1841,10 @@
         });
       }
       if (list.length === 0) {
-        tbody.innerHTML = "<tr><td colspan=\"11\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
+        document.getElementById("selectAllProducts").checked = false;
+        var delBtn = document.getElementById("btnDeleteSelected");
+        if (delBtn) { delBtn.classList.add("hidden"); }
+        tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
         return;
       }
       function fmtDate(v) {
@@ -1842,7 +1856,7 @@
       tbody.innerHTML = list.map(function(p, idx) {
         var productIndex = products.indexOf(p);
         if (productIndex < 0) productIndex = idx;
-        var rowNum = productIndex + 2;
+        var rowNum = (p._sheetRowIndex != null && p._sheetRowIndex >= 2) ? p._sheetRowIndex : (productIndex + 2);
         var name = p.name || p.商品名稱 || "";
         var price = p.price != null ? p.price : p.priceTWD != null ? p.priceTWD : p.日幣價格 != null ? p.日幣價格 : "";
         var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : p.台幣售價 != null ? p.台幣售價 : "";
@@ -1855,6 +1869,7 @@
         var isListed = status === "上架";
         var stockType = (p.stockType || p.貨況 || p.現貨預購 || "").toString().trim();
         return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\">" +
+            "<td class=\"py-3 px-4 w-12\"><label class=\"cursor-pointer\"><input type=\"checkbox\" class=\"product-row-cb rounded border-slate-300 text-rose-500 focus:ring-rose-400\" data-row=\"" + rowNum + "\" /></label></td>" +
             "<td class=\"py-3 px-4 text-slate-500\">" + rowNum + "</td>" +
             "<td class=\"py-3 px-4\"><img src=\"" + (img || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E") + "\" alt=\"\" class=\"w-10 h-10 object-cover rounded\" onerror=\"this.src='data:image/svg+xml,%26%23x3C%3Bsvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27 fill=%27%23cbd5e1%27%26%23x3E%26%23x3C%3Brect width=%2740%27 height=%2740%27/%26%23x3E%26%23x3C%3B/svg%26%23x3E%3B'\" /></td>" +
             "<td class=\"py-3 px-4 font-medium\">" + escapeHtml(name) + "</td>" +
@@ -1877,7 +1892,8 @@
             var p = products[productIndex];
             if (!p) return;
             openModal(true);
-            document.getElementById("editRowIndex").value = String(productIndex + 2);
+            var editRow = (p._sheetRowIndex != null && p._sheetRowIndex >= 2) ? p._sheetRowIndex : (productIndex + 2);
+            document.getElementById("editRowIndex").value = String(editRow);
             document.getElementById("modalTitle").textContent = "編輯商品";
             var v = function(eng, zh) { var a = p[eng]; var b = p[zh]; if (a !== undefined && a !== null && a !== "") return a; if (b !== undefined && b !== null && b !== "") return b; return ""; };
             var n = function(eng, zh) { var a = p[eng]; var b = p[zh]; if (a !== undefined && a !== null && Number.isFinite(Number(a))) return Number(a); if (b !== undefined && b !== null && Number.isFinite(Number(b))) return Number(b); return ""; };
@@ -1940,7 +1956,7 @@
           });
         });
         tbody.querySelectorAll(".product-status-track").forEach(function(el) {
-          el.addEventListener("click", function(e) {
+            el.addEventListener("click", function(e) {
             e.preventDefault();
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
             var p = products[rowIndex - 2];
@@ -1959,6 +1975,46 @@
           });
         });
         updateSaveAllStatusBtn();
+        updateDeleteSelectedBtn();
+        bindSelectAllAndRowCheckboxes();
+      }
+
+      function updateDeleteSelectedBtn() {
+        var tbody = document.getElementById("tableBody");
+        if (!tbody) return;
+        var count = 0;
+        tbody.querySelectorAll(".product-row-cb:checked").forEach(function() { count++; });
+        var btn = document.getElementById("btnDeleteSelected");
+        var span = document.getElementById("selectedCount");
+        if (!btn) return;
+        if (count === 0) {
+          btn.classList.add("hidden");
+        } else {
+          btn.classList.remove("hidden");
+          if (span) span.textContent = String(count);
+        }
+      }
+
+      function bindSelectAllAndRowCheckboxes() {
+        var tbody = document.getElementById("tableBody");
+        if (!tbody) return;
+        var selectAll = document.getElementById("selectAllProducts");
+        if (selectAll) {
+          selectAll.onchange = function() {
+            tbody.querySelectorAll(".product-row-cb").forEach(function(cb) {
+              cb.checked = selectAll.checked;
+            });
+            updateDeleteSelectedBtn();
+          };
+        }
+        tbody.querySelectorAll(".product-row-cb").forEach(function(cb) {
+          cb.onchange = function() {
+            var any = tbody.querySelectorAll(".product-row-cb").length;
+            var checked = tbody.querySelectorAll(".product-row-cb:checked").length;
+            if (selectAll) selectAll.checked = (any > 0 && checked === any);
+            updateDeleteSelectedBtn();
+          };
+        });
       }
 
       function updateSaveAllStatusBtn() {
@@ -2478,6 +2534,46 @@
         a.click();
         URL.revokeObjectURL(a.href);
         showMessage("已匯出 CSV");
+      });
+
+      document.getElementById("btnDeleteSelected").addEventListener("click", function() {
+        var tbody = document.getElementById("tableBody");
+        if (!tbody) return;
+        var rowIndices = [];
+        tbody.querySelectorAll(".product-row-cb:checked").forEach(function(cb) {
+          var r = parseInt(cb.getAttribute("data-row"), 10);
+          if (r >= 2) rowIndices.push(r);
+        });
+        if (rowIndices.length === 0) {
+          showMessage("請先勾選要刪除的商品", true);
+          return;
+        }
+        rowIndices.sort(function(a, b) { return b - a; });
+        if (!confirm("確定要刪除所選的 " + rowIndices.length + " 筆商品嗎？刪除後試算表該列也會一併移除。")) return;
+        var btn = document.getElementById("btnDeleteSelected");
+        if (btn) btn.disabled = true;
+        var chain = Promise.resolve();
+        rowIndices.forEach(function(rowIndex) {
+          chain = chain.then(function() {
+            return fetchWrite({ action: "delete", rowIndex: rowIndex })
+              .then(function(r) { return r.json(); })
+              .then(function(res) {
+                if (res && res.error) throw new Error(res.message || "刪除失敗");
+                return res;
+              });
+          });
+        });
+        chain
+          .then(function() {
+            showMessage("已刪除所選 " + rowIndices.length + " 筆商品");
+            loadProducts();
+          })
+          .catch(function(err) {
+            showMessage("刪除失敗：" + (err.message || "網路錯誤"), true);
+          })
+          .finally(function() {
+            if (btn) btn.disabled = false;
+          });
       });
 
       (function initOrderSection() {
