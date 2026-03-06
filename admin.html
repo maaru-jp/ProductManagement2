@@ -174,20 +174,6 @@
   </style>
 </head>
 <body class="min-h-screen bg-slate-100">
-  <script>
-    (function() {
-      if (window.location.protocol === "file:" || window.location.origin === "null" || window.location.origin === "") {
-        var banner = document.createElement("div");
-        banner.id = "corsBanner";
-        banner.style.cssText = "position:sticky;top:0;z-index:9999;background:#fef3c7;border-bottom:2px solid #f59e0b;color:#92400e;padding:12px 16px;font-family:system-ui,sans-serif;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.08);";
-        banner.innerHTML = "<strong>無法連線 API（CORS）</strong> — 您目前是用「直接開啟檔案」方式開啟本頁，瀏覽器會阻擋對 Google 試算表的請求。<br><br>" +
-          "<strong>請改用以本機伺服器開啟：</strong><br>" +
-          "1. 在專案資料夾打開終端機，執行：<code style=\"background:#fff;padding:2px 6px;border-radius:4px;margin:0 2px;\">python server.py</code> 或 <code style=\"background:#fff;padding:2px 6px;border-radius:4px;margin:0 2px;\">npx serve .</code><br>" +
-          "2. 用瀏覽器開啟：<a href=\"http://localhost:3000/admin.html\" style=\"color:#b45309;font-weight:bold;\">http://localhost:3000/admin.html</a>（若用 npx serve 則埠號可能為 3000，請看終端機顯示）";
-        document.body.insertBefore(banner, document.body.firstChild);
-      }
-    })();
-  </script>
   <!-- CMS 登入畫面（點擊登出後顯示） -->
   <div id="cmsLoginScreen" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-slate-300">
     <div class="bg-white rounded-xl shadow-xl p-8 w-full max-w-sm mx-4">
@@ -286,10 +272,9 @@
             商品管理
           </h2>
           <div class="flex items-center gap-3">
-            <button type="button" id="btnSaveAllStatus" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed" title="僅用於儲存「表格中上架／下架開關」的變更；編輯商品彈窗的儲存會直接寫入試算表，不需按此鈕">
+            <button type="button" id="btnSaveAllStatus" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed">
               儲存所有變更
             </button>
-            <span class="text-xs text-slate-400 hidden sm:inline">（表格上架/下架開關）</span>
             <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
               前往官網 ↗
             </a>
@@ -302,9 +287,6 @@
           </button>
           <button type="button" id="btnExport" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
             匯出 CSV
-          </button>
-          <button type="button" id="btnDeleteSelected" class="px-4 py-2 rounded-lg border border-red-300 bg-white text-red-600 text-sm hover:bg-red-50 hidden">
-            刪除所選 (<span id="selectedCount">0</span>)
           </button>
           <div class="flex-1 flex items-center gap-2 min-w-0">
             <input type="text" id="searchInput" placeholder="搜尋商品名稱、分類、品牌..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm" />
@@ -319,27 +301,21 @@
             <table class="w-full text-sm">
               <thead class="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th class="text-left py-3 px-4 w-12">
-                    <label class="flex items-center gap-1 cursor-pointer" title="全選／取消全選">
-                      <input type="checkbox" id="selectAllProducts" class="rounded border-slate-300 text-rose-500 focus:ring-rose-400" />
-                      <span class="text-slate-600 font-medium text-xs">勾選</span>
-                    </label>
-                  </th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">序號</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">編號</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">主圖</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">名稱</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">售價(JPY)</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">售價(TW)</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">利潤</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">成本</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">規格庫存</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">庫存</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">上架日期</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">操作</th>
                 </tr>
               </thead>
               <tbody id="tableBody">
-                <tr><td colspan="12" class="py-8 text-center text-slate-500">載入中...</td></tr>
+                <tr><td colspan="11" class="py-8 text-center text-slate-500">載入中...</td></tr>
               </tbody>
             </table>
           </div>
@@ -885,28 +861,21 @@
               </select>
             </div>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-            <h4 class="text-sm font-medium text-slate-700 mb-2">規格與庫存</h4>
-            <p class="text-xs text-slate-500 mb-3">每筆可填規格名稱、選填圖片網址、庫存數量（0＝已售完）。下方庫存總計由各規格數量自動加總。</p>
-            <div class="flex flex-wrap gap-2 items-center mb-1 px-1 text-xs text-slate-500">
-              <span class="w-[calc(100px+0.5rem)] shrink-0">規格名稱</span>
-              <span class="flex-1 min-w-[120px]">圖片 URL（選填）</span>
-              <span class="w-20 shrink-0 text-center">庫存數量</span>
-              <span class="w-10 shrink-0"></span>
-            </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">角色</label>
+            <input type="text" name="character" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：酷洛米、凱蒂貓" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆，每筆可填對應圖片網址；現貨時可填各規格數量，0 則顧客頁顯示已售完）</label>
             <div id="variantListContainer" class="space-y-2">
               <div class="variant-item-row flex flex-wrap gap-2 items-start">
-                <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" placeholder="例：酷洛米" />
-                <input type="text" class="variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" placeholder="https://..." />
-                <input type="number" class="variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white" placeholder="0" min="0" step="1" title="該規格庫存數量，0＝已售完" />
+                <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="規格名稱，例：酷洛米" />
+                <input type="text" class="variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="該規格圖片 URL（選填）" />
+                <input type="number" class="variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm" placeholder="數量" min="0" step="1" title="現貨時填，0＝已售完" />
                 <button type="button" class="variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" title="移除">✕</button>
               </div>
             </div>
             <button type="button" id="btnAddVariant" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50">+ 新增規格品項</button>
-            <div class="mt-3 pt-3 border-t border-slate-200 flex items-center gap-2">
-              <span class="text-xs font-medium text-slate-600">庫存總計（由上方各規格數量加總）：</span>
-              <span id="stockDisplay" class="min-w-[2rem] rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700">0</span>
-            </div>
             <input type="hidden" name="variant" id="variantValue" value="" />
             <input type="hidden" name="variantImages" id="variantImagesValue" value="" />
             <input type="hidden" name="variantStock" id="variantStockValue" value="" />
@@ -947,7 +916,10 @@
             <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（售價－成本）</div>
             <input type="hidden" name="profit" id="profitValue" value="" />
           </div>
-          <input type="hidden" name="stock" id="stockValue" value="" />
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">庫存</label>
+            <input type="number" name="stock" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="0" />
+          </div>
           <input type="hidden" name="status" id="statusInput" value="上架" />
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">貨況</label>
@@ -1834,9 +1806,7 @@
       function loadProducts() {
         var tbody = document.getElementById("tableBody");
         tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
-        updateDeleteSelectedBtn();
-        var url = API_READ + (API_READ.indexOf("?") >= 0 ? "&" : "?") + "_t=" + Date.now();
-        return fetch(url)
+        fetch(API_READ)
           .then(function(r) { return r.json(); })
           .then(function(data) {
             products = data.products || [];
@@ -1863,154 +1833,102 @@
         });
       }
       if (list.length === 0) {
-        document.getElementById("selectAllProducts").checked = false;
-        var delBtn = document.getElementById("btnDeleteSelected");
-        if (delBtn) { delBtn.classList.add("hidden"); }
-        tbody.innerHTML = "<tr><td colspan=\"13\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
+        tbody.innerHTML = "<tr><td colspan=\"11\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
         return;
       }
       function fmtDate(v) {
         if (v == null || v === "") return "";
         if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
-        try {
-          var d = new Date(v);
-          if (isNaN(d.getTime())) return "";
-          var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
-          var pad = function(n) { return n < 10 ? "0" + n : String(n); };
-          return y + "-" + pad(m) + "-" + pad(day);
-        } catch (e) { return ""; }
+        try { var d = new Date(v); return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10); } catch (e) { return ""; }
       }
       function yesNo(v) { return (v === "Y" || v === "1" || v === true) ? "Y" : ""; }
       tbody.innerHTML = list.map(function(p, idx) {
-        var productIndex = products.indexOf(p);
-        if (productIndex < 0) productIndex = idx;
-        var rowNum = (p._sheetRowIndex != null && p._sheetRowIndex >= 2) ? p._sheetRowIndex : (productIndex + 2);
+        var rowNum = products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2;
         var name = p.name || p.商品名稱 || "";
         var price = p.price != null ? p.price : p.priceTWD != null ? p.priceTWD : p.日幣價格 != null ? p.日幣價格 : "";
         var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : p.台幣售價 != null ? p.台幣售價 : "";
         var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
         var cost = p.cost != null ? p.cost : p.成本 != null ? p.成本 : "";
         var stock = p.stock != null ? p.stock : p.庫存 != null ? p.庫存 : "";
-        var variantStockStr = (p.variantStock != null && p.variantStock !== "") ? (Array.isArray(p.variantStock) ? p.variantStock.join(",") : String(p.variantStock)) : (p.規格庫存 != null ? String(p.規格庫存) : "");
-        if (stock === "" && variantStockStr) {
-          var sum = 0;
-          variantStockStr.split(/[,，、\s]/).forEach(function(s) { var n = parseInt(s, 10); if (!isNaN(n) && n >= 0) sum += n; });
-          stock = sum;
-        }
         var img = p.image || p.圖片 || "";
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
         var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
         var isListed = status === "上架";
         var stockType = (p.stockType || p.貨況 || p.現貨預購 || "").toString().trim();
         return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\">" +
-            "<td class=\"py-3 px-4 w-12\"><label class=\"cursor-pointer\"><input type=\"checkbox\" class=\"product-row-cb rounded border-slate-300 text-rose-500 focus:ring-rose-400\" data-row=\"" + rowNum + "\" /></label></td>" +
-            "<td class=\"py-3 px-4 text-slate-500\">" + (idx + 1) + "</td>" +
+            "<td class=\"py-3 px-4 text-slate-500\">" + rowNum + "</td>" +
             "<td class=\"py-3 px-4\"><img src=\"" + (img || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E") + "\" alt=\"\" class=\"w-10 h-10 object-cover rounded\" onerror=\"this.src='data:image/svg+xml,%26%23x3C%3Bsvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27 fill=%27%23cbd5e1%27%26%23x3E%26%23x3C%3Brect width=%2740%27 height=%2740%27/%26%23x3E%26%23x3C%3B/svg%26%23x3E%3B'\" /></td>" +
             "<td class=\"py-3 px-4 font-medium\">" + escapeHtml(name) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(price)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(sellingPrice)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(profit)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(cost)) + "</td>" +
-            "<td class=\"py-3 px-4 text-slate-600 max-w-[120px] truncate\" title=\"" + escapeAttr(variantStockStr) + "\">" + escapeHtml(variantStockStr || "—") + "</td>" +
+            "<td class=\"py-3 px-4\">" + escapeHtml(String(stock)) + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(publishedAt) + "</td>" +
             "<td class=\"py-3 px-4\"><div class=\"product-status-track " + (isListed ? "on" : "off") + "\" data-row=\"" + rowNum + "\" data-status=\"" + (isListed ? "上架" : "下架") + "\" title=\"" + (isListed ? "上架中（點擊切換為下架）" : "已下架（點擊切換為上架）") + "\" role=\"button\" tabindex=\"0\"><span class=\"product-status-knob\"></span></div></td>" +
-            "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\" data-index=\"" + productIndex + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
+            "<td class=\"py-3 px-4\"><button type=\"button\" class=\"edit-btn text-rose-600 hover:underline mr-2\" data-row=\"" + rowNum + "\">編輯</button><button type=\"button\" class=\"delete-btn text-red-600 hover:underline\" data-row=\"" + rowNum + "\" data-name=\"" + escapeHtml(name).replace(/"/g, "&quot;") + "\">刪除</button></td>" +
             "</tr>";
         }).join("");
         tbody.querySelectorAll(".edit-btn").forEach(function(btn) {
           btn.addEventListener("click", function() {
-            var dataIndex = this.getAttribute("data-index");
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
-            var productIndex = dataIndex !== null && dataIndex !== "" ? parseInt(dataIndex, 10) : (rowIndex - 2);
-            if (productIndex < 0 || productIndex >= products.length) return;
-            var p = products[productIndex];
+            var p = products[rowIndex - 2];
             if (!p) return;
             openModal(true);
-            var editRow = (p._sheetRowIndex != null && p._sheetRowIndex >= 2) ? p._sheetRowIndex : (productIndex + 2);
-            editRow = Math.max(2, parseInt(editRow, 10) || 2);
-            document.getElementById("editRowIndex").value = String(editRow);
+            document.getElementById("editRowIndex").value = rowIndex;
             document.getElementById("modalTitle").textContent = "編輯商品";
-            var v = function(eng, zh) { var a = p[eng]; var b = p[zh]; if (a !== undefined && a !== null && a !== "") return a; if (b !== undefined && b !== null && b !== "") return b; return ""; };
-            var n = function(eng, zh) { var a = p[eng]; var b = p[zh]; if (a !== undefined && a !== null && Number.isFinite(Number(a))) return Number(a); if (b !== undefined && b !== null && Number.isFinite(Number(b))) return Number(b); return ""; };
-            var variantImgs = p.variantImages != null ? p.variantImages : p.規格圖片;
-            var variantStk = p.variantStock != null ? p.variantStock : p.規格庫存;
-            if (Array.isArray(variantImgs)) variantImgs = variantImgs.join(",");
-            if (Array.isArray(variantStk)) variantStk = variantStk.join(",");
-            var payload = {
-              name: String(v("name", "商品名稱") || ""),
-              category: String(v("category", "分類") || ""),
-              subcategory: String(v("subcategory", "子分類") || ""),
-              variant: String(v("variant", "規格") || ""),
-              price: n("price", "日幣價格"),
-              sellingPrice: p.sellingPrice != null && p.sellingPrice !== "" ? p.sellingPrice : (p.售價 != null && p.售價 !== "" ? p.售價 : (p.台幣售價 != null && p.台幣售價 !== "" ? p.台幣售價 : "")),
-              rate: n("rate", "匯率") || "",
-              profit: n("profit", "利潤") || "",
-              cost: n("cost", "成本") || "",
-              stock: n("stock", "庫存") !== "" ? n("stock", "庫存") : "",
-              status: ((p.status || p.狀態 || "上架") + "").trim() || "上架",
-              stockType: String(p.stockType || p.貨況 || p.現貨預購 || ""),
-              image: String(v("image", "圖片") || ""),
-              variantImages: String(variantImgs != null && variantImgs !== "" ? variantImgs : ""),
-              variantStock: String(variantStk != null && variantStk !== "" ? variantStk : ""),
-              description: String(v("description", "描述") || ""),
-              introduction: String(v("introduction", "商品介紹") || ""),
-              publishedAt: fmtDate(p.publishedAt || p.上架日期),
-              hot: (p.hot === "Y" || p.hot === true || p.hot === "1" || p.熱銷 === "Y" || p.熱銷 === true) ? "Y" : "",
-              recommended: (p.recommended === "Y" || p.recommended === true || p.推薦 === "Y" || p.推薦 === true) ? "Y" : "",
-              isNew: (p.isNew === "Y" || p.isNew === true || p.新品 === "Y" || p.新品 === true) ? "Y" : ""
-            };
-            var marginSelect = document.getElementById("marginSelect");
-            if (marginSelect) marginSelect.value = "custom";
-            setFormValues(payload);
-            setTimeout(function() {
-              updateSellingPriceByMargin();
-              updateCalculatedFields();
-            }, 0);
+            setFormValues({
+              name: p.name || p.商品名稱,
+              category: p.category || p.分類,
+              subcategory: p.subcategory || p.子分類,
+              character: p.character || p.角色,
+              variant: p.variant || p.規格,
+              price: p.price != null ? p.price : p.日幣價格,
+              sellingPrice: p.sellingPrice != null ? p.sellingPrice : p.售價 || p.台幣售價,
+              rate: p.rate != null ? p.rate : p.匯率,
+              profit: p.profit != null ? p.profit : p.利潤,
+              cost: p.cost != null ? p.cost : p.成本,
+              stock: p.stock != null ? p.stock : p.庫存,
+              status: (p.status || p.狀態 || "上架").toString().trim() || "上架",
+              stockType: p.stockType || p.貨況 || p.現貨預購 || "",
+              image: p.image || p.圖片,
+              variantImages: (p.variantImages != null ? p.variantImages : p.規格圖片 != null ? p.規格圖片 : ""),
+              variantStock: (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : ""),
+              description: p.description || p.描述,
+              introduction: p.introduction || p.商品介紹,
+              publishedAt: p.publishedAt || p.上架日期 || "",
+              hot: p.hot || p.熱銷 || "",
+              recommended: p.recommended || p.推薦 || "",
+              isNew: p.isNew || p.新品 || ""
+            });
+            document.getElementById("marginSelect").value = "custom";
+            updateSellingPriceByMargin();
           });
         });
         tbody.querySelectorAll(".delete-btn").forEach(function(btn) {
           btn.addEventListener("click", function() {
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
             var name = this.getAttribute("data-name") || "此商品";
-            if (isNaN(rowIndex) || rowIndex < 2) {
-              loadProducts();
-              showMessage("刪除失敗：列號無效，請重新整理列表後再試。", true);
-              return;
-            }
             if (!confirm("確定要刪除「" + name + "」嗎？刪除後試算表該列也會一併移除。")) return;
             fetchWrite({ action: "delete", rowIndex: rowIndex })
-              .then(function(r) {
-                return r.text().then(function(t) {
-                  var res;
-                  try { res = t ? JSON.parse(t) : {}; } catch (e) { res = { error: true, message: "回應格式錯誤" }; }
-                  return res;
-                });
-              })
+              .then(function(r) { return r.json(); })
               .then(function(res) {
-                if (res && res.error) {
-                  var msg = (res.message || "").toString();
-                  if (msg.indexOf("列號") !== -1 || msg.indexOf("無效") !== -1) {
-                    loadProducts();
-                    showMessage("試算表列數已變更，已重新載入列表。請再試一次刪除。", true);
-                  } else {
-                    showMessage("刪除失敗：" + msg, true);
-                    loadProducts();
-                  }
+                if (res.error) {
+                  showMessage("刪除失敗：" + res.message, true);
                   return;
                 }
-                showMessage(res && res.message ? res.message : "已刪除");
+                showMessage(res.message || "已刪除");
                 loadProducts();
               })
               .catch(function(err) {
-                var msg = (err && err.message) ? err.message : String(err);
-                if (/failed to fetch/i.test(msg)) msg = "無法連線（CORS 或網路問題）。請用本機伺服器開啟後台（例如執行 server.py 或 npx serve），再開啟 http://localhost:3000/admin.html 操作刪除。";
+                var msg = err.message || "";
+                if (/failed to fetch/i.test(msg)) msg = "無法連線，請確認 API 網址正確並已部署為「任何人」。";
                 showMessage("刪除失敗：" + msg, true);
-                loadProducts();
               });
           });
         });
         tbody.querySelectorAll(".product-status-track").forEach(function(el) {
-            el.addEventListener("click", function(e) {
+          el.addEventListener("click", function(e) {
             e.preventDefault();
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
             var p = products[rowIndex - 2];
@@ -2029,46 +1947,6 @@
           });
         });
         updateSaveAllStatusBtn();
-        updateDeleteSelectedBtn();
-        bindSelectAllAndRowCheckboxes();
-      }
-
-      function updateDeleteSelectedBtn() {
-        var tbody = document.getElementById("tableBody");
-        if (!tbody) return;
-        var count = 0;
-        tbody.querySelectorAll(".product-row-cb:checked").forEach(function() { count++; });
-        var btn = document.getElementById("btnDeleteSelected");
-        var span = document.getElementById("selectedCount");
-        if (!btn) return;
-        if (count === 0) {
-          btn.classList.add("hidden");
-        } else {
-          btn.classList.remove("hidden");
-          if (span) span.textContent = String(count);
-        }
-      }
-
-      function bindSelectAllAndRowCheckboxes() {
-        var tbody = document.getElementById("tableBody");
-        if (!tbody) return;
-        var selectAll = document.getElementById("selectAllProducts");
-        if (selectAll) {
-          selectAll.onchange = function() {
-            tbody.querySelectorAll(".product-row-cb").forEach(function(cb) {
-              cb.checked = selectAll.checked;
-            });
-            updateDeleteSelectedBtn();
-          };
-        }
-        tbody.querySelectorAll(".product-row-cb").forEach(function(cb) {
-          cb.onchange = function() {
-            var any = tbody.querySelectorAll(".product-row-cb").length;
-            var checked = tbody.querySelectorAll(".product-row-cb:checked").length;
-            if (selectAll) selectAll.checked = (any > 0 && checked === any);
-            updateDeleteSelectedBtn();
-          };
-        });
       }
 
       function updateSaveAllStatusBtn() {
@@ -2153,16 +2031,7 @@
       }
 
       var SUBCATEGORY_BY_CATEGORY = {
-        "絨毛玩偶": ["玩偶公仔", "吊飾娃娃"],
-        "包包時尚小物": ["托特包", "手提包", "肩背包", "斜背包"],
-        "美妝用品": ["托特包", "手提包", "肩背包", "斜背包"],
-        "飾品配件": ["髮飾", "飾品", "飾品收納盒", "眼鏡盒", "鑰匙圈", "手錶", "其他時尚飾品"],
-        "服飾專區": ["上衣", "褲子", "襪子", "其他服飾"],
-        "文具用品": ["年曆", "手帳本", "筆款", "筆盒", "便條紙", "貼紙", "文件收納相關", "辦公事務用品"],
-        "3C用品": ["手機殼"],
-        "居家生活": ["環保餐具", "水壺", "便當袋", "料理用具", "廚房收納"],
-        "兒童專區": ["便當袋", "水壺"],
-        "旅行用品": ["行李吊牌", "行李箱束帶", "旅用收納物", "雨傘", "雨具"]
+        "絨毛玩偶": ["玩偶公仔", "吊飾娃娃"]
       };
       function updateSubcategoryOptions(categoryValue) {
         var sel = document.getElementById("productSubcategorySelect");
@@ -2202,10 +2071,8 @@
         if (hiddenImages) hiddenImages.value = urls.join(", ");
         if (hiddenStock) hiddenStock.value = qtys.map(function(q) { return q === "" ? "0" : q; }).join(", ");
         var total = qtys.reduce(function(sum, q) { return sum + (q === "" ? 0 : Number(q)); }, 0);
-        var stockInput = document.getElementById("stockValue");
+        var stockInput = document.querySelector("input[name=\"stock\"]");
         if (stockInput) stockInput.value = total;
-        var stockDisplay = document.getElementById("stockDisplay");
-        if (stockDisplay) stockDisplay.textContent = total;
       }
 
       function escapeAttr(s) {
@@ -2252,69 +2119,27 @@
         syncVariantToHidden();
       }
 
-      var FORM_FIELD_NAMES = ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"];
       function setFormValues(obj) {
         var form = document.getElementById("productForm");
-        var isEmpty = !obj || Object.keys(obj).length === 0;
-        if (isEmpty) {
-          updateSubcategoryOptions("");
-          FORM_FIELD_NAMES.forEach(function(key) {
-            if (key === "variant" || key === "variantImages" || key === "variantStock") return;
-            var input = form.querySelector("[name=" + key + "]");
-            if (input) input.value = "";
-          });
-          renderVariantList("", "", "");
-          var si = document.getElementById("statusInput");
-          if (si) si.value = "上架";
-        } else {
-          var categoryVal = String(obj.category != null && obj.category !== undefined ? obj.category : (obj.分類 != null ? obj.分類 : "")).trim();
-          var subcategoryVal = String(obj.subcategory != null && obj.subcategory !== undefined ? obj.subcategory : (obj.子分類 != null ? obj.子分類 : "")).trim();
-          updateSubcategoryOptions(categoryVal);
-          var catSel = form.querySelector("[name=\"category\"]");
-          var subSel = form.querySelector("[name=\"subcategory\"]");
-          if (catSel) {
-            catSel.value = categoryVal;
-            if (catSel.value !== categoryVal && categoryVal) {
-              var opt = document.createElement("option");
-              opt.value = categoryVal;
-              opt.textContent = categoryVal;
-              catSel.appendChild(opt);
-              catSel.value = categoryVal;
-            }
-          }
-          if (subSel) {
-            subSel.value = subcategoryVal;
-            if (subSel.value !== subcategoryVal && subcategoryVal) {
-              var subOpt = document.createElement("option");
-              subOpt.value = subcategoryVal;
-              subOpt.textContent = subcategoryVal;
-              subSel.appendChild(subOpt);
-              subSel.value = subcategoryVal;
-            }
-          }
-          Object.keys(obj).forEach(function(key) {
-            if (key === "hot" || key === "recommended" || key === "isNew" || key === "variant" || key === "category" || key === "subcategory") return;
-            var input = form.querySelector("[name=" + key + "]");
-            if (!input) return;
-            var val = obj[key];
-            if (val == null || val === undefined) val = "";
-            else if (typeof val === "number" && !Number.isFinite(val)) val = "";
-            else if (typeof val !== "string" && typeof val !== "number") val = String(val);
-            input.value = val;
-          });
-          var vStr = (obj.variant != null && obj.variant !== undefined) ? String(obj.variant) : "";
-          var vImgStr = (obj.variantImages != null && obj.variantImages !== undefined) ? (Array.isArray(obj.variantImages) ? obj.variantImages.join(",") : String(obj.variantImages)) : "";
-          var vStockStr = (obj.variantStock != null && obj.variantStock !== undefined) ? (Array.isArray(obj.variantStock) ? obj.variantStock.join(",") : String(obj.variantStock)) : "";
-          renderVariantList(vStr, vImgStr, vStockStr);
-          if (obj.status != null) {
-            var si = document.getElementById("statusInput");
-            if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
-          }
-        }
+        updateSubcategoryOptions(obj && obj.category ? obj.category : "");
+        Object.keys(obj || {}).forEach(function(key) {
+          if (key === "hot" || key === "recommended" || key === "isNew" || key === "variant") return;
+          var input = form.querySelector("[name=" + key + "]");
+          if (input) input.value = obj[key] != null ? obj[key] : "";
+        });
         ["hot", "recommended", "isNew"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
-          if (el) el.checked = (obj && (obj[key] === "Y" || obj[key] === true || obj[key] === "1"));
+          if (el) el.checked = (obj[key] === "Y" || obj[key] === true || obj[key] === "1");
         });
+        renderVariantList(
+          obj && obj.variant != null ? obj.variant : "",
+          obj && obj.variantImages != null ? obj.variantImages : "",
+          obj && obj.variantStock != null ? obj.variantStock : ""
+        );
+        if (obj && obj.status != null) {
+          var si = document.getElementById("statusInput");
+          if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
+        }
         updateCalculatedFields();
       }
 
@@ -2411,7 +2236,7 @@
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
+        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
@@ -2530,7 +2355,6 @@
           showMessage("請輸入商品名稱", true);
           return;
         }
-        if (!product.status || String(product.status).trim() === "") product.status = "上架";
         var priceNum = product.price;
         if (priceNum === "" || priceNum === undefined || priceNum === null || (typeof priceNum === "number" && !Number.isFinite(priceNum))) {
           showMessage("請輸入日幣價格", true);
@@ -2544,36 +2368,20 @@
         fetchWrite(body)
           .then(function(r) {
             return r.text().then(function(t) {
-              var res;
-              try { res = t ? JSON.parse(t) : {}; } catch (e) { res = { error: true, message: "回應格式錯誤" }; }
-              return res;
+              try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "伺服器回傳的內容不是有效 JSON。" }; }
             });
           })
           .then(function(res) {
             if (res && res.error) {
-              var msg = (res.message || "").toString();
-              if (msg.indexOf("超出試算表範圍") !== -1) {
-                closeModal();
-                document.getElementById("editRowIndex").value = "";
-                var loadPromise = loadProducts();
-                if (loadPromise && typeof loadPromise.then === "function") {
-                  loadPromise.then(function() {
-                    showMessage("試算表列數已變更，已重新載入列表。請再次點選該筆「編輯」後儲存。", true);
-                  });
-                } else {
-                  showMessage("試算表列數已變更，已重新載入列表。請再次點選該筆「編輯」後儲存。", true);
-                }
-              } else {
-                showMessage("儲存失敗：" + msg, true);
-              }
+              showMessage("儲存失敗：" + (res.message || "未知錯誤"), true);
               return;
             }
-            showMessage((res && res.message ? res.message : "已儲存") + "（含規格庫存已寫入試算表）");
+            showMessage((res && res.message) ? res.message : "已儲存");
             closeModal();
             loadProducts();
           })
           .catch(function(err) {
-            showMessage("儲存失敗：" + (err && err.message ? err.message : "網路錯誤，請確認 API 網址或改用本機伺服器開啟後台").replace(/^Failed to fetch$/i, "無法連線（可能為 CORS 或網路問題，請確認 API 網址或改用本機開啟）"), true);
+            showMessage("儲存失敗：" + (err && err.message ? err.message : "網路錯誤").replace(/^Failed to fetch$/i, "無法連線，請確認 API 網址與網路。"), true);
           });
       });
 
@@ -2614,52 +2422,6 @@
         a.click();
         URL.revokeObjectURL(a.href);
         showMessage("已匯出 CSV");
-      });
-
-      document.getElementById("btnDeleteSelected").addEventListener("click", function() {
-        var tbody = document.getElementById("tableBody");
-        if (!tbody) return;
-        var rowIndices = [];
-        tbody.querySelectorAll(".product-row-cb:checked").forEach(function(cb) {
-          var r = parseInt(cb.getAttribute("data-row"), 10);
-          if (r >= 2) rowIndices.push(r);
-        });
-        if (rowIndices.length === 0) {
-          showMessage("請先勾選要刪除的商品", true);
-          return;
-        }
-        rowIndices.sort(function(a, b) { return b - a; });
-        if (!confirm("確定要刪除所選的 " + rowIndices.length + " 筆商品嗎？刪除後試算表該列也會一併移除。")) return;
-        var btn = document.getElementById("btnDeleteSelected");
-        if (btn) btn.disabled = true;
-        var chain = Promise.resolve();
-        rowIndices.forEach(function(rowIndex) {
-          chain = chain.then(function() {
-            return fetchWrite({ action: "delete", rowIndex: rowIndex })
-              .then(function(r) { return r.json(); })
-              .then(function(res) {
-                if (res && res.error) throw new Error(res.message || "刪除失敗");
-                return res;
-              });
-          });
-        });
-        chain
-          .then(function() {
-            showMessage("已刪除所選 " + rowIndices.length + " 筆商品");
-            loadProducts();
-          })
-          .catch(function(err) {
-            var msg = err.message || "";
-            if (msg.indexOf("列號") !== -1 || msg.indexOf("無效") !== -1) {
-              loadProducts();
-              showMessage("試算表列數已變更，已重新載入列表。請再試一次刪除。", true);
-            } else {
-              showMessage("刪除失敗：" + (msg || "網路錯誤"), true);
-            }
-          })
-          .finally(function() {
-            if (btn) btn.disabled = false;
-          });
       });
 
       (function initOrderSection() {

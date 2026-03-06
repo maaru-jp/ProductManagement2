@@ -5,16 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Maaru Shop</title>
 
-    <!--
-      建議使用本機伺服器開啟以正常連線 API。
-      開發時主控台可能出現的訊息說明：
-      - "Tracking Prevention blocked access to storage"：瀏覽器隱私功能阻擋第三方儲存，可忽略。
-      - "cdn.tailwindcss.com should not be used in production"：正式環境請改為 PostCSS 或 Tailwind CLI。
-      - "in-browser Babel transformer"：正式環境請改為建置時預編譯 JSX。
-      - "logo_tondiv.jpg 404"：請將 logo_tondiv.jpg 放在與 index.html 同目錄，否則會顯示 fallback「M」。
-      - "[Intervention] Images loaded lazily"：瀏覽器說明圖片延遲載入，可忽略。
-    -->
-    <!-- Tailwind CSS (CDN)；正式上線改為 PostCSS/CLI：https://tailwindcss.com/docs/installation -->
+    <!-- Tailwind CSS (CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Site CSS (keep custom CSS separate) -->
@@ -24,13 +15,14 @@
     <div id="root"></div>
 
     <!-- React / ReactDOM (CDN, pin versions for stability) -->
+    <!-- NOTE: Do NOT set crossorigin here; it can trigger CORS mode and break some CDNs/redirects. -->
     <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 
-    <!-- Babel 瀏覽器編譯 JSX（開發用）；正式上線改為建置時預編譯：https://babeljs.io/docs/setup/ -->
+    <!-- Babel: allow JSX in external file (no build step) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- App JS -->
+    <!-- App JS (kept separate from HTML) -->
     <script type="text/babel" data-presets="env,react" src="./js/app.jsx"></script>
   </body>
 </html>
