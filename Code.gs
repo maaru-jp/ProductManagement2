@@ -47,7 +47,7 @@ function doPost(e) {
   try {
     var raw = e.postData && e.postData.contents ? e.postData.contents : "{}";
     var body = JSON.parse(raw);
-    var action = body.action || "append";
+    var action = String(body.action || "append").toLowerCase();
     var product = body.product || {};
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) {
@@ -82,13 +82,21 @@ function doPost(e) {
       headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return (h || "").toString().trim(); });
     }
 
-    if (action === "delete" && body.rowIndex != null) {
-      var delRow = parseInt(body.rowIndex, 10);
-      if (delRow >= 2 && delRow <= sheet.getLastRow()) {
-        sheet.deleteRow(delRow);
-        return jsonResponse({ ok: true, message: "已刪除該筆商品" });
+    if (action === "delete") {
+      if (body.rowIndex == null || body.rowIndex === "") {
+        return jsonResponse({ error: true, message: "刪除時必須提供 rowIndex（試算表列號）。請重新整理後台列表後再試。" });
       }
-      return jsonResponse({ error: true, message: "無效的 rowIndex" });
+      var delRow = parseInt(body.rowIndex, 10);
+      if (isNaN(delRow) || delRow < 2) {
+        return jsonResponse({ error: true, message: "刪除的列號無效（列號須為 2 以上的數字）。請重新整理後台列表後再試。" });
+      }
+      var lastRow = sheet.getLastRow();
+      if (delRow > lastRow) {
+        return jsonResponse({ error: true, message: "刪除的列號無效（列號須在 2 ～ " + lastRow + " 之間）。請重新整理後台列表後再試。" });
+      }
+      sheet.deleteRow(delRow);
+      SpreadsheetApp.flush();
+      return jsonResponse({ ok: true, message: "已刪除該筆商品" });
     }
 
     var row = buildRowFromProduct(headers, product);
@@ -106,7 +114,7 @@ function doPost(e) {
       }
       var lastRow = sheet.getLastRow();
       if (rowIndex > lastRow) {
-        return jsonResponse({ error: true, message: "rowIndex " + rowIndex + " 超出試算表範圍（目前最後一列為 " + lastRow + "）。請重新整理後台列表後再試。" });
+        return jsonResponse({ error: true, message: "列號 " + rowIndex + " 超出試算表範圍（目前最後一列為 " + lastRow + "）。請重新整理後台列表後再試。" });
       }
       sheet.getRange(rowIndex, 1, 1, headers.length).setValues([row]);
       SpreadsheetApp.flush();

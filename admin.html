@@ -174,16 +174,6 @@
   </style>
 </head>
 <body class="min-h-screen bg-slate-100">
-  <script>
-    (function() {
-      if (window.location.protocol === "file:") {
-        var b = document.createElement("div");
-        b.style.cssText = "max-width:560px;margin:1rem auto;padding:1rem 1.5rem;font-family:system-ui,sans-serif;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;color:#92400e;font-size:14px;";
-        b.innerHTML = "<strong>請勿直接開啟檔案 (file://)</strong> — 會造成 CORS，無法連線 Google API。<br>請在專案資料夾執行 <code>npx serve .</code> 或 <code>python -m http.server 8080</code>，再開啟 <code>http://localhost:3000</code> 或 <code>http://localhost:8080</code>。";
-        document.body.insertBefore(b, document.body.firstChild);
-      }
-    })();
-  </script>
   <!-- CMS 登入畫面（點擊登出後顯示） -->
   <div id="cmsLoginScreen" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-slate-300">
     <div class="bg-white rounded-xl shadow-xl p-8 w-full max-w-sm mx-4">
@@ -321,14 +311,13 @@
                       <span class="text-slate-600 font-medium text-xs">勾選</span>
                     </label>
                   </th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">編號</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">序號</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">主圖</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">名稱</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">售價(JPY)</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">售價(TW)</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">利潤</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">成本</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">庫存</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">規格庫存</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">上架日期</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
@@ -336,7 +325,7 @@
                 </tr>
               </thead>
               <tbody id="tableBody">
-                <tr><td colspan="13" class="py-8 text-center text-slate-500">載入中...</td></tr>
+                <tr><td colspan="12" class="py-8 text-center text-slate-500">載入中...</td></tr>
               </tbody>
             </table>
           </div>
@@ -882,17 +871,28 @@
               </select>
             </div>
           </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆，每筆可填對應圖片網址；現貨時可填各規格數量，0 則顧客頁顯示已售完）</label>
+          <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+            <h4 class="text-sm font-medium text-slate-700 mb-2">規格與庫存</h4>
+            <p class="text-xs text-slate-500 mb-3">每筆可填規格名稱、選填圖片網址、庫存數量（0＝已售完）。下方庫存總計由各規格數量自動加總。</p>
+            <div class="flex flex-wrap gap-2 items-center mb-1 px-1 text-xs text-slate-500">
+              <span class="w-[calc(100px+0.5rem)] shrink-0">規格名稱</span>
+              <span class="flex-1 min-w-[120px]">圖片 URL（選填）</span>
+              <span class="w-20 shrink-0 text-center">庫存數量</span>
+              <span class="w-10 shrink-0"></span>
+            </div>
             <div id="variantListContainer" class="space-y-2">
               <div class="variant-item-row flex flex-wrap gap-2 items-start">
-                <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="規格名稱，例：酷洛米" />
-                <input type="text" class="variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="該規格圖片 URL（選填）" />
-                <input type="number" class="variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm" placeholder="數量" min="0" step="1" title="現貨時填，0＝已售完" />
+                <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" placeholder="例：酷洛米" />
+                <input type="text" class="variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" placeholder="https://..." />
+                <input type="number" class="variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white" placeholder="0" min="0" step="1" title="該規格庫存數量，0＝已售完" />
                 <button type="button" class="variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" title="移除">✕</button>
               </div>
             </div>
             <button type="button" id="btnAddVariant" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50">+ 新增規格品項</button>
+            <div class="mt-3 pt-3 border-t border-slate-200 flex items-center gap-2">
+              <span class="text-xs font-medium text-slate-600">庫存總計（由上方各規格數量加總）：</span>
+              <span id="stockDisplay" class="min-w-[2rem] rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700">0</span>
+            </div>
             <input type="hidden" name="variant" id="variantValue" value="" />
             <input type="hidden" name="variantImages" id="variantImagesValue" value="" />
             <input type="hidden" name="variantStock" id="variantStockValue" value="" />
@@ -933,10 +933,7 @@
             <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（售價－成本）</div>
             <input type="hidden" name="profit" id="profitValue" value="" />
           </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">庫存</label>
-            <input type="number" name="stock" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="0" />
-          </div>
+          <input type="hidden" name="stock" id="stockValue" value="" />
           <input type="hidden" name="status" id="statusInput" value="上架" />
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">貨況</label>
@@ -1825,7 +1822,7 @@
         tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
         updateDeleteSelectedBtn();
         var url = API_READ + (API_READ.indexOf("?") >= 0 ? "&" : "?") + "_t=" + Date.now();
-        fetch(url)
+        return fetch(url)
           .then(function(r) { return r.json(); })
           .then(function(data) {
             products = data.products || [];
@@ -1834,7 +1831,7 @@
             updateSaveAllStatusBtn();
           })
           .catch(function(err) {
-            tbody.innerHTML = "<tr><td colspan=\"13\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
+            tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
           });
       }
 
@@ -1893,14 +1890,13 @@
         var stockType = (p.stockType || p.貨況 || p.現貨預購 || "").toString().trim();
         return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\">" +
             "<td class=\"py-3 px-4 w-12\"><label class=\"cursor-pointer\"><input type=\"checkbox\" class=\"product-row-cb rounded border-slate-300 text-rose-500 focus:ring-rose-400\" data-row=\"" + rowNum + "\" /></label></td>" +
-            "<td class=\"py-3 px-4 text-slate-500\">" + rowNum + "</td>" +
+            "<td class=\"py-3 px-4 text-slate-500\">" + (idx + 1) + "</td>" +
             "<td class=\"py-3 px-4\"><img src=\"" + (img || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E") + "\" alt=\"\" class=\"w-10 h-10 object-cover rounded\" onerror=\"this.src='data:image/svg+xml,%26%23x3C%3Bsvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27 fill=%27%23cbd5e1%27%26%23x3E%26%23x3C%3Brect width=%2740%27 height=%2740%27/%26%23x3E%26%23x3C%3B/svg%26%23x3E%3B'\" /></td>" +
             "<td class=\"py-3 px-4 font-medium\">" + escapeHtml(name) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(price)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(sellingPrice)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(profit)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(cost)) + "</td>" +
-            "<td class=\"py-3 px-4\">" + escapeHtml(String(stock)) + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600 max-w-[120px] truncate\" title=\"" + escapeAttr(variantStockStr) + "\">" + escapeHtml(variantStockStr || "—") + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(publishedAt) + "</td>" +
             "<td class=\"py-3 px-4\"><div class=\"product-status-track " + (isListed ? "on" : "off") + "\" data-row=\"" + rowNum + "\" data-status=\"" + (isListed ? "上架" : "下架") + "\" title=\"" + (isListed ? "上架中（點擊切換為下架）" : "已下架（點擊切換為上架）") + "\" role=\"button\" tabindex=\"0\"><span class=\"product-status-knob\"></span></div></td>" +
@@ -1962,21 +1958,40 @@
           btn.addEventListener("click", function() {
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
             var name = this.getAttribute("data-name") || "此商品";
+            if (isNaN(rowIndex) || rowIndex < 2) {
+              loadProducts();
+              showMessage("刪除失敗：列號無效，請重新整理列表後再試。", true);
+              return;
+            }
             if (!confirm("確定要刪除「" + name + "」嗎？刪除後試算表該列也會一併移除。")) return;
             fetchWrite({ action: "delete", rowIndex: rowIndex })
-              .then(function(r) { return r.json(); })
+              .then(function(r) {
+                return r.text().then(function(t) {
+                  var res;
+                  try { res = t ? JSON.parse(t) : {}; } catch (e) { res = { error: true, message: "回應格式錯誤" }; }
+                  return res;
+                });
+              })
               .then(function(res) {
-                if (res.error) {
-                  showMessage("刪除失敗：" + res.message, true);
+                if (res && res.error) {
+                  var msg = (res.message || "").toString();
+                  if (msg.indexOf("列號") !== -1 || msg.indexOf("無效") !== -1) {
+                    loadProducts();
+                    showMessage("試算表列數已變更，已重新載入列表。請再試一次刪除。", true);
+                  } else {
+                    showMessage("刪除失敗：" + msg, true);
+                    loadProducts();
+                  }
                   return;
                 }
-                showMessage(res.message || "已刪除");
+                showMessage(res && res.message ? res.message : "已刪除");
                 loadProducts();
               })
               .catch(function(err) {
-                var msg = err.message || "";
-                if (/failed to fetch/i.test(msg)) msg = "無法連線（CORS 或網路問題，請確認 API 網址正確並已部署為「任何人」；或改用本機伺服器開啟後台）";
+                var msg = (err && err.message) ? err.message : String(err);
+                if (/failed to fetch/i.test(msg)) msg = "無法連線（CORS 或網路問題）。請用本機伺服器開啟後台（例如執行 server.py 或 npx serve），再開啟 http://localhost:3000/admin.html 操作刪除。";
                 showMessage("刪除失敗：" + msg, true);
+                loadProducts();
               });
           });
         });
@@ -2173,8 +2188,10 @@
         if (hiddenImages) hiddenImages.value = urls.join(", ");
         if (hiddenStock) hiddenStock.value = qtys.map(function(q) { return q === "" ? "0" : q; }).join(", ");
         var total = qtys.reduce(function(sum, q) { return sum + (q === "" ? 0 : Number(q)); }, 0);
-        var stockInput = document.querySelector("input[name=\"stock\"]");
+        var stockInput = document.getElementById("stockValue");
         if (stockInput) stockInput.value = total;
+        var stockDisplay = document.getElementById("stockDisplay");
+        if (stockDisplay) stockDisplay.textContent = total;
       }
 
       function escapeAttr(s) {
@@ -2514,7 +2531,21 @@
           .then(function(r) { return r.json(); })
           .then(function(res) {
             if (res.error) {
-              showMessage("儲存失敗：" + res.message, true);
+              var msg = res.message || "";
+              if (msg.indexOf("超出試算表範圍") !== -1) {
+                closeModal();
+                document.getElementById("editRowIndex").value = "";
+                var loadPromise = loadProducts();
+                if (loadPromise && typeof loadPromise.then === "function") {
+                  loadPromise.then(function() {
+                    showMessage("試算表列數已變更，已重新載入列表。請再次點選該筆「編輯」後儲存。", true);
+                  });
+                } else {
+                  showMessage("試算表列數已變更，已重新載入列表。請再次點選該筆「編輯」後儲存。", true);
+                }
+              } else {
+                showMessage("儲存失敗：" + msg, true);
+              }
               return;
             }
             showMessage((res.message || "已儲存") + "（含規格庫存已寫入試算表）");
@@ -2598,7 +2629,13 @@
             loadProducts();
           })
           .catch(function(err) {
-            showMessage("刪除失敗：" + (err.message || "網路錯誤"), true);
+            var msg = err.message || "";
+            if (msg.indexOf("列號") !== -1 || msg.indexOf("無效") !== -1) {
+              loadProducts();
+              showMessage("試算表列數已變更，已重新載入列表。請再試一次刪除。", true);
+            } else {
+              showMessage("刪除失敗：" + (msg || "網路錯誤"), true);
+            }
           })
           .finally(function() {
             if (btn) btn.disabled = false;
