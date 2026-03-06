@@ -25,11 +25,8 @@ function doGet(e) {
   try {
     var data = getApiData();
     var json = JSON.stringify(data);
-    var output = ContentService.createTextOutput(json)
+    return ContentService.createTextOutput(json)
       .setMimeType(ContentService.MimeType.JSON);
-    // 允許從 GitHub Pages、localhost 等任何網域呼叫
-    output.setHeader("Access-Control-Allow-Origin", "*");
-    return output;
   } catch (err) {
     Logger.log(err);
     var errorBody = JSON.stringify({
@@ -37,8 +34,7 @@ function doGet(e) {
       message: err.toString()
     });
     return ContentService.createTextOutput(errorBody)
-      .setMimeType(ContentService.MimeType.JSON)
-      .setHeader("Access-Control-Allow-Origin", "*");
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
