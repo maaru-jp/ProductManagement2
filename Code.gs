@@ -216,16 +216,48 @@ function buildRowFromProduct(sheet, product) {
 }
 
 /**
- * 從試算表組出前端要的 { products: [...], rate: number }。
+ * 從試算表組出前端要的 { products: [...], rate: number, characterImages: {} }。
  */
 function getApiData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var rate = getRate(ss);
   var products = getProducts(ss);
+  var characterImages = getCharacterImages(ss);
   return {
     rate: rate,
-    products: products
+    products: products,
+    characterImages: characterImages
   };
+}
+
+/**
+ * 從試算表「第二張」工作表讀取角色對應圖片。
+ * 預期格式：第一列標題含「角色」或「角色名稱」、以及「圖片」或「圖片URL」；第二列起為角色名稱與圖片網址。
+ * 回傳 { "角色名": "圖片URL", ... }，若無第二張或格式不符則回傳 {}。
+ */
+function getCharacterImages(ss) {
+  var sheets = ss.getSheets();
+  if (!sheets || sheets.length < 2) return {};
+  var sheet = sheets[1];
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) return {};
+  var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
+  var roleCol = -1;
+  var imgCol = -1;
+  for (var i = 0; i < headers.length; i++) {
+    var h = headers[i].toLowerCase();
+    if (h === "角色" || h === "角色名稱" || h === "character" || h === "name") roleCol = i;
+    if (h === "圖片" || h === "圖片url" || h === "image" || h === "圖片網址") imgCol = i;
+  }
+  if (roleCol < 0 || imgCol < 0) return {};
+  var out = {};
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var name = (row[roleCol] != null && row[roleCol] !== "") ? String(row[roleCol]).trim() : "";
+    var url = (row[imgCol] != null && row[imgCol] !== "") ? String(row[imgCol]).trim() : "";
+    if (name && url) out[name] = url;
+  }
+  return out;
 }
 
 /**
