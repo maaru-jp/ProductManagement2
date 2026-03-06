@@ -39,6 +39,183 @@ function doGet(e) {
 }
 
 /**
+ * POST 進入點。前端用於寫入試算表：append / update / delete / info。
+ * 一律回傳 JSON，避免前端收到 HTML 錯誤頁。
+ */
+function doPost(e) {
+  var out = { error: false, message: "" };
+  try {
+    var raw = (e && e.postData && e.postData.contents) ? e.postData.contents : "{}";
+    var body = {};
+    try {
+      body = JSON.parse(raw);
+    } catch (parseErr) {
+      out.error = true;
+      out.message = "請求內容不是有效 JSON";
+      return jsonOutput(out);
+    }
+    var action = (body.action || "").toString().toLowerCase();
+    var ss = null;
+    try {
+      ss = SpreadsheetApp.getActiveSpreadsheet();
+    } catch (ssErr) {
+      out.error = true;
+      out.message = "無法取得試算表：" + ssErr.toString();
+      return jsonOutput(out);
+    }
+    if (action === "info") {
+      var info = getSpreadsheetInfo(ss);
+      out.sheetName = info.sheetName;
+      out.rowCount = info.rowCount;
+      out.message = "已連線";
+      return jsonOutput(out);
+    }
+    var sheet = getProductSheet(ss);
+    if (!sheet) {
+      out.error = true;
+      out.message = "找不到商品工作表";
+      return jsonOutput(out);
+    }
+    if (action === "delete") {
+      var rowIndex = body.rowIndex;
+      if (rowIndex == null || rowIndex === "") {
+        out.error = true;
+        out.message = "缺少列號 rowIndex";
+        return jsonOutput(out);
+      }
+      var rowNum = parseInt(rowIndex, 10);
+      if (isNaN(rowNum) || rowNum < 2) {
+        out.error = true;
+        out.message = "列號無效，必須為 2 以上";
+        return jsonOutput(out);
+      }
+      var maxRow = sheet.getLastRow();
+      if (rowNum > maxRow) {
+        out.error = true;
+        out.message = "列號超出試算表範圍（最大列 " + maxRow + "）";
+        return jsonOutput(out);
+      }
+      sheet.deleteRow(rowNum);
+      out.message = "已刪除第 " + rowNum + " 列";
+      return jsonOutput(out);
+    }
+    if (action === "append" || action === "update") {
+      var product = body.product;
+      if (!product || typeof product !== "object") {
+        out.error = true;
+        out.message = "缺少 product 資料";
+        return jsonOutput(out);
+      }
+      var row = buildRowFromProduct(sheet, product);
+      if (action === "update") {
+        var rowIndexUpdate = body.rowIndex;
+        if (rowIndexUpdate == null || rowIndexUpdate === "") {
+          out.error = true;
+          out.message = "缺少列號 rowIndex";
+          return jsonOutput(out);
+        }
+        var rowNumUpdate = parseInt(rowIndexUpdate, 10);
+        if (isNaN(rowNumUpdate) || rowNumUpdate < 2) {
+          out.error = true;
+          out.message = "列號無效，必須為 2 以上";
+          return jsonOutput(out);
+        }
+        var maxRowUpdate = sheet.getLastRow();
+        if (rowNumUpdate > maxRowUpdate) {
+          out.error = true;
+          out.message = "列號超出試算表範圍（最大列 " + maxRowUpdate + "）";
+          return jsonOutput(out);
+        }
+        var numCols = row.length;
+        if (numCols > 0) {
+          sheet.getRange(rowNumUpdate, 1, rowNumUpdate, numCols).setValues([row]);
+        }
+        out.message = "已更新第 " + rowNumUpdate + " 列";
+        return jsonOutput(out);
+      }
+      sheet.appendRow(row);
+      out.message = "已新增一列";
+      return jsonOutput(out);
+    }
+    out.error = true;
+    out.message = "不支援的 action：" + (body.action || "(空)");
+    return jsonOutput(out);
+  } catch (err) {
+    Logger.log(err);
+    out.error = true;
+    out.message = err.toString();
+    return jsonOutput(out);
+  }
+}
+
+function jsonOutput(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getProductSheet(ss) {
+  var name = CONFIG.sheetName;
+  if (name) {
+    var sheet = ss.getSheetByName(name);
+    if (sheet) return sheet;
+  }
+  var sheets = ss.getSheets();
+  return sheets.length > 0 ? sheets[0] : null;
+}
+
+function getSpreadsheetInfo(ss) {
+  var sheet = getProductSheet(ss);
+  var sheetName = sheet ? sheet.getName() : "";
+  var rowCount = sheet ? sheet.getLastRow() : 0;
+  return { sheetName: sheetName, rowCount: rowCount };
+}
+
+/**
+ * 依工作表第一列標題，將 product 物件轉成與欄位對應的一列陣列；並補上庫存、規格庫存。
+ */
+function buildRowFromProduct(sheet, product) {
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 1) return [];
+  var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
+  var keyMap = buildKeyMap(headers);
+  var row = [];
+  for (var c = 0; c < headers.length; c++) {
+    var key = keyMap[c];
+    var val = "";
+    if (key && product[key] !== undefined && product[key] !== null && product[key] !== "") {
+      val = product[key];
+    }
+    row.push(val);
+  }
+  var stockCol = -1;
+  var variantCol = -1;
+  for (var i = 0; i < headers.length; i++) {
+    var h = (headers[i] || "").toString().trim();
+    if (h === "庫存") stockCol = i;
+    if (h === "規格庫存") variantCol = i;
+  }
+  if (variantCol >= 0 && (product.variantStock !== undefined && product.variantStock !== null && product.variantStock !== "")) {
+    row[variantCol] = product.variantStock;
+  }
+  if (stockCol >= 0) {
+    var total = 0;
+    if (product.stock !== undefined && product.stock !== null && product.stock !== "") {
+      var n = Number(product.stock);
+      if (isFinite(n)) total = n;
+    }
+    if (product.variantStock !== undefined && product.variantStock !== null && product.variantStock !== "") {
+      var parts = String(product.variantStock).split(/[,，、\s]/);
+      for (var p = 0; p < parts.length; p++) {
+        var num = parseInt(parts[p], 10);
+        if (!isNaN(num)) total += num;
+      }
+    }
+    row[stockCol] = total;
+  }
+  return row;
+}
+
+/**
  * 從試算表組出前端要的 { products: [...], rate: number }。
  */
 function getApiData() {
@@ -120,6 +297,14 @@ function buildKeyMap(headers) {
     ["規格", "顏色", "option", "variant"],
     ["分類", "category"],
     ["子分類", "subcategory"],
+    ["角色", "character"],
+    ["售價", "sellingPrice"],
+    ["利潤", "profit"],
+    ["成本", "cost"],
+    ["貨況", "stockType", "status"],
+    ["庫存", "stock"],
+    ["規格庫存", "variantStock"],
+    ["規格圖片", "variantImages"],
     ["熱銷", "hot"],
     ["推薦", "recommended"],
     ["新品", "isNew"],
