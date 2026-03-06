@@ -3,14 +3,18 @@
  * 部署為「網頁應用程式」後，前端可透過此 API 取得試算表內的商品與匯率。
  *
  * 部署步驟：
- * 1. 在試算表選單：擴充功能 → Apps Script
+ * 1. 開啟「要編輯的那個」試算表 → 擴充功能 → Apps Script
  * 2. 貼上本程式後儲存
- * 3. 部署 → 新增部署 → 類型選「網頁應用程式」
- * 4. 執行身分：我、誰可以存取：任何人 → 部署
- * 5. 複製「網頁應用程式 URL」貼到前端的 API_URL
+ * 3. 若儲存/刪除後試算表沒更新：在 CONFIG 填 spreadsheetId（試算表網址中 /d/ 與 /edit 之間那串）
+ * 4. 部署 → 新增部署 → 類型選「網頁應用程式」
+ * 5. 執行身分：我、誰可以存取：任何人 → 部署
+ * 6. 複製「網頁應用程式 URL」貼到前端的 API_BASE
  */
 
 var CONFIG = {
+  // 試算表 ID：留空 = 使用「綁定本腳本的試算表」（從該試算表 擴充功能→Apps Script 部署）。
+  // 若儲存/刪除後試算表沒更新，請填這裡：從試算表網址複製 /d/ 與 /edit 之間那串 ID。
+  spreadsheetId: "",
   // 商品工作表：留空 = 用第一個分頁；多張分頁時可填名稱指定商品表
   sheetName: "",
   // 第二張分頁「設定」專用於匯率，請勿變動；表內需有「匯率」或 rate 欄位
@@ -49,9 +53,11 @@ function doPost(e) {
     var body = JSON.parse(raw);
     var action = String(body.action || "append").toLowerCase();
     var product = body.product || {};
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = CONFIG.spreadsheetId
+      ? SpreadsheetApp.openById(CONFIG.spreadsheetId)
+      : SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) {
-      return jsonResponse({ error: true, message: "無法取得試算表，請從試算表「擴充功能 → Apps Script」開啟並部署（需綁定至試算表）" });
+      return jsonResponse({ error: true, message: "無法取得試算表。請在 CONFIG 填寫 spreadsheetId，或從要編輯的試算表「擴充功能 → Apps Script」開啟並部署。" });
     }
     var sheet = CONFIG.sheetName ? ss.getSheetByName(CONFIG.sheetName) : ss.getSheets()[0];
     if (!sheet) {
@@ -191,7 +197,7 @@ function buildRowFromProduct(headers, product) {
   };
   var variantStr = product.variant != null ? String(product.variant).trim() : (product.規格 != null ? String(product.規格).trim() : "");
   var variantParts = splitVariantForWrite(variantStr);
-  var rawVariantStock = product.variantStock != null ? product.variantStock : (product.規格庫存 != null ? product.規格庫存 : "");
+  var rawVariantStock = (product.variantStock != null && product.variantStock !== "") ? product.variantStock : (product.規格庫存 != null && product.規格庫存 !== "" ? product.規格庫存 : "");
   if (Array.isArray(rawVariantStock)) {
     rawVariantStock = rawVariantStock.map(function(x) { return x != null ? String(x).trim() : ""; }).filter(Boolean).join(",");
   } else {
@@ -251,7 +257,9 @@ function buildRowFromProduct(headers, product) {
  * 台幣售價來自商品工作表的「售價」/「台幣售價」；匯率來自「設定」工作表；角色來自「角色」工作表。
  */
 function getApiData() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = CONFIG.spreadsheetId
+    ? SpreadsheetApp.openById(CONFIG.spreadsheetId)
+    : SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) {
     return { rate: null, products: [], characters: [], error: "無法取得試算表，請從 Google 試算表依「擴充功能 → Apps Script」開啟並部署此腳本（需綁定至試算表）" };
   }

@@ -174,6 +174,20 @@
   </style>
 </head>
 <body class="min-h-screen bg-slate-100">
+  <script>
+    (function() {
+      if (window.location.protocol === "file:" || window.location.origin === "null" || window.location.origin === "") {
+        var banner = document.createElement("div");
+        banner.id = "corsBanner";
+        banner.style.cssText = "position:sticky;top:0;z-index:9999;background:#fef3c7;border-bottom:2px solid #f59e0b;color:#92400e;padding:12px 16px;font-family:system-ui,sans-serif;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.08);";
+        banner.innerHTML = "<strong>無法連線 API（CORS）</strong> — 您目前是用「直接開啟檔案」方式開啟本頁，瀏覽器會阻擋對 Google 試算表的請求。<br><br>" +
+          "<strong>請改用以本機伺服器開啟：</strong><br>" +
+          "1. 在專案資料夾打開終端機，執行：<code style=\"background:#fff;padding:2px 6px;border-radius:4px;margin:0 2px;\">python server.py</code> 或 <code style=\"background:#fff;padding:2px 6px;border-radius:4px;margin:0 2px;\">npx serve .</code><br>" +
+          "2. 用瀏覽器開啟：<a href=\"http://localhost:3000/admin.html\" style=\"color:#b45309;font-weight:bold;\">http://localhost:3000/admin.html</a>（若用 npx serve 則埠號可能為 3000，請看終端機顯示）";
+        document.body.insertBefore(banner, document.body.firstChild);
+      }
+    })();
+  </script>
   <!-- CMS 登入畫面（點擊登出後顯示） -->
   <div id="cmsLoginScreen" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-slate-300">
     <div class="bg-white rounded-xl shadow-xl p-8 w-full max-w-sm mx-4">
@@ -2511,7 +2525,7 @@
         syncVariantToHidden();
         var product = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
-        if (hiddenStock) product.variantStock = String(hiddenStock.value || "").trim();
+        if (hiddenStock) product.variantStock = String(hiddenStock.value != null ? hiddenStock.value : "").trim();
         if (!product.name || !String(product.name).trim()) {
           showMessage("請輸入商品名稱", true);
           return;
@@ -2528,10 +2542,16 @@
         var body = { action: action, product: product };
         if (action === "update") body.rowIndex = rowIndexNum;
         fetchWrite(body)
-          .then(function(r) { return r.json(); })
+          .then(function(r) {
+            return r.text().then(function(t) {
+              var res;
+              try { res = t ? JSON.parse(t) : {}; } catch (e) { res = { error: true, message: "回應格式錯誤" }; }
+              return res;
+            });
+          })
           .then(function(res) {
-            if (res.error) {
-              var msg = res.message || "";
+            if (res && res.error) {
+              var msg = (res.message || "").toString();
               if (msg.indexOf("超出試算表範圍") !== -1) {
                 closeModal();
                 document.getElementById("editRowIndex").value = "";
@@ -2548,12 +2568,12 @@
               }
               return;
             }
-            showMessage((res.message || "已儲存") + "（含規格庫存已寫入試算表）");
+            showMessage((res && res.message ? res.message : "已儲存") + "（含規格庫存已寫入試算表）");
             closeModal();
             loadProducts();
           })
           .catch(function(err) {
-            showMessage("儲存失敗：" + (err.message || "網路錯誤，請確認 API 網址或改用本機伺服器開啟後台").replace(/^Failed to fetch$/i, "無法連線（可能為 CORS 或網路問題，請確認 API 網址或改用本機開啟）"), true);
+            showMessage("儲存失敗：" + (err && err.message ? err.message : "網路錯誤，請確認 API 網址或改用本機伺服器開啟後台").replace(/^Failed to fetch$/i, "無法連線（可能為 CORS 或網路問題，請確認 API 網址或改用本機開啟）"), true);
           });
       });
 
