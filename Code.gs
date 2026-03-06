@@ -72,6 +72,15 @@ function doPost(e) {
       sheet.getRange(1, lastCol + 1).setValue("庫存");
       headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return (h || "").toString().trim(); });
     }
+    var hasVariantStockColumn = headers.some(function(h) {
+      var n = fullToHalfHeader(h).replace(/\s+/g, "");
+      return n === "規格庫存" || n.toLowerCase() === "variantstock";
+    });
+    if (!hasVariantStockColumn && (action === "append" || action === "update")) {
+      var lastCol2 = sheet.getLastColumn();
+      sheet.getRange(1, lastCol2 + 1).setValue("規格庫存");
+      headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return (h || "").toString().trim(); });
+    }
 
     if (action === "delete" && body.rowIndex != null) {
       var delRow = parseInt(body.rowIndex, 10);
@@ -91,7 +100,8 @@ function doPost(e) {
       var rowIndex = parseInt(body.rowIndex, 10);
       if (rowIndex >= 2 && rowIndex <= sheet.getLastRow()) {
         sheet.getRange(rowIndex, 1, 1, headers.length).setValues([row]);
-        return jsonResponse({ ok: true, message: "已更新商品" });
+        SpreadsheetApp.flush();
+        return jsonResponse({ ok: true, message: "已更新商品（含規格庫存）" });
       }
     }
     return jsonResponse({ error: true, message: "不支援的 action 或 rowIndex" });
@@ -165,7 +175,13 @@ function buildRowFromProduct(headers, product) {
   };
   var variantStr = product.variant != null ? String(product.variant).trim() : (product.規格 != null ? String(product.規格).trim() : "");
   var variantParts = splitVariantForWrite(variantStr);
-  var variantStockStr = product.variantStock != null ? String(product.variantStock).trim() : (product.規格庫存 != null ? String(product.規格庫存).trim() : "");
+  var rawVariantStock = product.variantStock != null ? product.variantStock : (product.規格庫存 != null ? product.規格庫存 : "");
+  if (Array.isArray(rawVariantStock)) {
+    rawVariantStock = rawVariantStock.map(function(x) { return x != null ? String(x).trim() : ""; }).filter(Boolean).join(",");
+  } else {
+    rawVariantStock = rawVariantStock != null && rawVariantStock !== "" ? String(rawVariantStock).trim() : "";
+  }
+  var variantStockStr = rawVariantStock;
   var variantStockParts = splitVariantStockForWrite(variantStockStr);
   var variantStockTotal = 0;
   for (var k = 0; k < variantStockParts.length; k++) {
@@ -205,6 +221,10 @@ function buildRowFromProduct(headers, product) {
     var isStockCol = (hj === "庫存" || hj === "庫存總數" || hj.toLowerCase() === "stock" || hj.indexOf("庫存") >= 0);
     if (isStockCol && (row[j] === "" || row[j] == null) && effectiveStock !== "") {
       row[j] = effectiveStock;
+    }
+    var hjNorm = hj.replace(/\s+/g, "");
+    if (hj === "規格庫存" || hjNorm.toLowerCase() === "variantstock") {
+      row[j] = variantStockStr || "";
     }
   }
   return row;
@@ -367,6 +387,17 @@ function getProducts(ss) {
       obj.variantStock = String(obj.variantStock).trim();
       obj["規格庫存"] = obj.variantStock;
     }
+    if (obj.variantStock != null && obj.variantStock !== "") {
+      var sum = 0;
+      String(obj.variantStock).split(/[,，、\s]+/).forEach(function(s) {
+        var n = parseInt(String(s).trim(), 10);
+        if (!isNaN(n) && n >= 0) sum += n;
+      });
+      if (obj.stock == null || obj.stock === "" || obj.stock === undefined) {
+        obj.stock = sum;
+        obj["庫存"] = sum;
+      }
+    }
     delete obj.variantStock1;
     delete obj.variantStock2;
     delete obj.variantStock3;
@@ -380,10 +411,75 @@ function getProducts(ss) {
       obj["貨況"] = obj.stockType;
     }
     if (obj.name || obj["商品名稱"] || obj.title || obj["品名"]) {
+      obj._sheetRowIndex = r + 2;
       list.push(obj);
     }
   }
-  return list;
+  // 依「角色 + 商品名稱」合併多列為一商品（一商品多規格時試算表常為多列，合併後顧客頁才能顯示全部規格與庫存）
+  var byKey = {};
+  for (var i = 0; i < list.length; i++) {
+    var o = list[i];
+    var n = (o.name || o["商品名稱"] || o.title || o["品名"] || "").toString().trim();
+    var ch = (o.character || o.角色 || "").toString().trim();
+    var key = n + "\n" + ch;
+    if (!byKey[key]) byKey[key] = [];
+    byKey[key].push(o);
+  }
+  var mergedList = [];
+  for (var k in byKey) {
+    var group = byKey[k];
+    if (group.length === 0) continue;
+    if (group.length === 1) {
+      mergedList.push(group[0]);
+      continue;
+    }
+    var base = group[0];
+    var allVariantParts = [];
+    var allStockParts = [];
+    for (var g = 0; g < group.length; g++) {
+      var row = group[g];
+      var vStr = (row.variant != null && row.variant !== "" ? String(row.variant).trim() : (row.規格 != null ? String(row.規格).trim() : ""));
+      var sStr = (row.variantStock != null && row.variantStock !== "" ? String(row.variantStock).trim() : (row["規格庫存"] != null ? String(row["規格庫存"]).trim() : ""));
+      var vParts = vStr ? vStr.split(/[,，、\s]+/).map(function(p) { return p.trim(); }).filter(Boolean) : [];
+      var sParts = sStr ? sStr.split(/[,，、\s]+/).map(function(p) {
+        var num = parseInt(String(p).trim(), 10);
+        return isNaN(num) ? "0" : String(Math.max(0, num));
+      }) : [];
+      if (vParts.length === 0 && sParts.length === 0) continue;
+      var len = Math.max(vParts.length, sParts.length, 1);
+      for (var idx = 0; idx < len; idx++) {
+        allVariantParts.push(vParts[idx] !== undefined ? vParts[idx] : "");
+        allStockParts.push(sParts[idx] !== undefined ? sParts[idx] : "0");
+      }
+    }
+    var merged = {};
+    for (var prop in base) {
+      if (prop !== "variant" && prop !== "variantStock" && prop !== "規格" && prop !== "規格庫存") merged[prop] = base[prop];
+    }
+    merged.variant = allVariantParts.filter(Boolean).length > 0 ? allVariantParts.map(function(p) { return p || "—"; }).join(", ") : (base.variant || base.規格 || "");
+    merged.variantStock = allStockParts.length > 0 ? allStockParts.join(",") : (base.variantStock || base["規格庫存"] || "");
+    merged["規格"] = merged.variant;
+    merged["規格庫存"] = merged.variantStock;
+    var totalMerged = 0;
+    (merged.variantStock || "").split(/[,，、\s]+/).forEach(function(s) {
+      var n = parseInt(String(s).trim(), 10);
+      if (!isNaN(n) && n >= 0) totalMerged += n;
+    });
+    if (totalMerged > 0 && (merged.stock == null || merged.stock === "")) {
+      merged.stock = totalMerged;
+      merged["庫存"] = totalMerged;
+    }
+    merged._sheetRowIndex = base._sheetRowIndex != null ? base._sheetRowIndex : (group[0]._sheetRowIndex);
+    mergedList.push(merged);
+  }
+  for (var m = 0; m < mergedList.length; m++) {
+    var item = mergedList[m];
+    if (item.variantStock !== undefined && item.variantStock !== null && typeof item.variantStock !== "string") {
+      item.variantStock = String(item.variantStock);
+      item["規格庫存"] = item.variantStock;
+    }
+  }
+  return mergedList;
 }
 
 /**
