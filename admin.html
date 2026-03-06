@@ -2466,7 +2466,12 @@
         e.preventDefault();
         updateCalculatedFields();
         syncSellingPriceFromInput();
+        syncVariantToHidden();
         var product = getFormValues();
+        var hiddenStock = document.getElementById("variantStockValue");
+        if ((!product.variantStock || String(product.variantStock).trim() === "") && hiddenStock && hiddenStock.value) {
+          product.variantStock = hiddenStock.value.trim();
+        }
         if (!product.name || !String(product.name).trim()) {
           showMessage("請輸入商品名稱", true);
           return;
@@ -2488,7 +2493,7 @@
               showMessage("儲存失敗：" + res.message, true);
               return;
             }
-            showMessage(res.message || "已儲存");
+            showMessage((res.message || "已儲存") + "（含規格庫存已寫入試算表）");
             closeModal();
             loadProducts();
           })
