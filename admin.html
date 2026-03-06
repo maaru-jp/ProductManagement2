@@ -1850,7 +1850,13 @@
       function fmtDate(v) {
         if (v == null || v === "") return "";
         if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
-        try { var d = new Date(v); return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10); } catch (e) { return ""; }
+        try {
+          var d = new Date(v);
+          if (isNaN(d.getTime())) return "";
+          var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+          var pad = function(n) { return n < 10 ? "0" + n : String(n); };
+          return y + "-" + pad(m) + "-" + pad(day);
+        } catch (e) { return ""; }
       }
       function yesNo(v) { return (v === "Y" || v === "1" || v === true) ? "Y" : ""; }
       tbody.innerHTML = list.map(function(p, idx) {
@@ -2469,9 +2475,7 @@
         syncVariantToHidden();
         var product = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
-        if ((!product.variantStock || String(product.variantStock).trim() === "") && hiddenStock && hiddenStock.value) {
-          product.variantStock = hiddenStock.value.trim();
-        }
+        if (hiddenStock) product.variantStock = String(hiddenStock.value || "").trim();
         if (!product.name || !String(product.name).trim()) {
           showMessage("請輸入商品名稱", true);
           return;
