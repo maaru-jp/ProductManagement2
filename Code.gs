@@ -14,8 +14,7 @@
 var CONFIG = {
   // ★ 試算表 ID（在「Code.gs」本檔案這裡填，不是在前端或 server）
   // 取得方式：用瀏覽器打開你的 Google 試算表，看網址列，例如：
-  //   https://docs.google.com/spreadsheets/d/
-14dqpeCDpKRA8_Ca2b5Phinh00ydPiaBh3MHKrVYMVOI/edit
+  //   https://docs.google.com/spreadsheets/d/【這裡是ID】/edit
   // 複製「/d/」和「/edit」中間那一串（約 44 個英數字），貼到下面引號裡。
   // 留空 "" = 使用「綁定本腳本的試算表」（從該試算表 擴充功能→Apps Script 部署即可）。
   spreadsheetId: "",
@@ -308,25 +307,49 @@ function getSpreadsheetInfo() {
  * 台幣售價來自商品工作表的「售價」/「台幣售價」；匯率來自「設定」工作表；角色來自「角色」工作表。
  */
 function getApiData() {
-  var ss = CONFIG.spreadsheetId
-    ? SpreadsheetApp.openById(CONFIG.spreadsheetId)
-    : SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) {
-    return { rate: null, products: [], characters: [], error: "無法取得試算表，請從 Google 試算表依「擴充功能 → Apps Script」開啟並部署此腳本（需綁定至試算表）" };
-  }
-  var products = getProducts(ss);
-  for (var i = 0; i < products.length; i++) {
-    var p = products[i];
-    if (p.sellingPrice != null && p.sellingPrice !== "") {
-      p["台幣售價"] = p.sellingPrice;
-      p.priceTWD = p.sellingPrice;
+  try {
+    var ss = null;
+    try {
+      ss = CONFIG.spreadsheetId
+        ? SpreadsheetApp.openById(CONFIG.spreadsheetId)
+        : SpreadsheetApp.getActiveSpreadsheet();
+    } catch (openErr) {
+      return {
+        rate: null,
+        products: [],
+        characters: [],
+        error: "無法開啟試算表。若已填 CONFIG.spreadsheetId 請檢查 ID 是否正確（試算表網址 /d/ 與 /edit 之間）；或留空並從該試算表「擴充功能→Apps Script」開啟後再部署。"
+      };
     }
+    if (!ss) {
+      return {
+        rate: null,
+        products: [],
+        characters: [],
+        error: "無法取得試算表。請從「要讀取的那份」試算表依 擴充功能 → Apps Script 開啟此腳本並部署（綁定至該試算表）。"
+      };
+    }
+    var products = getProducts(ss);
+    for (var i = 0; i < products.length; i++) {
+      var p = products[i];
+      if (p.sellingPrice != null && p.sellingPrice !== "") {
+        p["台幣售價"] = p.sellingPrice;
+        p.priceTWD = p.sellingPrice;
+      }
+    }
+    return {
+      rate: getRate(ss),
+      products: products,
+      characters: getCharacters(ss)
+    };
+  } catch (err) {
+    return {
+      rate: null,
+      products: [],
+      characters: [],
+      error: "讀取試算表時發生錯誤：" + (err && err.toString ? err.toString() : String(err))
+    };
   }
-  return {
-    rate: getRate(ss),
-    products: products,
-    characters: getCharacters(ss)
-  };
 }
 
 /**
