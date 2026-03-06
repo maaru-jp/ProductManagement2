@@ -239,6 +239,7 @@ function normalizeItem(row, index) {
 function useProducts() {
   const [products, setProducts] = React.useState([]);
   const [rate, setRate] = React.useState(null);
+  const [characterImages, setCharacterImages] = React.useState({});
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
 
@@ -285,6 +286,7 @@ function useProducts() {
             console.log("Raw API data:", data);
             const apiRate = toNumberOrNull(data?.rate);
             setRate(apiRate);
+            setCharacterImages(data?.characterImages && typeof data.characterImages === "object" ? data.characterImages : {});
             const rows = Array.isArray(data)
               ? data
               : Array.isArray(data?.products)
@@ -348,7 +350,7 @@ function useProducts() {
     if (fetchDataRef.current) fetchDataRef.current(true);
   }, []);
 
-  return { products, rate, loading, error, refetch };
+  return { products, rate, characterImages, loading, error, refetch };
 }
 
 function getUniqueProductsByName(products) {
@@ -478,18 +480,22 @@ const CATEGORY_MENU = [
 // 商品款式角色（點擊後列出該角色所有商品）
 const CHARACTER_LIST = [
   { value: "", label: "全部" },
-  { value: "酷洛米", label: "酷洛米" },
   { value: "凱蒂貓", label: "凱蒂貓" },
+  { value: "美樂蒂", label: "美樂蒂" },
+  { value: "酷洛米", label: "酷洛米" },
   { value: "大耳狗", label: "大耳狗" },
-  { value: "Hello Kitty", label: "Hello Kitty" },
-  { value: "My Melody", label: "My Melody" },
-  { value: "Cinnamoroll", label: "Cinnamoroll" },
-  { value: "HANGYODON", label: "HANGYODON" },
-  { value: "Pompompurin", label: "Pompompurin" },
-  { value: "Little Twin Stars", label: "Little Twin Stars" },
-  { value: "Pochacco", label: "Pochacco" },
-  { value: "TUXEDOSAM", label: "TUXEDOSAM" },
-  { value: "雙星仙子", label: "雙星仙子" },
+  { value: "布丁狗", label: "布丁狗" },
+  { value: "帕恰狗", label: "帕恰狗" },
+  { value: "雙子星", label: "雙子星" },
+  { value: "山姆企鵝", label: "山姆企鵝" },
+  { value: "人魚漢頓", label: "人魚漢頓" },
+  { value: "貝克鴨", label: "貝克鴨" },
+  { value: "可樂鈴", label: "可樂鈴" },
+  { value: "小麥粉", label: "小麥粉" },
+  { value: "兔媽媽", label: "兔媽媽" },
+  { value: "蛋黃哥", label: "蛋黃哥" },
+  { value: "花丸幽靈", label: "花丸幽靈" },
+  { value: "丹尼爾", label: "丹尼爾" },
 ];
 
 // 店舗內分類：字串為單一項目，{ label, children } 為有子選單的項目
@@ -516,7 +522,7 @@ const STORE_CATEGORIES = [
   "使用者指南",
 ];
 
-function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate, selectedCharacter = "" }) {
+function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate, selectedCharacter = "", characterImages = {} }) {
   const searchRef = React.useRef(null);
   const characterCarouselRef = React.useRef(null);
   const [expandedStoreKey, setExpandedStoreKey] = React.useState(null);
@@ -612,6 +618,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
               >
                 {CHARACTER_LIST.map((char) => {
                   const isSelected = (char.value || "").trim() === (selectedCharacter || "").trim();
+                  const imageUrl = (char.value && characterImages[char.value]) ? characterImages[char.value] : null;
                   return (
                     <button
                       key={char.value || "all"}
@@ -630,13 +637,21 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                     >
                       <span
                         className={[
-                          "w-12 h-12 rounded-full flex items-center justify-center text-slate-700 text-sm font-medium border-2 transition-colors",
+                          "w-12 h-12 rounded-full flex items-center justify-center text-slate-700 text-sm font-medium border-2 transition-colors overflow-hidden bg-slate-100",
                           isSelected
                             ? "bg-slate-200 border-slate-400 ring-2 ring-slate-300"
-                            : "bg-slate-100 border-slate-200 group-hover:bg-slate-200",
+                            : "border-slate-200 group-hover:bg-slate-200",
                         ].join(" ")}
                       >
-                        {char.label.slice(0, 1)}
+                        {imageUrl ? (
+                          <img
+                            src={imageUrl}
+                            alt={char.label}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          char.label.slice(0, 1)
+                        )}
                       </span>
                       <span className="text-[10px] text-slate-600 text-center max-w-[48px] leading-tight">
                         {char.label}
@@ -1065,7 +1080,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
           <p>目前沒有可顯示的商品。</p>
           {characterFromUrl ? (
             <p className="text-xs">
-              篩選角色「{characterFromUrl}」：請確認試算表「角色」欄是否填寫與左側選單完全一致的名稱（如 酷洛米、凱蒂貓、大耳狗）。
+              篩選角色「{characterFromUrl}」：請確認試算表「角色」欄是否填寫與左側選單完全一致的名稱（如 凱蒂貓、美樂蒂、酷洛米）。
             </p>
           ) : null}
         </div>
@@ -1660,7 +1675,7 @@ function NotFoundPage() {
 }
 
 function App() {
-  const { products, rate, loading, error, refetch } = useProducts();
+  const { products, rate, characterImages, loading, error, refetch } = useProducts();
   const path = useHashPath();
   const route = React.useMemo(() => getRoute(path), [path]);
 
@@ -1798,6 +1813,7 @@ function App() {
         onSearchChange={setSidebarSearch}
         onNavigate={handleMenuNavigate}
         selectedCharacter={homeParams.character || ""}
+        characterImages={characterImages}
       />
       {page}
       <CartDrawer
