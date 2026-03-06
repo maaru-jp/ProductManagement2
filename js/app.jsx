@@ -161,9 +161,7 @@ function normalizeItem(row, index) {
     ? rawVariantStock.map((x) => Math.max(0, toNumberOrNull(x) ?? 0))
     : typeof rawVariantStock === "string"
       ? rawVariantStock.split(/[,，、\s]+/).map((s) => Math.max(0, toNumberOrNull(s.trim()) ?? 0))
-      : (typeof rawVariantStock === "number" && !Number.isNaN(rawVariantStock))
-        ? [Math.max(0, rawVariantStock)]
-        : [];
+      : [];
   // 後台只填「庫存」、未填「規格庫存」時，用主庫存作為唯一數量，顧客頁才能顯示/更新
   if (variantStock.length === 0) {
     const mainStock = toNumberOrNull(row.stock ?? row.庫存 ?? row["庫存"]);
@@ -241,7 +239,6 @@ function normalizeItem(row, index) {
 function useProducts() {
   const [products, setProducts] = React.useState([]);
   const [rate, setRate] = React.useState(null);
-  const [characters, setCharacters] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
 
@@ -285,7 +282,7 @@ function useProducts() {
             throw new Error("API 回傳的內容不是有效的 JSON：" + (text.slice(0, 80) + (text.length > 80 ? "…" : "")));
           }
           if (!cancelled) {
-            // 勿在此處 console.log(data)，以免主控台出現 "Raw API data: Object"
+            console.log("Raw API data:", data);
             const apiRate = toNumberOrNull(data?.rate);
             setRate(apiRate);
             const rows = Array.isArray(data)
@@ -302,7 +299,6 @@ function useProducts() {
               (x) => (x.status || "").trim() === "" || (x.status || "").trim().toLowerCase() === "上架"
             );
             setProducts(onlyListed);
-            setCharacters(Array.isArray(data.characters) ? data.characters : []);
           }
           lastError = null;
           break;
@@ -329,34 +325,30 @@ function useProducts() {
     fetchDataRef.current = fetchData;
     fetchData();
 
-    // 切回分頁或視窗取得焦點時立即重新取得，顧客頁馬上依試算表新狀態顯示
-    const doRefetch = (silent = true) => {
-      if (fetchDataRef.current) fetchDataRef.current(silent);
-    };
+    // 切回分頁時重新取得，顧客頁馬上依試算表新狀態顯示
     const onVisible = () => {
-      if (document.visibilityState === "visible") doRefetch(true);
+      if (document.visibilityState === "visible" && fetchDataRef.current) fetchDataRef.current(true);
     };
-    const onFocus = () => doRefetch(true);
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onFocus);
 
-    // 每 5 秒輪詢一次（帶快取破壞參數），後台編輯規格庫存後顧客頁會較快顯示最新數字
-    const interval = setInterval(() => doRefetch(true), 5000);
+    // 每 15 秒輪詢一次（帶快取破壞參數），後台編輯庫存/上架下架後顧客頁會顯示最新
+    const interval = setInterval(() => {
+      if (fetchDataRef.current) fetchDataRef.current(true);
+    }, 15000);
 
     return () => {
       cancelled = true;
       fetchDataRef.current = null;
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onFocus);
       clearInterval(interval);
     };
   }, []);
 
-  const refetch = React.useCallback((silent = true) => {
-    if (fetchDataRef.current) fetchDataRef.current(!!silent);
+  const refetch = React.useCallback(function refetchProducts() {
+    if (fetchDataRef.current) fetchDataRef.current(true);
   }, []);
 
-  return { products, rate, characters, loading, error, refetch };
+  return { products, rate, loading, error, refetch };
 }
 
 function getUniqueProductsByName(products) {
@@ -483,14 +475,21 @@ const CATEGORY_MENU = [
   },
 ];
 
-// 左側欄角色顯示順序（與試算表「角色」工作表搭配時會依此排序，並帶入對應圖片）
-const CHARACTER_ORDER = [
-  "凱蒂貓", "美樂蒂", "酷洛米", "大耳狗", "布丁狗", "帕恰狗", "雙子星", "山姆企鵝",
-  "人魚漢頓", "貝克鴨", "可樂鈴", "小麥粉", "兔媽媽", "蛋黃哥", "花丸幽靈", "丹尼爾",
-];
+// 商品款式角色（點擊後列出該角色所有商品）
 const CHARACTER_LIST = [
-  { value: "", label: "全部", image: null },
-  ...CHARACTER_ORDER.map((name) => ({ value: name, label: name, image: null })),
+  { value: "", label: "全部" },
+  { value: "酷洛米", label: "酷洛米" },
+  { value: "凱蒂貓", label: "凱蒂貓" },
+  { value: "大耳狗", label: "大耳狗" },
+  { value: "Hello Kitty", label: "Hello Kitty" },
+  { value: "My Melody", label: "My Melody" },
+  { value: "Cinnamoroll", label: "Cinnamoroll" },
+  { value: "HANGYODON", label: "HANGYODON" },
+  { value: "Pompompurin", label: "Pompompurin" },
+  { value: "Little Twin Stars", label: "Little Twin Stars" },
+  { value: "Pochacco", label: "Pochacco" },
+  { value: "TUXEDOSAM", label: "TUXEDOSAM" },
+  { value: "雙星仙子", label: "雙星仙子" },
 ];
 
 // 店舗內分類：字串為單一項目，{ label, children } 為有子選單的項目
@@ -517,7 +516,7 @@ const STORE_CATEGORIES = [
   "使用者指南",
 ];
 
-function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate, selectedCharacter = "", characters = [] }) {
+function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate, selectedCharacter = "" }) {
   const searchRef = React.useRef(null);
   const characterCarouselRef = React.useRef(null);
   const [expandedStoreKey, setExpandedStoreKey] = React.useState(null);
@@ -572,39 +571,27 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
         </div>
 
         <div className="flex-1 overflow-auto">
-          {/* 搜尋欄：放大鏡可點擊執行搜尋 */}
+          {/* 搜尋欄：放大鏡在輸入關鍵字框左邊 */}
           <div className="p-3 border-b border-slate-100">
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white focus-within:ring-1 focus-within:ring-slate-300 focus-within:border-slate-300">
-              <button
-                type="button"
-                onClick={() => {
-                  const q = (searchKeyword || "").trim();
-                  onNavigate(q ? "/?q=" + encodeURIComponent(q) : "/");
-                }}
-                className="shrink-0 w-9 h-9 flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-l-md transition-colors"
-                aria-label="執行搜尋"
-                title="按此執行搜尋"
+              <span
+                className="shrink-0 w-9 h-9 flex items-center justify-center text-slate-500"
+                aria-hidden
               >
                 🔍
-              </button>
+              </span>
               <input
                 ref={searchRef}
                 type="text"
                 value={searchKeyword}
                 onChange={(e) => onSearchChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const q = (searchKeyword || "").trim();
-                    onNavigate(q ? "/?q=" + encodeURIComponent(q) : "/");
-                  }
-                }}
                 placeholder="輸入關鍵字"
                 className="flex-1 min-w-0 py-2.5 pr-3 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none border-0"
               />
             </div>
           </div>
 
-          {/* 所有角色：圓形可左右滑動，點擊列出該角色所有商品；圖片來自試算表「角色」工作表 */}
+          {/* 所有角色：圓形可左右滑動，點擊列出該角色所有商品 */}
           <div className="px-4 pt-2 pb-4">
             <p className="text-xs font-semibold text-slate-500 tracking-wider mb-3 text-center">
               所有角色
@@ -623,23 +610,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                 className="flex gap-3 overflow-x-auto scroll-smooth scrollbar-hide py-2 px-10"
                 style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
               >
-                {(characters.length > 0
-                  ? (() => {
-                      const byName = new Map(characters.map((c) => [c.name, c]));
-                      const allChar = characters.find((c) => (c.name || "").trim() === "全部");
-                      const ordered = CHARACTER_ORDER.filter((name) => byName.has(name));
-                      const rest = characters.filter((c) => !CHARACTER_ORDER.includes(c.name) && (c.name || "").trim() !== "全部");
-                      return [
-                        { value: "", label: "全部", image: (allChar && allChar.image && String(allChar.image).trim()) ? allChar.image : null },
-                        ...ordered.map((name) => {
-                          const c = byName.get(name);
-                          return { value: c.name, label: c.name, image: c.image || null };
-                        }),
-                        ...rest.map((c) => ({ value: c.name, label: c.name, image: c.image || null })),
-                      ];
-                    })()
-                  : CHARACTER_LIST
-                ).map((char) => {
+                {CHARACTER_LIST.map((char) => {
                   const isSelected = (char.value || "").trim() === (selectedCharacter || "").trim();
                   return (
                     <button
@@ -659,26 +630,13 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                     >
                       <span
                         className={[
-                          "w-14 h-14 rounded-full flex items-center justify-center text-slate-700 text-sm font-medium border-2 transition-colors overflow-hidden bg-slate-100 border-slate-200 relative",
-                          isSelected ? "ring-2 ring-slate-300 border-slate-400" : "group-hover:bg-slate-200",
+                          "w-12 h-12 rounded-full flex items-center justify-center text-slate-700 text-sm font-medium border-2 transition-colors",
+                          isSelected
+                            ? "bg-slate-200 border-slate-400 ring-2 ring-slate-300"
+                            : "bg-slate-100 border-slate-200 group-hover:bg-slate-200",
                         ].join(" ")}
                       >
-                        {char.image && char.image.trim() ? (
-                          <img
-                            src={char.image}
-                            alt={char.label}
-                            className="w-full h-full object-cover object-center"
-                            loading="lazy"
-                            onError={(e) => {
-                              e.target.style.display = "none";
-                              const fallback = e.target.parentElement.querySelector(".char-fallback");
-                              if (fallback) fallback.style.display = "flex";
-                            }}
-                          />
-                        ) : null}
-                        <span className={"char-fallback absolute inset-0 flex items-center justify-center " + (char.image && char.image.trim() ? "hidden" : "")} style={{ display: char.image && char.image.trim() ? "none" : "flex" }}>
-                          {char.label ? char.label.slice(0, 1) : ""}
-                        </span>
+                        {char.label.slice(0, 1)}
                       </span>
                       <span className="text-[10px] text-slate-600 text-center max-w-[48px] leading-tight">
                         {char.label}
@@ -761,11 +719,11 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
   );
 }
 
-function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
+function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
   return (
     <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200">
       <div className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-[1fr_auto_1fr] items-center">
-        <div className="flex justify-start">
+        <div className="flex justify-start items-center gap-2">
           <button
             type="button"
             onClick={onOpenMenu}
@@ -774,37 +732,40 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
           >
             <span className="text-lg leading-none">☰</span>
           </button>
+          {onRefetch && (
+            <button
+              type="button"
+              onClick={onRefetch}
+              className="inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors text-slate-600"
+              aria-label="重新載入商品與庫存"
+              title="重新載入商品與庫存（後台有更新時可按此）"
+            >
+              <span className="text-lg leading-none">🔄</span>
+            </button>
+          )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="flex items-center justify-center gap-3 mx-auto px-4 py-2.5 rounded-2xl bg-white/40 backdrop-blur-xl border border-white/60 shadow-lg shadow-slate-200/50 transition-all duration-300 hover:bg-white/60 hover:shadow-xl hover:shadow-slate-200/60 active:scale-95"
-          aria-label="回首頁並重新整理"
+        <Link
+          to="/"
+          className="flex items-center space-x-2 justify-center transition-transform duration-150 hover:opacity-90 active:scale-95"
         >
-          <span className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 bg-white/50 border border-white/60 flex items-center justify-center">
-            {/* 品牌 logo：請將 logo_tondiv.jpg 放在與 index.html 同目錄，否則會 404 */}
+          <div className="w-11 h-11 rounded-full overflow-hidden bg-slate-900 flex items-center justify-center">
             <img
-              src="./logo_tondiv.jpg"
-              alt="Maaru"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                e.target.style.display = "none";
-                const fallback = e.target.nextElementSibling;
-                if (fallback) fallback.style.display = "block";
-              }}
+              src="./品牌logo_tondiv.jpg"
+              alt="Maaru 品牌 Logo"
+              className="w-full h-full object-contain"
+              loading="lazy"
             />
-            <span className="hidden text-slate-600 font-semibold text-lg" style={{ display: "none" }}>M</span>
-          </span>
+          </div>
           <div className="flex flex-col leading-tight text-left">
-            <span className="text-sm font-semibold tracking-[0.2em] uppercase text-slate-800">
+            <span className="text-sm font-semibold tracking-[0.2em] uppercase">
               Maaru
             </span>
-            <span className="text-xs text-slate-600/90 tracking-[0.15em] uppercase">
+            <span className="text-xs text-slate-500 tracking-[0.15em] uppercase">
               Select Shop
             </span>
           </div>
-        </button>
+        </Link>
 
         <div className="flex justify-end">
           <button
@@ -868,7 +829,7 @@ function ProductCard({ product, rate }) {
           </div>
         )}
 
-        {(product.isHot || product.isRecommended || product.isNew) ? (
+        {(product.isHot || product.isRecommended || product.isNew || product.character) ? (
           <div className="absolute top-3 left-3 flex flex-wrap gap-1">
             {product.isHot ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-rose-600 text-white shadow-sm">
@@ -883,6 +844,11 @@ function ProductCard({ product, rate }) {
             {product.isNew ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-600 text-white shadow-sm">
                 新品
+              </span>
+            ) : null}
+            {product.character ? (
+              <span className="text-[11px] px-2 py-1 rounded-full bg-slate-600 text-white shadow-sm">
+                {product.character}
               </span>
             ) : null}
           </div>
@@ -997,28 +963,23 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
         (p) => (p?.subcategory || "").trim() === subcategoryFromUrl
       );
     }
-    const q = (searchKeyword || "").trim().toLowerCase();
-    // 有輸入搜尋關鍵字時：依「商品名稱」與「規格」匹配，不分角色列出所有符合項目（例如搜尋「吊飾娃娃」即列出名稱或規格含吊飾娃娃的所有商品）
-    if (q) {
-      result = result.filter((p) => {
-        const name = (p?.name || "").toLowerCase();
-        const variant = (p?.variant || "").toLowerCase();
-        return name.includes(q) || variant.includes(q);
-      });
-      return result;
-    }
-    // 未搜尋時：角色篩選（點「全部」= 所有上架商品；點單一角色 = 角色欄或規格含該角色的商品）
     if (characterFromUrl) {
       const charFilter = (characterFromUrl || "").trim();
       result = result.filter((p) => {
         const pChar = (
           (p?.character ?? p?.raw?.character ?? p?.raw?.角色 ?? p?.raw?.角色名稱 ?? "") + ""
         ).trim();
-        const variantStr = (p?.variant ?? p?.raw?.規格 ?? "").toString().trim();
-        return pChar === charFilter || variantStr.includes(charFilter);
+        return pChar === charFilter;
       });
     }
-    return result;
+    const q = (searchKeyword || "").trim().toLowerCase();
+    if (!q) return result;
+
+    return result.filter((p) => {
+      const name = (p?.name || "").toLowerCase();
+      const variant = (p?.variant || "").toLowerCase();
+      return name.includes(q) || variant.includes(q);
+    });
   }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword]);
 
   const uniqueProducts = React.useMemo(() => {
@@ -1168,12 +1129,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
         }
       }
     }
-    const rawStock = p0.variantStock ?? p0.raw?.variantStock ?? p0.raw?.規格庫存;
-    let stockList = Array.isArray(rawStock)
-      ? rawStock.map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0))
-      : typeof rawStock === "string"
-        ? rawStock.split(/[,，、\s]+/).map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0))
-        : (typeof rawStock === "number" && !Number.isNaN(rawStock)) ? [Math.max(0, rawStock)] : [];
+    let stockList = Array.isArray(p0.variantStock) ? p0.variantStock : (typeof (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存) === "string" ? (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存 || "").split(/[,，、\s]+/).map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0)) : []);
     if (stockList.length === 0 && (p0.stock != null || p0.raw?.stock != null || p0.raw?.庫存 != null)) {
       const mainStock = Math.max(0, parseInt(String(p0.stock ?? p0.raw?.stock ?? p0.raw?.庫存 ?? 0).trim(), 10) || 0);
       stockList = [mainStock];
@@ -1284,6 +1240,12 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
               {mainProduct.name}
             </h1>
 
+            {(mainProduct.character || selectedItem?.character) ? (
+              <p className="text-sm text-slate-500">
+                角色：{mainProduct.character || selectedItem?.character}
+              </p>
+            ) : null}
+
             {(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況) ? (
               <p className="pt-0.5">
                 <StockTag value={String(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況 || "").trim()} size="sm" />
@@ -1368,13 +1330,8 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                               <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded">已售完</span>
                             ) : null}
                           </span>
-                          <span className="flex items-center gap-2 shrink-0 text-xs text-slate-500">
-                            {item.variantStockQty !== undefined && item.variantStockQty !== null ? (
-                              <span className={isSoldOut ? "text-amber-600" : "text-slate-600"}>
-                                剩 {item.variantStockQty}
-                              </span>
-                            ) : null}
-                            <span>{getDisplayPrice(item, rate) || ""}</span>
+                          <span className="text-xs text-slate-500">
+                            {getDisplayPrice(item, rate) || ""}
                           </span>
                         </label>
                       );
@@ -1474,8 +1431,7 @@ function CartDrawer({
     lines.push("MAARU 日本萌GO代購登記清單：");
     lines.push("");
 
-    items.forEach((it, index) => {
-      const num = index + 1;
+    for (const it of items) {
       const name = (it.name || "").trim();
       const variant = (it.variant || "").trim();
       const qty = Number(it.qty || 0);
@@ -1484,11 +1440,11 @@ function CartDrawer({
       const lineTWD = unitTWD != null ? unitTWD * qty : null;
 
       if (lineTWD != null) {
-        lines.push(`${num}. ${lineName} × ${qty}  NT$${Math.round(lineTWD).toLocaleString("zh-TW")}`);
+        lines.push(`${lineName} × ${qty}  NT$${Math.round(lineTWD).toLocaleString("zh-TW")}`);
       } else {
-        lines.push(`${num}. ${lineName} × ${qty}  NT$—`);
+        lines.push(`${lineName} × ${qty}  NT$—`);
       }
-    });
+    }
 
     lines.push("");
     if (totalTWD != null && Number.isFinite(totalTWD)) {
@@ -1580,7 +1536,7 @@ function CartDrawer({
             {items.length === 0 ? (
               <p className="text-sm text-slate-500">購物車目前是空的。</p>
             ) : (
-              items.map((it, index) => (
+              items.map((it) => (
                 <div
                   key={it.key}
                   className="flex gap-3 rounded-2xl border border-slate-200 p-3"
@@ -1596,9 +1552,7 @@ function CartDrawer({
                     ) : null}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium line-clamp-2">
-                      <span className="text-slate-400 font-normal tabular-nums">{index + 1}.</span> {it.name}
-                    </p>
+                    <p className="text-sm font-medium line-clamp-2">{it.name}</p>
                     {it.variant ? (
                       <p className="text-xs text-slate-500 mt-0.5">{it.variant}</p>
                     ) : null}
@@ -1715,7 +1669,7 @@ function NotFoundPage() {
 }
 
 function App() {
-  const { products, rate, characters, loading, error, refetch } = useProducts();
+  const { products, rate, loading, error, refetch } = useProducts();
   const path = useHashPath();
   const route = React.useMemo(() => getRoute(path), [path]);
 
@@ -1841,6 +1795,7 @@ function App() {
         cartCount={cartCount}
         onOpenCart={() => setCartOpen(true)}
         onOpenMenu={() => setMenuOpen(true)}
+        onRefetch={refetch}
       />
       <CategorySidebar
         open={menuOpen}
@@ -1849,7 +1804,6 @@ function App() {
         onSearchChange={setSidebarSearch}
         onNavigate={handleMenuNavigate}
         selectedCharacter={homeParams.character || ""}
-        characters={characters}
       />
       {page}
       <CartDrawer
