@@ -96,15 +96,23 @@ function doPost(e) {
       sheet.appendRow(row);
       return jsonResponse({ ok: true, message: "已新增一筆商品" });
     }
-    if (action === "update" && body.rowIndex != null) {
-      var rowIndex = parseInt(body.rowIndex, 10);
-      if (rowIndex >= 2 && rowIndex <= sheet.getLastRow()) {
-        sheet.getRange(rowIndex, 1, 1, headers.length).setValues([row]);
-        SpreadsheetApp.flush();
-        return jsonResponse({ ok: true, message: "已更新商品（含規格庫存）" });
+    if (action === "update") {
+      if (body.rowIndex == null || body.rowIndex === "") {
+        return jsonResponse({ error: true, message: "更新商品時必須提供 rowIndex（試算表列號）。請重新整理後台列表後再編輯儲存。" });
       }
+      var rowIndex = parseInt(body.rowIndex, 10);
+      if (isNaN(rowIndex) || rowIndex < 2) {
+        return jsonResponse({ error: true, message: "rowIndex 必須為 2 以上的數字（第 1 列為標題）。請重新整理後台列表後再試。" });
+      }
+      var lastRow = sheet.getLastRow();
+      if (rowIndex > lastRow) {
+        return jsonResponse({ error: true, message: "rowIndex " + rowIndex + " 超出試算表範圍（目前最後一列為 " + lastRow + "）。請重新整理後台列表後再試。" });
+      }
+      sheet.getRange(rowIndex, 1, 1, headers.length).setValues([row]);
+      SpreadsheetApp.flush();
+      return jsonResponse({ ok: true, message: "已更新商品（含規格庫存）" });
     }
-    return jsonResponse({ error: true, message: "不支援的 action 或 rowIndex" });
+    return jsonResponse({ error: true, message: "不支援的 action（請傳 append、update 或 delete）；update/delete 時需提供 rowIndex。" });
   } catch (err) {
     Logger.log(err);
     return jsonResponse({ error: true, message: err.toString() });
