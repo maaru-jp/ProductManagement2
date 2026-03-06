@@ -14,7 +14,8 @@
 var CONFIG = {
   // ★ 試算表 ID（在「Code.gs」本檔案這裡填，不是在前端或 server）
   // 取得方式：用瀏覽器打開你的 Google 試算表，看網址列，例如：
-  //   https://docs.google.com/spreadsheets/d/【這裡是ID】/edit
+  //   https://docs.google.com/spreadsheets/d/
+14dqpeCDpKRA8_Ca2b5Phinh00ydPiaBh3MHKrVYMVOI/edit
   // 複製「/d/」和「/edit」中間那一串（約 44 個英數字），貼到下面引號裡。
   // 留空 "" = 使用「綁定本腳本的試算表」（從該試算表 擴充功能→Apps Script 部署即可）。
   spreadsheetId: "",
