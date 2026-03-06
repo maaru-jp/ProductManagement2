@@ -12,10 +12,13 @@
  */
 
 var CONFIG = {
-  // 試算表 ID：留空 = 使用「綁定本腳本的試算表」（從該試算表 擴充功能→Apps Script 部署）。
-  // 若儲存/刪除後試算表沒更新，請填這裡：從試算表網址複製 /d/ 與 /edit 之間那串 ID。
+  // ★ 試算表 ID（在「Code.gs」本檔案這裡填，不是在前端或 server）
+  // 取得方式：用瀏覽器打開你的 Google 試算表，看網址列，例如：
+  //   https://docs.google.com/spreadsheets/d/【這裡是ID】/edit
+  // 複製「/d/」和「/edit」中間那一串（約 44 個英數字），貼到下面引號裡。
+  // 留空 "" = 使用「綁定本腳本的試算表」（從該試算表 擴充功能→Apps Script 部署即可）。
   spreadsheetId: "",
-  // 商品工作表：留空 = 用第一個分頁；多張分頁時可填名稱指定商品表
+  // 商品工作表：留空 = 第一個分頁；若分頁名為「商品」可填 "商品"
   sheetName: "",
   // 第二張分頁「設定」專用於匯率，請勿變動；表內需有「匯率」或 rate 欄位
   rateSheetName: "設定",
@@ -28,6 +31,9 @@ var CONFIG = {
 function doGet(e) {
   try {
     var data = getApiData();
+    if (e && e.parameter && e.parameter.debug === "1") {
+      data._debug = getSpreadsheetInfo();
+    }
     var json = JSON.stringify(data);
     return ContentService.createTextOutput(json)
       .setMimeType(ContentService.MimeType.JSON);
@@ -52,16 +58,36 @@ function doPost(e) {
     var raw = e.postData && e.postData.contents ? e.postData.contents : "{}";
     var body = JSON.parse(raw);
     var action = String(body.action || "append").toLowerCase();
+
+    if (action === "info") {
+      var infoResult = getSpreadsheetInfo();
+      return jsonResponse(infoResult.error ? { error: true, message: infoResult.error } : { ok: true, debug: infoResult });
+    }
+
     var product = body.product || {};
-    var ss = CONFIG.spreadsheetId
-      ? SpreadsheetApp.openById(CONFIG.spreadsheetId)
-      : SpreadsheetApp.getActiveSpreadsheet();
+    var ss = null;
+    try {
+      ss = CONFIG.spreadsheetId
+        ? SpreadsheetApp.openById(CONFIG.spreadsheetId)
+        : SpreadsheetApp.getActiveSpreadsheet();
+    } catch (openErr) {
+      return jsonResponse({ error: true, message: "無法開啟試算表。若已填 CONFIG.spreadsheetId，請檢查是否為試算表網址中 /d/ 與 /edit 之間的那串 ID；或改為留空並從該試算表「擴充功能→Apps Script」部署。" });
+    }
     if (!ss) {
       return jsonResponse({ error: true, message: "無法取得試算表。請在 CONFIG 填寫 spreadsheetId，或從要編輯的試算表「擴充功能 → Apps Script」開啟並部署。" });
     }
-    var sheet = CONFIG.sheetName ? ss.getSheetByName(CONFIG.sheetName) : ss.getSheets()[0];
+    var sheet = null;
+    if (CONFIG.sheetName) {
+      sheet = ss.getSheetByName(CONFIG.sheetName);
+    }
     if (!sheet) {
-      return jsonResponse({ error: true, message: "找不到商品工作表" });
+      sheet = ss.getSheets().length > 0 ? ss.getSheets()[0] : null;
+    }
+    if (!sheet) {
+      var msg = CONFIG.sheetName
+        ? "找不到名為「" + CONFIG.sheetName + "」的工作表。請將 CONFIG.sheetName 改為試算表第一個分頁的名稱（或留空 \"\" 使用第一個分頁）。"
+        : "試算表沒有任何分頁，請在試算表新增至少一個工作表。";
+      return jsonResponse({ error: true, message: msg });
     }
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(h) { return (h || "").toString().trim(); });
     var fullToHalfHeader = function(s) {
@@ -253,6 +279,30 @@ function buildRowFromProduct(headers, product) {
 }
 
 /**
+ * 回傳目前使用的試算表／工作表資訊，供除錯用（POST action: "info" 或 GET ?debug=1）。
+ */
+function getSpreadsheetInfo() {
+  try {
+    var ss = CONFIG.spreadsheetId
+      ? SpreadsheetApp.openById(CONFIG.spreadsheetId)
+      : SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return { error: "無法取得試算表" };
+    var sheet = CONFIG.sheetName ? ss.getSheetByName(CONFIG.sheetName) : null;
+    if (!sheet && ss.getSheets().length > 0) sheet = ss.getSheets()[0];
+    if (!sheet) return { error: "試算表內沒有任何分頁" };
+    return {
+      spreadsheetId: CONFIG.spreadsheetId || "(使用綁定試算表)",
+      configSheetName: CONFIG.sheetName || "(第一個分頁)",
+      actualSheetName: sheet.getName(),
+      lastRow: sheet.getLastRow(),
+      message: "目前連線的試算表與商品工作表正常，可進行儲存／刪除。"
+    };
+  } catch (err) {
+    return { error: err.toString() };
+  }
+}
+
+/**
  * 從試算表組出前端要的 { products: [...], rate: number, characters: [...] }。
  * 台幣售價來自商品工作表的「售價」/「台幣售價」；匯率來自「設定」工作表；角色來自「角色」工作表。
  */
@@ -365,8 +415,13 @@ function getRowAsObject(sheet, rowIndex, headers) {
  */
 function getProducts(ss) {
   if (!ss) return [];
-  var name = CONFIG.sheetName;
-  var sheet = name ? ss.getSheetByName(name) : ss.getSheets()[0];
+  var sheet = null;
+  if (CONFIG.sheetName) {
+    sheet = ss.getSheetByName(CONFIG.sheetName);
+  }
+  if (!sheet && ss.getSheets().length > 0) {
+    sheet = ss.getSheets()[0];
+  }
   if (!sheet) return [];
   var data = sheet.getDataRange().getValues();
   if (!data || data.length < 2) return [];
