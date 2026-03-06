@@ -285,6 +285,7 @@ function useProducts() {
             throw new Error("API 回傳的內容不是有效的 JSON：" + (text.slice(0, 80) + (text.length > 80 ? "…" : "")));
           }
           if (!cancelled) {
+            // 勿在此處 console.log(data)，以免主控台出現 "Raw API data: Object"
             const apiRate = toNumberOrNull(data?.rate);
             setRate(apiRate);
             const rows = Array.isArray(data)
@@ -571,20 +572,32 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
         </div>
 
         <div className="flex-1 overflow-auto">
-          {/* 搜尋欄：放大鏡在輸入關鍵字框左邊 */}
+          {/* 搜尋欄：放大鏡可點擊執行搜尋 */}
           <div className="p-3 border-b border-slate-100">
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white focus-within:ring-1 focus-within:ring-slate-300 focus-within:border-slate-300">
-              <span
-                className="shrink-0 w-9 h-9 flex items-center justify-center text-slate-500"
-                aria-hidden
+              <button
+                type="button"
+                onClick={() => {
+                  const q = (searchKeyword || "").trim();
+                  onNavigate(q ? "/?q=" + encodeURIComponent(q) : "/");
+                }}
+                className="shrink-0 w-9 h-9 flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-l-md transition-colors"
+                aria-label="執行搜尋"
+                title="按此執行搜尋"
               >
                 🔍
-              </span>
+              </button>
               <input
                 ref={searchRef}
                 type="text"
                 value={searchKeyword}
                 onChange={(e) => onSearchChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const q = (searchKeyword || "").trim();
+                    onNavigate(q ? "/?q=" + encodeURIComponent(q) : "/");
+                  }
+                }}
                 placeholder="輸入關鍵字"
                 className="flex-1 min-w-0 py-2.5 pr-3 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none border-0"
               />
@@ -1355,8 +1368,13 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                               <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded">已售完</span>
                             ) : null}
                           </span>
-                          <span className="text-xs text-slate-500">
-                            {getDisplayPrice(item, rate) || ""}
+                          <span className="flex items-center gap-2 shrink-0 text-xs text-slate-500">
+                            {item.variantStockQty !== undefined && item.variantStockQty !== null ? (
+                              <span className={isSoldOut ? "text-amber-600" : "text-slate-600"}>
+                                剩 {item.variantStockQty}
+                              </span>
+                            ) : null}
+                            <span>{getDisplayPrice(item, rate) || ""}</span>
                           </span>
                         </label>
                       );
