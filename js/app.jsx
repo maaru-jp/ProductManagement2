@@ -285,7 +285,6 @@ function useProducts() {
             throw new Error("API 回傳的內容不是有效的 JSON：" + (text.slice(0, 80) + (text.length > 80 ? "…" : "")));
           }
           if (!cancelled) {
-            console.log("Raw API data:", data);
             const apiRate = toNumberOrNull(data?.rate);
             setRate(apiRate);
             const rows = Array.isArray(data)
@@ -330,18 +329,18 @@ function useProducts() {
     fetchData();
 
     // 切回分頁或視窗取得焦點時立即重新取得，顧客頁馬上依試算表新狀態顯示
-    const refetch = () => {
-      if (fetchDataRef.current) fetchDataRef.current(true);
+    const doRefetch = (silent = true) => {
+      if (fetchDataRef.current) fetchDataRef.current(silent);
     };
     const onVisible = () => {
-      if (document.visibilityState === "visible") refetch();
+      if (document.visibilityState === "visible") doRefetch(true);
     };
-    const onFocus = () => refetch();
+    const onFocus = () => doRefetch(true);
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onFocus);
 
     // 每 5 秒輪詢一次（帶快取破壞參數），後台編輯規格庫存後顧客頁會較快顯示最新數字
-    const interval = setInterval(refetch, 5000);
+    const interval = setInterval(() => doRefetch(true), 5000);
 
     return () => {
       cancelled = true;
@@ -352,7 +351,11 @@ function useProducts() {
     };
   }, []);
 
-  return { products, rate, characters, loading, error };
+  const refetch = React.useCallback((silent = true) => {
+    if (fetchDataRef.current) fetchDataRef.current(!!silent);
+  }, []);
+
+  return { products, rate, characters, loading, error, refetch };
 }
 
 function getUniqueProductsByName(products) {
@@ -1694,7 +1697,7 @@ function NotFoundPage() {
 }
 
 function App() {
-  const { products, rate, characters, loading, error } = useProducts();
+  const { products, rate, characters, loading, error, refetch } = useProducts();
   const path = useHashPath();
   const route = React.useMemo(() => getRoute(path), [path]);
 
