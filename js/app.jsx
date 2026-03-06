@@ -719,7 +719,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
   );
 }
 
-function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
+function Navbar({ cartCount, onOpenCart, onOpenMenu }) {
   return (
     <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200">
       <div className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-[1fr_auto_1fr] items-center">
@@ -727,29 +727,18 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
           <button
             type="button"
             onClick={onOpenMenu}
-            className="inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors"
+            className="inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors focus:outline-none focus:ring-0"
             aria-label="開啟分類選單"
           >
             <span className="text-lg leading-none">☰</span>
           </button>
-          {onRefetch && (
-            <button
-              type="button"
-              onClick={onRefetch}
-              className="inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors text-slate-600"
-              aria-label="重新載入商品與庫存"
-              title="重新載入商品與庫存（後台有更新時可按此）"
-            >
-              <span className="text-lg leading-none">🔄</span>
-            </button>
-          )}
         </div>
 
         <Link
           to="/"
-          className="flex items-center space-x-2 justify-center transition-transform duration-150 hover:opacity-90 active:scale-95"
+          className="flex items-center space-x-2 sm:space-x-3 justify-center transition-transform duration-150 hover:opacity-90 active:scale-95"
         >
-          <div className="w-11 h-11 rounded-full overflow-hidden bg-slate-900 flex items-center justify-center">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden bg-slate-900 flex items-center justify-center shrink-0">
             <img
               src="./品牌logo_tondiv.jpg"
               alt="Maaru 品牌 Logo"
@@ -758,10 +747,10 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
             />
           </div>
           <div className="flex flex-col leading-tight text-left">
-            <span className="text-sm font-semibold tracking-[0.2em] uppercase">
+            <span className="text-sm sm:text-base font-semibold tracking-[0.2em] uppercase">
               Maaru
             </span>
-            <span className="text-xs text-slate-500 tracking-[0.15em] uppercase">
+            <span className="text-xs sm:text-sm text-slate-500 tracking-[0.15em] uppercase">
               Select Shop
             </span>
           </div>
@@ -771,7 +760,7 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onRefetch }) {
           <button
             type="button"
             onClick={onOpenCart}
-            className="relative inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors"
+            className="relative inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors focus:outline-none focus:ring-0"
             aria-label="開啟購物車"
           >
             <span className="text-base">🛒</span>
@@ -1795,7 +1784,6 @@ function App() {
         cartCount={cartCount}
         onOpenCart={() => setCartOpen(true)}
         onOpenMenu={() => setMenuOpen(true)}
-        onRefetch={refetch}
       />
       <CategorySidebar
         open={menuOpen}
