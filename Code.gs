@@ -187,13 +187,18 @@ function buildRowFromProduct(sheet, product) {
     }
     row.push(val);
   }
-  // 與 getProducts 一致：用 keyMap 找庫存／規格庫存欄位，試算表標題用中文或英文都能正確寫入
+  // 與 getProducts 一致：用 keyMap 找欄位，試算表標題用中文或英文都能正確寫入
   var stockCol = -1;
   var variantCol = -1;
+  var statusCol = -1;
   for (var i = 0; i < headers.length; i++) {
     var key = keyMap[i];
     if (key === "stock") stockCol = i;
     if (key === "variantStock") variantCol = i;
+    if (key === "status") statusCol = i;
+  }
+  if (statusCol >= 0) {
+    row[statusCol] = (product.status !== undefined && product.status !== null && String(product.status).trim() !== "") ? String(product.status).trim() : "上架";
   }
   if (variantCol >= 0) {
     row[variantCol] = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
@@ -341,7 +346,7 @@ function buildKeyMap(headers) {
     ["售價", "sellingPrice"],
     ["利潤", "profit"],
     ["成本", "cost"],
-    ["狀態", "status"],
+    ["狀態", "上架狀態", "status", "Status"],
     ["貨況", "stockType"],
     ["庫存", "庫存數量", "stock", "Stock"],
     ["規格庫存", "規格庫存數量", "variantStock"],
