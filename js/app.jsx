@@ -648,6 +648,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
 
   return (
     <>
+      {/* 遮罩：點擊任意處可關閉（手機友善：加大可點擊、避免誤觸滑動） */}
       <div
         className={[
           "fixed inset-0 z-30 transition-opacity",
@@ -656,9 +657,9 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
         aria-hidden={!open}
       >
         <div
-          className="absolute inset-0 bg-slate-900/20"
+          className="absolute inset-0 bg-slate-900/20 min-w-full min-h-full cursor-pointer"
           onClick={onClose}
-          aria-label="關閉選單"
+          aria-label="點擊關閉選單"
         />
       </div>
       <aside
@@ -669,13 +670,13 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
         ].join(" ")}
         aria-label="商品分類選單"
       >
-        {/* Header：左側 X，右側品牌名 */}
+        {/* Header：關閉鈕加大（手機至少 44px 觸控）、右側品牌名 */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="w-9 h-9 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center transition-colors"
-            aria-label="關閉"
+            className="min-w-[44px] min-h-[44px] w-12 h-12 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 active:bg-slate-100 flex items-center justify-center transition-colors text-lg"
+            aria-label="關閉選單"
           >
             ✕
           </button>
@@ -852,6 +853,17 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
               })}
             </nav>
           </div>
+        </div>
+        {/* 底部關閉鈕：手機較好點，拇指可及 */}
+        <div className="shrink-0 border-t border-slate-200 p-4 bg-white">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full min-h-[48px] py-3 rounded-xl bg-slate-100 text-slate-700 font-medium text-sm active:bg-slate-200 transition-colors"
+            aria-label="關閉選單"
+          >
+            關閉選單
+          </button>
         </div>
       </aside>
     </>
