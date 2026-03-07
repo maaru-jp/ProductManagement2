@@ -272,9 +272,6 @@
             商品管理
           </h2>
           <div class="flex items-center gap-3">
-            <button type="button" id="btnSaveAllStatus" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed">
-              儲存所有變更
-            </button>
             <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
               前往官網 ↗
             </a>
@@ -387,7 +384,7 @@
         <div class="mt-6 p-4 rounded-lg bg-rose-50 border border-rose-100 flex items-start gap-3">
           <span class="text-rose-500 text-lg">💡</span>
           <div class="text-sm text-slate-700">
-            <p>提示：修改狀態後，請按右上角「儲存所有變更」才會生效。</p>
+            <p>狀態開關：關閉（下架）時顧客頁不顯示該商品，開啟（上架）時會顯示。僅切換開關不會寫入試算表；請點擊該商品的「編輯」並按「儲存」後，試算表與顧客頁才會更新。</p>
             <p class="mt-2">若要產生客人訂單 PDF：在每筆訂單最右側「操作」欄點 <strong>產生 PDF</strong>，在跳出的列印視窗中選擇「另存為 PDF」即可。</p>
           </div>
         </div>
@@ -1812,7 +1809,6 @@
             products = data.products || [];
             pendingStatusChanges = {};
             renderTable();
-            updateSaveAllStatusBtn();
           })
           .catch(function(err) {
             tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
@@ -1955,89 +1951,12 @@
             p.狀態 = next;
             pendingStatusChanges[rowIndex] = next;
             renderTable();
-            updateSaveAllStatusBtn();
-            showMessage(next === "上架" ? "已設為上架（僅畫面更新，請按「儲存所有變更」寫入試算表）" : "已設為下架（僅畫面更新，請按「儲存所有變更」寫入試算表）");
+            showMessage(next === "上架" ? "已設為上架（僅畫面更新；請點擊「編輯」並儲存該商品後，顧客頁才會顯示）" : "已設為下架（僅畫面更新；請點擊「編輯」並儲存該商品後，顧客頁才會不顯示）");
           });
           el.addEventListener("keydown", function(e) {
             if (e.key === " " || e.key === "Enter") { e.preventDefault(); el.click(); }
           });
         });
-        updateSaveAllStatusBtn();
-      }
-
-      function updateSaveAllStatusBtn() {
-        var btn = document.getElementById("btnSaveAllStatus");
-        if (!btn) return;
-        var count = Object.keys(pendingStatusChanges).length;
-        if (count === 0) {
-          btn.disabled = true;
-          btn.className = "px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed";
-          btn.textContent = "儲存所有變更";
-        } else {
-          btn.disabled = false;
-          btn.className = "px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium hover:bg-slate-700";
-          btn.textContent = "儲存所有變更 (" + count + ")";
-        }
-      }
-
-      function saveAllStatusChanges() {
-        var rowIndices = Object.keys(pendingStatusChanges).map(function(k) { return parseInt(k, 10); }).filter(function(r) { return r >= 2; });
-        if (rowIndices.length === 0) {
-          updateSaveAllStatusBtn();
-          return;
-        }
-        var btn = document.getElementById("btnSaveAllStatus");
-        if (btn) { btn.disabled = true; btn.textContent = "儲存中..."; }
-        var chain = Promise.resolve();
-        rowIndices.forEach(function(rowIndex) {
-          var p = productByRowIndex(rowIndex);
-          if (!p) return;
-          var next = pendingStatusChanges[rowIndex];
-          var product = {
-            name: p.name || p.商品名稱,
-            category: p.category || p.分類,
-            subcategory: p.subcategory || p.子分類,
-            variant: p.variant || p.規格,
-            price: p.price != null ? p.price : p.日幣價格,
-            sellingPrice: p.sellingPrice != null ? p.sellingPrice : p.售價,
-            rate: p.rate != null ? p.rate : p.匯率,
-            profit: p.profit != null ? p.profit : p.利潤,
-            cost: p.cost != null ? p.cost : p.成本,
-            stock: p.stock != null ? p.stock : p.庫存,
-            status: next,
-            stockType: p.stockType || p.貨況 || p.現貨預購 || "",
-            image: p.image || p.圖片,
-            variantImages: p.variantImages != null ? p.variantImages : p.規格圖片,
-            variantStock: p.variantStock != null ? p.variantStock : p.規格庫存,
-            description: p.description || p.描述,
-            introduction: p.introduction || p.商品介紹,
-            publishedAt: p.publishedAt || p.上架日期,
-            hot: p.hot || p.熱銷 ? "Y" : "",
-            recommended: p.recommended || p.推薦 ? "Y" : "",
-            isNew: p.isNew || p.新品 ? "Y" : "",
-            isNewListing: p.isNewListing || p.新上架 ? "Y" : ""
-          };
-          (function(ri, prod) {
-            chain = chain.then(function() {
-              return fetchWrite({ action: "update", rowIndex: ri, product: prod })
-                .then(function(r) { return r.json(); })
-                .then(function(res) {
-                  if (res && res.error) throw new Error(res.message || "更新失敗");
-                  return res;
-                });
-            });
-          })(rowIndex, product);
-        });
-        chain
-          .then(function() {
-            pendingStatusChanges = {};
-            showMessage("已將所有狀態變更寫入試算表");
-            loadProducts();
-          })
-          .catch(function(err) {
-            showMessage("儲存失敗：" + (err.message || "網路錯誤"), true);
-            if (btn) updateSaveAllStatusBtn();
-          });
       }
 
       function escapeHtml(s) {
@@ -2305,8 +2224,6 @@
       }
 
       document.getElementById("btnAdd").addEventListener("click", function() { openModal(false); });
-      var btnSaveAllStatus = document.getElementById("btnSaveAllStatus");
-      if (btnSaveAllStatus) btnSaveAllStatus.addEventListener("click", saveAllStatusChanges);
 
       var btnAddVariant = document.getElementById("btnAddVariant");
       if (btnAddVariant) {
@@ -2428,6 +2345,7 @@
               return;
             }
             showMessage((res && res.message) ? res.message : "已儲存");
+            if (body.rowIndex != null) delete pendingStatusChanges[body.rowIndex];
             closeModal();
             loadProducts();
           })
