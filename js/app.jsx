@@ -790,6 +790,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                   type="button"
                   onClick={() => { onNavigate("/"); onClose(); }}
                   className={storeCategoryClass}
+                  title="顯示所有上架商品"
                 >
                   <span>全部</span>
                   <span className="text-slate-400">›</span>
@@ -1032,9 +1033,13 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
 
   const [selectedSubcategory, setSelectedSubcategory] = React.useState(subcategoryFromUrl || "");
 
-  // 當網址列上的 category / subcategory 改變時，同步到 state
+  // 當網址列上的 category / subcategory 改變時，同步到 state（點「全部」時網址無 category，故選分類還原為全部）
   React.useEffect(() => {
-    if (categoryFromUrl !== null) setSelectedCategory(categoryFromUrl);
+    if (categoryFromUrl != null && categoryFromUrl !== "") {
+      setSelectedCategory(categoryFromUrl);
+    } else {
+      setSelectedCategory("ALL");
+    }
   }, [categoryFromUrl]);
   React.useEffect(() => {
     setSelectedSubcategory(subcategoryFromUrl || "");
@@ -1090,6 +1095,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
 
   const filteredProducts = React.useMemo(() => {
     const q = (searchKeyword || "").trim().toLowerCase();
+    // products 已僅含「上架」商品；點「全部」時無 category/subcategory/character，顯示全部
     let result = products;
 
     // 上方放大鏡搜尋：僅依「商品名稱」篩選，顯示所有分類中符合的商品
