@@ -416,114 +416,163 @@ function getUniqueProductsByName(products) {
   return result;
 }
 
-// 分類選單結構：主分類 + 子分類（可展開/收合）
+// 分類選單結構：主分類 + 子分類（與試算表 分類／子分類 對應，可展開/收合）
 const CATEGORY_MENU = [
   {
-    label: "文 | 具 | 小 | 物",
-    value: "文具小物",
+    label: "絨毛玩偶",
+    value: "絨毛玩偶",
     children: [
-      { label: "各式筆類", value: "各式筆類" },
-      { label: "筆記本 | 便條紙", value: "筆記本便條紙" },
-      { label: "卡片 | 信紙 | 紙袋", value: "卡片信紙紙袋" },
-      { label: "文件夾 | 資料袋", value: "文件夾資料袋" },
-      { label: "紙膠帶 | 貼紙", value: "紙膠帶貼紙" },
-      { label: "筆袋 | 筆盒", value: "筆袋筆盒" },
-      { label: "剪刀 | 尺 | 事務用品", value: "剪刀尺事務用品" },
-      { label: "3C周邊", value: "3C周邊" },
+      { label: "玩偶公仔", value: "玩偶公仔" },
+      { label: "吊飾娃", value: "吊飾娃" },
     ],
   },
   {
-    label: "包 | 袋 | 配 | 件",
-    value: "包袋配件",
+    label: "包包時尚小物",
+    value: "包包時尚小物",
     children: [
+      { label: "托特包", value: "托特包" },
+      { label: "肩包", value: "肩包" },
       { label: "後背包", value: "後背包" },
-      { label: "手提 | 斜背包", value: "手提斜背包" },
-      { label: "肩背 | 側背包", value: "肩背側背包" },
+      { label: "購物環保袋", value: "購物環保袋" },
       { label: "皮夾", value: "皮夾" },
-      { label: "零錢包 | 卡夾", value: "零錢包卡夾" },
-      { label: "化妝包 | 束口袋 | 收納包", value: "化妝包束口袋收納包" },
-      { label: "旅行用品", value: "旅行用品" },
-      { label: "環保購物袋", value: "環保購物袋" },
-      { label: "眼鏡盒", value: "眼鏡盒" },
-      { label: "吊飾 | 鑰匙圈", value: "吊飾鑰匙圈" },
-      { label: "手錶 | 飾品", value: "手錶飾品" },
-      { label: "服飾 | 鞋襪 | 帽子 | 圍巾", value: "服飾鞋襪帽子圍巾" },
+      { label: "零錢包", value: "零錢包" },
+      { label: "票卡收納夾", value: "票卡收納夾" },
+      { label: "化妝包", value: "化妝包" },
+      { label: "多功能收納包", value: "多功能收納包" },
+      { label: "束口袋", value: "束口袋" },
+    ],
+  },
+  {
+    label: "美妝用品",
+    value: "美妝用品",
+    children: [
+      { label: "身體乳", value: "身體乳" },
+      { label: "護手霜", value: "護手霜" },
+      { label: "護唇膏", value: "護唇膏" },
+      { label: "鏡子", value: "鏡子" },
+      { label: "梳子", value: "梳子" },
+      { label: "個人衛生用品", value: "個人衛生用品" },
+      { label: "其他美妝用品", value: "其他美妝用品" },
+    ],
+  },
+  {
+    label: "飾品配件",
+    value: "飾品配件",
+    children: [
+      { label: "飾品", value: "飾品" },
       { label: "髮飾", value: "髮飾" },
-      { label: "風扇 | 扇子", value: "風扇扇子" },
+      { label: "眼鏡盒", value: "眼鏡盒" },
+      { label: "手錶", value: "手錶" },
+      { label: "其他時尚用品", value: "其他時尚用品" },
     ],
   },
   {
-    label: "餐 | 廚 | 百 | 貨",
-    value: "餐廚百貨",
+    label: "服飾專區",
+    value: "服飾專區",
     children: [
-      { label: "匙 | 叉 | 筷", value: "匙叉筷" },
-      { label: "碗 | 盤 | 食器類", value: "碗盤食器類" },
-      { label: "便當盒 | 保鮮盒", value: "便當盒保鮮盒" },
-      { label: "馬克杯 | 各式水杯", value: "馬克杯各式水杯" },
-      { label: "保溫杯瓶", value: "保溫杯瓶" },
+      { label: "上衣", value: "上衣" },
+      { label: "褲子", value: "褲子" },
+      { label: "襪子", value: "襪子" },
+    ],
+  },
+  {
+    label: "文具用品",
+    value: "文具用品",
+    children: [
+      { label: "年曆", value: "年曆" },
+      { label: "手帳本", value: "手帳本" },
+      { label: "原子筆", value: "原子筆" },
+      { label: "鉛筆盒", value: "鉛筆盒" },
+      { label: "筆袋", value: "筆袋" },
+      { label: "筆記本", value: "筆記本" },
+      { label: "活頁紙", value: "活頁紙" },
+      { label: "貼紙", value: "貼紙" },
+      { label: "紙膠帶", value: "紙膠帶" },
+      { label: "文具收納相關", value: "文具收納相關" },
+      { label: "辦公事務用品", value: "辦公事務用品" },
+      { label: "明信片", value: "明信片" },
+      { label: "其他文具用品", value: "其他文具用品" },
+    ],
+  },
+  {
+    label: "3C用品",
+    value: "3C用品",
+    children: [
+      { label: "手機殼", value: "手機殼" },
+      { label: "充電線", value: "充電線" },
+      { label: "行動電源", value: "行動電源" },
+      { label: "其他3C周邊用品", value: "其他3C周邊用品" },
+    ],
+  },
+  {
+    label: "居家生活",
+    value: "居家生活",
+    children: [
+      { label: "抱枕", value: "抱枕" },
+      { label: "靠枕", value: "靠枕" },
+      { label: "毛毯", value: "毛毯" },
+      { label: "室內鞋", value: "室內鞋" },
+      { label: "居家清潔用品", value: "居家清潔用品" },
+      { label: "收納用品", value: "收納用品" },
+      { label: "擺飾小物", value: "擺飾小物" },
+    ],
+  },
+  {
+    label: "兒童專區",
+    value: "兒童專區",
+    children: [
+      { label: "便當盒", value: "便當盒" },
       { label: "水壺", value: "水壺" },
-      { label: "吸管 | 杯蓋 | 杯墊", value: "吸管杯蓋杯墊" },
-      { label: "料理烘焙模具 | 創意便當", value: "料理烘焙模具創意便當" },
-      { label: "杯袋 | 便當袋", value: "杯袋便當袋" },
-      { label: "鍋具 | 茶壺 | 廚房電器", value: "鍋具茶壺廚房電器" },
-      { label: "廚具 | 餐廚小物", value: "廚具餐廚小物" },
+      { label: "手帕", value: "手帕" },
+      { label: "小方巾", value: "小方巾" },
+      { label: "襪子", value: "襪子" },
+      { label: "兒童小包", value: "兒童小包" },
+    ],
+  },
+  {
+    label: "廚房用品",
+    value: "廚房用品",
+    children: [
+      { label: "環保餐具", value: "環保餐具" },
+      { label: "便當盒", value: "便當盒" },
+      { label: "水壺", value: "水壺" },
+      { label: "馬克杯", value: "馬克杯" },
+      { label: "餐具收納", value: "餐具收納" },
+      { label: "料理用具", value: "料理用具" },
       { label: "廚房收納", value: "廚房收納" },
+      { label: "其他廚房用品", value: "其他廚房用品" },
     ],
   },
   {
-    label: "媽 | 咪 | 寶 | 貝",
-    value: "媽咪寶貝",
+    label: "浴室用品",
+    value: "浴室用品",
     children: [
-      { label: "兒童水壺 | 杯瓶", value: "兒童水壺杯瓶" },
-      { label: "兒童餐具", value: "兒童餐具" },
-      { label: "玩具", value: "玩具" },
-      { label: "絨毛玩偶 | 公仔", value: "絨毛玩偶公仔" },
-      { label: "卡通泡澡球", value: "卡通泡澡球" },
-      { label: "Tomica小汽車", value: "Tomica小汽車" },
-      { label: "兒童包袋服飾配件", value: "兒童包袋服飾配件" },
-      { label: "母嬰用品", value: "母嬰用品" },
+      { label: "浴巾", value: "浴巾" },
+      { label: "毛巾", value: "毛巾" },
+      { label: "小方巾", value: "小方巾" },
+      { label: "衛浴用品", value: "衛浴用品" },
+      { label: "衛浴收納", value: "衛浴收納" },
+      { label: "洗衣袋", value: "洗衣袋" },
+      { label: "其他浴室用品", value: "其他浴室用品" },
     ],
   },
   {
-    label: "居 | 家 | 雜 | 貨",
-    value: "居家雜貨",
+    label: "旅行用品",
+    value: "旅行用品",
     children: [
-      { label: "桌上小物收納", value: "桌上小物收納" },
-      { label: "收納籃 | 收納箱", value: "收納籃收納箱" },
-      { label: "門簾 | 地墊", value: "門簾地墊" },
-      { label: "寢具 | 抱枕 | 毯", value: "寢具抱枕毯" },
-      { label: "時鐘 | 傢飾 | 燈", value: "時鐘傢飾燈" },
-      { label: "室內拖 | 圍裙", value: "室內拖圍裙" },
-      { label: "掛勾 | 衣架 | 洗曬", value: "掛勾衣架洗曬" },
-      { label: "雨具 | 雨衣", value: "雨具雨衣" },
-      { label: "垃圾桶 | 清潔小物", value: "垃圾桶清潔小物" },
-      { label: "居家雜貨", value: "居家雜貨" },
-      { label: "桌墊 | 野餐墊", value: "桌墊野餐墊" },
-      { label: "汽機車用品", value: "汽機車用品" },
+      { label: "行李吊牌", value: "行李吊牌" },
+      { label: "行李箱束帶", value: "行李箱束帶" },
+      { label: "護照套", value: "護照套" },
+      { label: "旅行收納", value: "旅行收納" },
     ],
   },
   {
-    label: "衛 | 浴 | 用 | 品",
-    value: "衛浴用品",
+    label: "戶外用品",
+    value: "戶外用品",
     children: [
-      { label: "毛巾 | 浴巾", value: "毛巾浴巾" },
-      { label: "手帕 | 擦手巾", value: "手帕擦手巾" },
-      { label: "牙刷 | 盥洗小物", value: "牙刷盥洗小物" },
-      { label: "浴室收納 | 用具", value: "浴室收納用具" },
-    ],
-  },
-  {
-    label: "美 | 妝 | 衛 | 生",
-    value: "美妝衛生",
-    children: [
-      { label: "口罩 | 防疫周邊", value: "口罩防疫周邊" },
-      { label: "分裝瓶罐", value: "分裝瓶罐" },
-      { label: "鏡梳", value: "鏡梳" },
-      { label: "濕紙巾 | 面紙", value: "濕紙巾面紙" },
-      { label: "ok繃 | 棉棒 | 牙線", value: "ok繃棉棒牙線" },
-      { label: "清潔保養", value: "清潔保養" },
-      { label: "美甲小物", value: "美甲小物" },
-      { label: "其他美妝小物", value: "其他美妝小物" },
+      { label: "雨傘", value: "雨傘" },
+      { label: "雨具", value: "雨具" },
+      { label: "其他戶外用品", value: "其他戶外用品" },
     ],
   },
 ];
@@ -724,23 +773,34 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
             </div>
           </div>
 
-          {/* 店舗內分類：垂直列表 + 右箭頭 */}
+          {/* 分類：依序主分類 + 子分類（對應試算表 分類／子分類） */}
           <div className="border-t border-slate-200 pt-2">
             <p className="px-4 text-xs font-semibold text-slate-500 tracking-wider mb-1">
-              店舗內分類
+              商品分類
             </p>
             <nav className="py-1">
-              {STORE_CATEGORIES.map((item) => {
-                const label = typeof item === "string" ? item : item.label;
-                const children = typeof item === "string" ? null : item.children;
-                const isExpanded = expandedStoreKey === label;
+              <div className="border-b border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => { onNavigate("/"); onClose(); }}
+                  className={storeCategoryClass}
+                >
+                  <span>全部</span>
+                  <span className="text-slate-400">›</span>
+                </button>
+              </div>
+              {CATEGORY_MENU.map((item) => {
+                const label = item.label;
+                const value = item.value;
+                const children = item.children || [];
+                const isExpanded = expandedStoreKey === value;
 
-                if (children && children.length > 0) {
+                if (children.length > 0) {
                   return (
-                    <div key={label} className="border-b border-slate-100">
+                    <div key={value} className="border-b border-slate-100">
                       <button
                         type="button"
-                        onClick={() => setExpandedStoreKey(isExpanded ? null : label)}
+                        onClick={() => setExpandedStoreKey(isExpanded ? null : value)}
                         className={storeCategoryClass}
                       >
                         <span>{label}</span>
@@ -750,15 +810,15 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                         <div>
                           {children.map((sub) => (
                             <button
-                              key={sub}
+                              key={sub.value}
                               type="button"
                               onClick={() => {
-                                onNavigate("/?category=" + encodeURIComponent(label) + "&subcategory=" + encodeURIComponent(sub));
+                                onNavigate("/?category=" + encodeURIComponent(value) + "&subcategory=" + encodeURIComponent(sub.value));
                                 onClose();
                               }}
                               className="flex items-center justify-between w-full py-2.5 pl-6 pr-4 text-left text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0"
                             >
-                              <span>{sub}</span>
+                              <span>{sub.label}</span>
                               <span className="text-slate-400">›</span>
                             </button>
                           ))}
@@ -768,15 +828,19 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                   );
                 }
                 return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => { onNavigate("/"); onClose(); }}
-                    className={storeCategoryClass}
-                  >
-                    <span>{label}</span>
-                    <span className="text-slate-400">›</span>
-                  </button>
+                  <div key={value} className="border-b border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate("/?category=" + encodeURIComponent(value));
+                        onClose();
+                      }}
+                      className={storeCategoryClass}
+                    >
+                      <span>{label}</span>
+                      <span className="text-slate-400">›</span>
+                    </button>
+                  </div>
                 );
               })}
             </nav>
