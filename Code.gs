@@ -187,12 +187,13 @@ function buildRowFromProduct(sheet, product) {
     }
     row.push(val);
   }
+  // 與 getProducts 一致：用 keyMap 找庫存／規格庫存欄位，試算表標題用中文或英文都能正確寫入
   var stockCol = -1;
   var variantCol = -1;
   for (var i = 0; i < headers.length; i++) {
-    var h = (headers[i] || "").toString().trim();
-    if (h === "庫存" || (h.indexOf("庫存") >= 0 && h.indexOf("規格") < 0)) stockCol = i;
-    if (h === "規格庫存" || (h.indexOf("規格") >= 0 && h.indexOf("庫存") >= 0)) variantCol = i;
+    var key = keyMap[i];
+    if (key === "stock") stockCol = i;
+    if (key === "variantStock") variantCol = i;
   }
   if (variantCol >= 0) {
     row[variantCol] = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
