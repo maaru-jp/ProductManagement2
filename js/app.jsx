@@ -109,6 +109,16 @@ function isWithinLastDays(dateValue, days) {
   return ms <= days * 24 * 60 * 60 * 1000;
 }
 
+/** 上架日期是否為「今天」（以當地日期比對） */
+function isPublishedToday(dateValue) {
+  const d = parseDateOrNull(dateValue);
+  if (!d) return false;
+  const today = new Date();
+  return d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+}
+
 function formatJPY(n) {
   const num = toNumberOrNull(n);
   if (num == null) return null;
@@ -238,8 +248,9 @@ function normalizeItem(row, index) {
   const isRecommended = toBoolFlag(row.recommended ?? row.推薦);
   const publishedAt = row.publishedAt ?? row.上架日期 ?? row.上架時間 ?? null;
   const isNewByFlag = toBoolFlag(row.isNew ?? row.新品);
+  const isNewListing = toBoolFlag(row.isNewListing ?? row.新上架);
   const isNewByDate = isWithinLastDays(publishedAt, 7);
-  const isNew = isNewByFlag || isNewByDate;
+  const isNew = isNewByFlag || isNewListing || isNewByDate;
 
   const sku = [name, variant, price ?? ""].join("||");
 
@@ -265,6 +276,7 @@ function normalizeItem(row, index) {
     isHot,
     isRecommended,
     isNew,
+    isNewListing,
     publishedAt,
   };
 }
@@ -797,6 +809,17 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                   <span className="text-slate-400">›</span>
                 </button>
               </div>
+              <div className="border-b border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => { onNavigate("/?newToday=1"); onClose(); }}
+                  className={storeCategoryClass}
+                  title="顯示今天上架的商品"
+                >
+                  <span>今日上架</span>
+                  <span className="text-slate-400">›</span>
+                </button>
+              </div>
               {CATEGORY_MENU.map((item) => {
                 const label = item.label;
                 const value = item.value;
@@ -971,7 +994,7 @@ function ProductCard({ product, rate }) {
           </div>
         )}
 
-        {(product.isHot || product.isRecommended || product.isNew || product.character) ? (
+        {(product.isHot || product.isRecommended || product.isNew || product.isNewListing || product.character) ? (
           <div className="absolute top-3 left-3 flex flex-wrap gap-1">
             {product.isHot ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-rose-600 text-white shadow-sm">
@@ -981,6 +1004,11 @@ function ProductCard({ product, rate }) {
             {product.isRecommended ? (
               <span className="text-[11px] px-2 py-1 rounded-full bg-indigo-600 text-white shadow-sm">
                 推薦
+              </span>
+            ) : null}
+            {product.isNewListing ? (
+              <span className="text-[11px] px-2 py-1 rounded-full bg-amber-500 text-white shadow-sm">
+                新上架
               </span>
             ) : null}
             {product.isNew ? (
@@ -1033,6 +1061,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   const categoryFromUrl = params.category ?? null;
   const subcategoryFromUrl = params.subcategory ?? null;
   const characterFromUrl = params.character ?? null;
+  const newTodayFromUrl = params.newToday === "1" || params.newToday === "true";
 
   const [selectedCategory, setSelectedCategory] = React.useState(() => {
     if (categoryFromUrl) return categoryFromUrl;
@@ -1047,12 +1076,16 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
 
   // 當網址列上的 category / subcategory 改變時，同步到 state（點「全部」時網址無 category，故選分類還原為全部）
   React.useEffect(() => {
+    if (newTodayFromUrl) {
+      setSelectedCategory("ALL");
+      return;
+    }
     if (categoryFromUrl != null && categoryFromUrl !== "") {
       setSelectedCategory(categoryFromUrl);
     } else {
       setSelectedCategory("ALL");
     }
-  }, [categoryFromUrl]);
+  }, [categoryFromUrl, newTodayFromUrl]);
   React.useEffect(() => {
     setSelectedSubcategory(subcategoryFromUrl || "");
   }, [subcategoryFromUrl]);
@@ -1110,6 +1143,14 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
     // products 已僅含「上架」商品；點「全部」時無 category/subcategory/character，顯示全部
     let result = products;
 
+    // 左側欄「今日上架」：只顯示上架日期為今天的商品
+    if (newTodayFromUrl) {
+      result = result.filter((p) =>
+        isPublishedToday(p?.publishedAt ?? p?.上架日期 ?? p?.上架時間 ?? p?.raw?.上架日期 ?? p?.raw?.publishedAt)
+      );
+      return result;
+    }
+
     // 上方放大鏡搜尋：僅依「商品名稱」篩選，顯示所有分類中符合的商品
     if (q) {
       result = result.filter((p) => {
@@ -1141,7 +1182,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
       result = result.filter((p) => productVariantMatchesCharacter(p, charFilter));
     }
     return result;
-  }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword, productVariantMatchesCharacter]);
+  }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword, newTodayFromUrl, productVariantMatchesCharacter]);
 
   // 取得用於排序的數字價格（與顧客頁顯示一致：優先台幣售價，否則日幣）
   const getSortPrice = React.useCallback((p) => {
@@ -1237,10 +1278,18 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
         </div>
       )}
 
+      {!loading && !error && newTodayFromUrl && uniqueProducts.length > 0 && (
+        <p className="mb-4 text-sm font-medium text-slate-700">
+          今日上架商品（上架日期為今天的商品）
+        </p>
+      )}
+
       {!loading && !error && uniqueProducts.length === 0 && (
         <div className="text-center text-sm text-slate-500 space-y-1">
           <p>目前沒有可顯示的商品。</p>
-          {characterFromUrl ? (
+          {newTodayFromUrl ? (
+            <p className="text-xs">今日尚無上架商品，請試算表「上架日期」填寫今天日期（YYYY-MM-DD）並儲存。</p>
+          ) : characterFromUrl ? (
             <p className="text-xs">
               篩選角色「{characterFromUrl}」：依商品「規格」顯示，試算表「規格」欄需包含該名稱（如 酷洛米,大耳狗 即含酷洛米）。
             </p>
