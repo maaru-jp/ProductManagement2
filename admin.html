@@ -2039,7 +2039,11 @@
             });
           })(rowIndex, product);
         });
-        chain
+        var timeoutMs = 30000;
+        var timeoutPromise = new Promise(function(_, reject) {
+          setTimeout(function() { reject(new Error("儲存逾時，請檢查網路或稍後再試")); }, timeoutMs);
+        });
+        Promise.race([chain, timeoutPromise])
           .then(function() {
             var savedNames = [];
             rowIndices.forEach(function(ri) {
@@ -2059,6 +2063,8 @@
           })
           .catch(function(err) {
             showMessage("儲存失敗：" + (err.message || "網路錯誤"), true);
+          })
+          .finally(function() {
             if (btn) updateSaveAllStatusBtn();
           });
       }
