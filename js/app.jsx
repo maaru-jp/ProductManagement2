@@ -1355,11 +1355,9 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                             ) : null}
                           </span>
                           <span className="text-xs text-slate-500 shrink-0 w-16 text-center">
-                            {item.variantStockQty !== undefined && item.variantStockQty !== null ? (
-                              <>庫存 {item.variantStockQty}</>
-                            ) : (
-                              ""
-                            )}
+                            {item.variantStockQty !== undefined && item.variantStockQty !== null
+                              ? `庫存 ${item.variantStockQty}`
+                              : "庫存 -"}
                           </span>
                           <span className="text-xs text-slate-500 shrink-0">
                             {getDisplayPrice(item, rate) || ""}
