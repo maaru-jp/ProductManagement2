@@ -1080,48 +1080,50 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
     setSelectedCategory("ALL");
   }, [categories, selectedCategory]);
 
+  // 商品規格（規格）是否包含指定角色名稱（用於左側角色篩選）
+  const productVariantMatchesCharacter = React.useCallback((p, characterName) => {
+    const raw = (p?.variant ?? p?.規格 ?? p?.raw?.規格 ?? p?.raw?.variant ?? "").toString().trim();
+    if (!raw || !characterName) return false;
+    const parts = raw.split(/[,，、\s]+/).map((s) => s.trim()).filter(Boolean);
+    return parts.some((part) => part === characterName);
+  }, []);
+
   const filteredProducts = React.useMemo(() => {
     const q = (searchKeyword || "").trim().toLowerCase();
     let result = products;
+
+    // 上方放大鏡搜尋：僅依「商品名稱」篩選，顯示所有分類中符合的商品
     if (q) {
-      // 有搜尋關鍵字時：依商品名稱（含規格）篩選，帶出「所有分類」中符合的商品
       result = result.filter((p) => {
-        const name = (p?.name ?? p?.raw?.商品名稱 ?? "").toString().toLowerCase();
-        const variant = (p?.variant ?? p?.raw?.規格 ?? "").toString().toLowerCase();
-        return name.includes(q) || variant.includes(q);
+        const name = (p?.name ?? p?.商品名稱 ?? p?.raw?.商品名稱 ?? "").toString().toLowerCase();
+        return name.includes(q);
       });
       if (characterFromUrl) {
         const charFilter = (characterFromUrl || "").trim();
-        result = result.filter((p) => {
-          const pChar = (
-            (p?.character ?? p?.raw?.character ?? p?.raw?.角色 ?? p?.raw?.角色名稱 ?? "") + ""
-          ).trim();
-          return pChar === charFilter;
-        });
+        result = result.filter((p) => productVariantMatchesCharacter(p, charFilter));
       }
       return result;
     }
+
+    // 左側欄選子分類：依商品卡的「分類」＋「子分類」顯示
     if (selectedCategory !== "ALL") {
       result = result.filter(
-        (p) => (p?.category || "").trim() === selectedCategory
+        (p) => (p?.category ?? p?.分類 ?? "").toString().trim() === selectedCategory
       );
     }
     if (subcategoryFromUrl) {
       result = result.filter(
-        (p) => (p?.subcategory || "").trim() === subcategoryFromUrl
+        (p) => (p?.subcategory ?? p?.子分類 ?? "").toString().trim() === subcategoryFromUrl
       );
     }
+
+    // 左側欄選角色：依商品卡的「規格」顯示（規格包含該角色名稱即符合）
     if (characterFromUrl) {
       const charFilter = (characterFromUrl || "").trim();
-      result = result.filter((p) => {
-        const pChar = (
-          (p?.character ?? p?.raw?.character ?? p?.raw?.角色 ?? p?.raw?.角色名稱 ?? "") + ""
-        ).trim();
-        return pChar === charFilter;
-      });
+      result = result.filter((p) => productVariantMatchesCharacter(p, charFilter));
     }
     return result;
-  }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword]);
+  }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword, productVariantMatchesCharacter]);
 
   const uniqueProducts = React.useMemo(() => {
     const base = getUniqueProductsByName(filteredProducts);
@@ -1215,7 +1217,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
           <p>目前沒有可顯示的商品。</p>
           {characterFromUrl ? (
             <p className="text-xs">
-              篩選角色「{characterFromUrl}」：請確認試算表「角色」欄是否填寫與左側選單完全一致的名稱（如 凱蒂貓、美樂蒂、酷洛米）。
+              篩選角色「{characterFromUrl}」：依商品「規格」顯示，試算表「規格」欄需包含該名稱（如 酷洛米,大耳狗 即含酷洛米）。
             </p>
           ) : null}
         </div>
