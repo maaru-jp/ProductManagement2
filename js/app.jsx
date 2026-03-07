@@ -64,12 +64,26 @@ function toNumberOrNull(v) {
 /** 從商品或 raw 取得單一庫存數字（含 0），沒資料回傳 null；供顧客頁穩定顯示庫存用 */
 function getProductStockNumber(p) {
   if (!p || typeof p !== "object") return null;
-  const val =
-    p.stock ?? p.庫存 ?? p["庫存"] ?? p["庫存數量"] ?? p.Stock ??
-    p.raw?.stock ?? p.raw?.庫存 ?? p.raw?.["庫存"] ?? p.raw?.["庫存數量"] ?? p.raw?.Stock;
-  if (val === undefined || val === null || val === "") return null;
-  const n = typeof val === "number" ? val : parseInt(String(val).trim(), 10);
-  return Number.isFinite(n) ? Math.max(0, n) : null;
+  const tryVal = (val) => {
+    if (val === undefined || val === null || val === "") return null;
+    const n = typeof val === "number" ? val : parseInt(String(val).trim(), 10);
+    return Number.isFinite(n) ? Math.max(0, n) : null;
+  };
+  const direct =
+    tryVal(p.stock) ?? tryVal(p.庫存) ?? tryVal(p["庫存"]) ?? tryVal(p["庫存數量"]) ?? tryVal(p.Stock) ??
+    tryVal(p.raw?.stock) ?? tryVal(p.raw?.庫存) ?? tryVal(p.raw?.["庫存"]) ?? tryVal(p.raw?.["庫存數量"]) ?? tryVal(p.raw?.Stock);
+  if (direct != null) return direct;
+  const scan = (obj) => {
+    if (!obj || typeof obj !== "object") return null;
+    for (const k of Object.keys(obj)) {
+      if (/^stock$/i.test(k) || (typeof k === "string" && k.includes("庫存") && !k.includes("規格"))) {
+        const n = tryVal(obj[k]);
+        if (n != null) return n;
+      }
+    }
+    return null;
+  };
+  return scan(p) ?? scan(p?.raw) ?? null;
 }
 
 function toBoolFlag(v) {
@@ -173,8 +187,15 @@ function normalizeItem(row, index) {
     : typeof rawVariantStock === "string"
       ? rawVariantStock.split(/[,，、\s]+/).map((s) => Math.max(0, toNumberOrNull(s.trim()) ?? 0))
       : [];
-  const mainStockSource = row.stock ?? row.庫存 ?? row["庫存"] ?? row["庫存數量"] ?? row.Stock;
-  const mainStockNum = toNumberOrNull(mainStockSource);
+  let mainStockNum = toNumberOrNull(row.stock ?? row.庫存 ?? row["庫存"] ?? row["庫存數量"] ?? row.Stock);
+  if (mainStockNum == null && row && typeof row === "object") {
+    for (const k of Object.keys(row)) {
+      if ((/^stock$/i.test(k) || (k.includes("庫存") && !k.includes("規格"))) && row[k] !== "" && row[k] != null) {
+        const n = toNumberOrNull(row[k]);
+        if (n != null) { mainStockNum = n; break; }
+      }
+    }
+  }
   // 後台只填「庫存」、未填「規格庫存」時，用主庫存作為唯一數量（含 0），顧客頁才能顯示
   if (variantStock.length === 0 && mainStockNum !== null && mainStockNum !== undefined) {
     variantStock = [Math.max(0, mainStockNum)];
@@ -610,12 +631,14 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
           {/* 搜尋欄：放大鏡在輸入關鍵字框左邊 */}
           <div className="p-3 border-b border-slate-100">
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white focus-within:ring-1 focus-within:ring-slate-300 focus-within:border-slate-300">
-              <span
-                className="shrink-0 w-9 h-9 flex items-center justify-center text-slate-500"
-                aria-hidden
+              <button
+                type="button"
+                onClick={() => searchRef.current && searchRef.current.focus()}
+                className="shrink-0 w-9 h-9 flex items-center justify-center text-slate-500 hover:bg-slate-50 rounded-l-md transition-colors"
+                aria-label="搜尋"
               >
                 🔍
-              </span>
+              </button>
               <input
                 ref={searchRef}
                 type="text"
@@ -988,7 +1011,26 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   }, [categories, selectedCategory]);
 
   const filteredProducts = React.useMemo(() => {
+    const q = (searchKeyword || "").trim().toLowerCase();
     let result = products;
+    if (q) {
+      // 有搜尋關鍵字時：依商品名稱（含規格）篩選，帶出「所有分類」中符合的商品
+      result = result.filter((p) => {
+        const name = (p?.name ?? p?.raw?.商品名稱 ?? "").toString().toLowerCase();
+        const variant = (p?.variant ?? p?.raw?.規格 ?? "").toString().toLowerCase();
+        return name.includes(q) || variant.includes(q);
+      });
+      if (characterFromUrl) {
+        const charFilter = (characterFromUrl || "").trim();
+        result = result.filter((p) => {
+          const pChar = (
+            (p?.character ?? p?.raw?.character ?? p?.raw?.角色 ?? p?.raw?.角色名稱 ?? "") + ""
+          ).trim();
+          return pChar === charFilter;
+        });
+      }
+      return result;
+    }
     if (selectedCategory !== "ALL") {
       result = result.filter(
         (p) => (p?.category || "").trim() === selectedCategory
@@ -1008,14 +1050,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
         return pChar === charFilter;
       });
     }
-    const q = (searchKeyword || "").trim().toLowerCase();
-    if (!q) return result;
-
-    return result.filter((p) => {
-      const name = (p?.name || "").toLowerCase();
-      const variant = (p?.variant || "").toLowerCase();
-      return name.includes(q) || variant.includes(q);
-    });
+    return result;
   }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword]);
 
   const uniqueProducts = React.useMemo(() => {
@@ -1458,6 +1493,19 @@ function CartDrawer({
     };
   }
 
+  function getMaxStock(it) {
+    const key = it.key || [it.name, it.variant || "", it.price ?? ""].join("||");
+    let p = products.find(
+      (x) => (x.sku || [x.name, x.variant || "", x.price ?? ""].join("||")) === key
+    );
+    if (!p) {
+      p = products.find(
+        (x) => (x.name || "") === (it.name || "") && (x.variant || "") === (it.variant || "")
+      );
+    }
+    return p ? (p.variantStockQty ?? getProductStockNumber(p) ?? null) : null;
+  }
+
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e) => {
@@ -1651,14 +1699,22 @@ function CartDrawer({
                           −
                         </button>
                         <span className="text-sm w-6 text-center">{it.qty}</span>
-                        <button
-                          type="button"
-                          onClick={() => onInc(it.key)}
-                          className="w-8 h-8 rounded-full border border-slate-200 hover:border-slate-900"
-                          aria-label="增加數量"
-                        >
-                          +
-                        </button>
+                        {(() => {
+                          const maxStock = it.maxStock ?? getMaxStock(it);
+                          const atMax = maxStock != null && (Number(it.qty) || 0) >= maxStock;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => !atMax && onInc(it.key)}
+                              disabled={atMax}
+                              className="w-8 h-8 rounded-full border border-slate-200 hover:border-slate-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-slate-200"
+                              aria-label="增加數量"
+                              title={atMax ? "已達庫存上限 " + maxStock : "增加數量"}
+                            >
+                              +
+                            </button>
+                          );
+                        })()}
                         <button
                           type="button"
                           onClick={() => onRemove(it.key)}
@@ -1763,12 +1819,15 @@ function App() {
 
   function addToCart(product, qty) {
     const key = product.sku || [product.name, product.variant || "", product.price ?? ""].join("||");
+    const maxStock = product.variantStockQty ?? getProductStockNumber(product) ?? null;
     const addQty = Math.max(1, Number(qty || 1));
     setCartItems((prev) => {
       const idx = prev.findIndex((x) => x.key === key);
       if (idx >= 0) {
         const copy = prev.slice();
-        copy[idx] = { ...copy[idx], qty: copy[idx].qty + addQty };
+        const cur = copy[idx];
+        const newQty = Math.min((cur.qty || 0) + addQty, maxStock != null ? maxStock : Infinity);
+        copy[idx] = { ...cur, qty: newQty, maxStock: maxStock != null ? maxStock : cur.maxStock };
         return copy;
       }
       return [
@@ -1780,7 +1839,8 @@ function App() {
           price: product.price,
           sellingPrice: product.sellingPrice,
           image: product.image || "",
-          qty: addQty,
+          qty: Math.min(addQty, maxStock != null ? maxStock : addQty),
+          maxStock: maxStock,
         },
       ];
     });
@@ -1789,7 +1849,12 @@ function App() {
 
   function incItem(key) {
     setCartItems((prev) =>
-      prev.map((it) => (it.key === key ? { ...it, qty: it.qty + 1 } : it))
+      prev.map((it) => {
+        if (it.key !== key) return it;
+        const max = it.maxStock != null ? it.maxStock : Infinity;
+        if ((it.qty || 0) >= max) return it;
+        return { ...it, qty: (it.qty || 0) + 1 };
+      })
     );
   }
 
