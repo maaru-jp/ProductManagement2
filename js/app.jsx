@@ -1256,9 +1256,9 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
     return group.find((g) => g.sku === selectedSku) || group[0];
   }, [group, selectedSku]);
 
-  // 一律顯示第二個規格的圖片（若只有一個規格則顯示該規格圖）
+  // 主圖依選中的規格自動切換該規格圖片
   const displayImage =
-    (group.length >= 2 ? group[1]?.image : null) ||
+    selectedItem?.image ||
     mainProduct?.image ||
     (mainProduct?.variantImages && mainProduct.variantImages[0]) ||
     "";
@@ -1278,12 +1278,12 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
       ) : (
         <div className="grid gap-8 md:grid-cols-[1.1fr,0.9fr]">
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="aspect-[4/5] bg-slate-100">
+            <div className="aspect-square bg-slate-100">
               {displayImage ? (
                 <img
-                  key="main-second-variant"
+                  key={selectedItem?.sku || "main"}
                   src={displayImage}
-                  alt={mainProduct.name + (group.length >= 2 && group[1]?.variant ? " " + group[1].variant : "")}
+                  alt={mainProduct.name + (selectedItem?.variant ? " " + selectedItem.variant : "")}
                   className="w-full h-full object-contain"
                 />
               ) : (
@@ -1384,7 +1384,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                                 />
                               </span>
                             ) : null}
-                            <span>{label}</span>
+                            <span className="inline-block text-left" style={{ writingMode: "horizontal-tb" }}>{label}</span>
                             {isSoldOut ? (
                               <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded">已售完</span>
                             ) : null}
