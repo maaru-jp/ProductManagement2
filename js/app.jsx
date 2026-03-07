@@ -300,7 +300,18 @@ function useProducts() {
             const onlyListed = normalized.filter(
               (x) => (x.status || "").trim() === "" || (x.status || "").trim().toLowerCase() === "上架"
             );
-            setProducts(onlyListed);
+            try {
+              const hiddenRaw = localStorage.getItem("maaru_admin_hidden_product_names");
+              const hiddenNames = hiddenRaw ? JSON.parse(hiddenRaw) : [];
+              const hiddenSet = new Set(Array.isArray(hiddenNames) ? hiddenNames.map((n) => String(n).trim()).filter(Boolean) : []);
+              if (hiddenSet.size > 0) {
+                setProducts(onlyListed.filter((x) => !hiddenSet.has((x.name || "").trim())));
+              } else {
+                setProducts(onlyListed);
+              }
+            } catch {
+              setProducts(onlyListed);
+            }
           }
           lastError = null;
           break;
@@ -333,6 +344,12 @@ function useProducts() {
     };
     document.addEventListener("visibilitychange", onVisible);
 
+    // 後台在同站另一分頁切換狀態開關時，localStorage 變更會觸發此事件，重新套用隱藏名單
+    const onStorage = (e) => {
+      if (e.key === "maaru_admin_hidden_product_names" && fetchDataRef.current) fetchDataRef.current(true);
+    };
+    window.addEventListener("storage", onStorage);
+
     // 每 15 秒輪詢一次（帶快取破壞參數），後台編輯庫存/上架下架後顧客頁會顯示最新
     const interval = setInterval(() => {
       if (fetchDataRef.current) fetchDataRef.current(true);
@@ -342,6 +359,7 @@ function useProducts() {
       cancelled = true;
       fetchDataRef.current = null;
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("storage", onStorage);
       clearInterval(interval);
     };
   }, []);
@@ -1313,7 +1331,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                                   : "border-slate-200 bg-white",
                           ].join(" ")}
                         >
-                          <span className="flex items-center gap-2 text-sm text-slate-700 min-w-0">
+                          <span className="flex items-center gap-2 text-sm text-slate-700 min-w-0 flex-1">
                             <input
                               type="radio"
                               name="variant"
@@ -1332,14 +1350,18 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                               </span>
                             ) : null}
                             <span>{label}</span>
-                            {item.variantStockQty !== undefined && item.variantStockQty !== null ? (
-                              <span className="text-xs text-slate-500">庫存 {item.variantStockQty}</span>
-                            ) : null}
                             {isSoldOut ? (
                               <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded">已售完</span>
                             ) : null}
                           </span>
-                          <span className="text-xs text-slate-500">
+                          <span className="text-xs text-slate-500 shrink-0 w-16 text-center">
+                            {item.variantStockQty !== undefined && item.variantStockQty !== null ? (
+                              <>庫存 {item.variantStockQty}</>
+                            ) : (
+                              ""
+                            )}
+                          </span>
+                          <span className="text-xs text-slate-500 shrink-0">
                             {getDisplayPrice(item, rate) || ""}
                           </span>
                         </label>
