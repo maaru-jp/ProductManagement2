@@ -851,7 +851,7 @@ function ProductCard({ product, rate }) {
       to={`/product/${encodedName}`}
       className="product-card group block bg-white rounded-2xl overflow-hidden border border-slate-200 hover:border-slate-900 transition-colors duration-200"
     >
-      <div className="scan-target relative aspect-[4/5] bg-slate-100 overflow-hidden">
+      <div className="scan-target relative aspect-square bg-slate-100 overflow-hidden">
         {(product.image || (product.variantImages && product.variantImages[0])) ? (
           <img
             src={product.image || (product.variantImages && product.variantImages[0]) || ""}
