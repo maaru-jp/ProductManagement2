@@ -1131,21 +1131,28 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
     return result;
   }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword, productVariantMatchesCharacter]);
 
+  // 取得用於排序的數字價格（與顧客頁顯示一致：優先台幣售價，否則日幣）
+  const getSortPrice = React.useCallback((p) => {
+    const twd = toNumberOrNull(p?.sellingPrice ?? p?.售價 ?? p?.台幣售價);
+    if (twd != null) return twd;
+    return toNumberOrNull(p?.price ?? p?.日幣價格 ?? p?.價格 ?? p?.售價JPY);
+  }, []);
+
   const uniqueProducts = React.useMemo(() => {
     const base = getUniqueProductsByName(filteredProducts);
     if (sortMode === "none") return base;
 
     const arr = base.slice();
     arr.sort((a, b) => {
-      const pa = toNumberOrNull(a?.price);
-      const pb = toNumberOrNull(b?.price);
+      const pa = getSortPrice(a);
+      const pb = getSortPrice(b);
       if (pa == null && pb == null) return 0;
       if (pa == null) return 1;
       if (pb == null) return -1;
       return sortMode === "price_asc" ? pa - pb : pb - pa;
     });
     return arr;
-  }, [filteredProducts, sortMode]);
+  }, [filteredProducts, sortMode, getSortPrice]);
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
