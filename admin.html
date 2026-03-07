@@ -840,6 +840,7 @@
               <select name="category" id="productCategorySelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
                 <option value="">-- 請選擇 --</option>
                 <option value="絨毛玩偶">絨毛玩偶</option>
+                <option value="公仔玩具">公仔玩具</option>
                 <option value="包包時尚小物">包包時尚小物</option>
                 <option value="美妝用品">美妝用品</option>
                 <option value="飾品配件">飾品配件</option>
@@ -1873,14 +1874,16 @@
         var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
         var cost = p.cost != null ? p.cost : p.成本 != null ? p.成本 : "";
         var stock = stockDisplay(p);
-        var img = (p.image || p.圖片 || p.商品主圖 || p.主圖 || "").toString().trim();
+        var img = (p.image || p.圖片 || p.商品主圖 || p.主圖 || (p.raw && (p.raw.商品主圖 || p.raw.主圖 || p.raw.image || p.raw.圖片)) || "").toString().trim();
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
         var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
         var isListed = status === "上架";
         var stockType = (p.stockType || p.貨況 || p.現貨預購 || "").toString().trim();
+        var placeholderSvg = "data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2748%27 height=%2748%27%3E%3Crect width=%2748%27 height=%2748%27 fill=%27%23e2e8f0%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 dominant-baseline=%27middle%27 text-anchor=%27middle%27 fill=%27%2394a3b8%27 font-size=%2710%27%3E?%3C/text%3E%3C/svg%3E";
+        var imgSrc = img ? escapeAttr(img) : placeholderSvg;
         return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\">" +
             "<td class=\"py-3 px-4 text-slate-500\">" + rowNum + "</td>" +
-            "<td class=\"py-3 px-4\"><img src=\"" + (img || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E") + "\" alt=\"\" class=\"w-10 h-10 object-cover rounded\" onerror=\"this.src='data:image/svg+xml,%26%23x3C%3Bsvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27 fill=%27%23cbd5e1%27%26%23x3E%26%23x3C%3Brect width=%2740%27 height=%2740%27/%26%23x3E%26%23x3C%3B/svg%26%23x3E%3B'\" /></td>" +
+            "<td class=\"py-3 px-4 w-16\"><img src=\"" + imgSrc + "\" alt=\"\" class=\"w-12 h-12 object-cover rounded border border-slate-200\" onerror=\"this.src='" + placeholderSvg + "'\" loading=\"lazy\" /></td>" +
             "<td class=\"py-3 px-4 font-medium\">" + escapeHtml(name) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(price)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(sellingPrice)) + "</td>" +
@@ -2088,6 +2091,7 @@
 
       var SUBCATEGORY_BY_CATEGORY = {
         "絨毛玩偶": ["玩偶公仔", "吊飾娃"],
+        "公仔玩具": ["食玩盲盒", "公仔吊飾"],
         "包包時尚小物": ["托特包", "肩包", "後背包", "購物環保袋", "皮夾", "零錢包", "票卡收納夾", "化妝包", "多功能收納包", "束口袋"],
         "美妝用品": ["身體乳", "護手霜", "護唇膏", "鏡子", "梳子", "個人衛生用品", "其他美妝用品"],
         "飾品配件": ["飾品", "髮飾", "眼鏡盒", "手錶", "其他時尚用品"],
@@ -2118,6 +2122,7 @@
 
       function syncVariantToHidden() {
         var container = document.getElementById("variantListContainer");
+        var form = document.getElementById("productForm");
         var hiddenVariant = document.getElementById("variantValue");
         var hiddenImages = document.getElementById("variantImagesValue");
         var hiddenStock = document.getElementById("variantStockValue");
@@ -2143,7 +2148,7 @@
           var n = Number(q);
           return sum + (typeof n === "number" && !isNaN(n) ? n : 0);
         }, 0);
-        var stockInput = document.querySelector("input[name=\"stock\"]");
+        var stockInput = form ? form.querySelector("input[name=\"stock\"]") : document.querySelector("input[name=\"stock\"]");
         if (stockInput) stockInput.value = total;
       }
 
