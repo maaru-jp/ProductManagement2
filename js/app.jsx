@@ -1256,8 +1256,9 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
     return group.find((g) => g.sku === selectedSku) || group[0];
   }, [group, selectedSku]);
 
+  // 一律顯示第二個規格的圖片（若只有一個規格則顯示該規格圖）
   const displayImage =
-    selectedItem?.image ||
+    (group.length >= 2 ? group[1]?.image : null) ||
     mainProduct?.image ||
     (mainProduct?.variantImages && mainProduct.variantImages[0]) ||
     "";
@@ -1280,9 +1281,9 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
             <div className="aspect-[4/5] bg-slate-100">
               {displayImage ? (
                 <img
-                  key={selectedItem?.sku || "main"}
+                  key="main-second-variant"
                   src={displayImage}
-                  alt={mainProduct.name + (selectedItem?.variant ? " " + selectedItem.variant : "")}
+                  alt={mainProduct.name + (group.length >= 2 && group[1]?.variant ? " " + group[1].variant : "")}
                   className="w-full h-full object-contain"
                 />
               ) : (
