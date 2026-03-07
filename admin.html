@@ -1847,14 +1847,24 @@
         try { var d = new Date(v); return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10); } catch (e) { return ""; }
       }
       function yesNo(v) { return (v === "Y" || v === "1" || v === true) ? "Y" : ""; }
+      function stockDisplay(p) {
+        var s = p.stock != null && p.stock !== "" ? p.stock : p.庫存 != null && p.庫存 !== "" ? p.庫存 : null;
+        if (s !== null && s !== undefined && s !== "") return Number(s);
+        var v = (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : "");
+        if (!v || String(v).trim() === "") return "";
+        var parts = String(v).trim().split(/[,，、\s]+/);
+        var sum = 0;
+        for (var i = 0; i < parts.length; i++) { var n = parseInt(parts[i], 10); if (!isNaN(n)) sum += n; }
+        return sum;
+      }
       tbody.innerHTML = list.map(function(p, idx) {
         var rowNum = (p._rowIndex != null && p._rowIndex >= 2) ? p._rowIndex : (products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2);
         var name = p.name || p.商品名稱 || "";
-        var price = p.price != null ? p.price : p.priceTWD != null ? p.priceTWD : p.日幣價格 != null ? p.日幣價格 : "";
+        var price = (p.price != null && p.price !== "") ? p.price : (p.priceTWD != null && p.priceTWD !== "") ? p.priceTWD : (p.日幣價格 != null && p.日幣價格 !== "") ? p.日幣價格 : (p.價格 != null && p.價格 !== "") ? p.價格 : "";
         var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : p.台幣售價 != null ? p.台幣售價 : "";
         var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
         var cost = p.cost != null ? p.cost : p.成本 != null ? p.成本 : "";
-        var stock = p.stock != null ? p.stock : p.庫存 != null ? p.庫存 : "";
+        var stock = stockDisplay(p);
         var img = p.image || p.圖片 || "";
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
         var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
