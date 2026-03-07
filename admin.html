@@ -387,7 +387,7 @@
         <div class="mt-6 p-4 rounded-lg bg-rose-50 border border-rose-100 flex items-start gap-3">
           <span class="text-rose-500 text-lg">💡</span>
           <div class="text-sm text-slate-700">
-            <p>狀態開關：關閉＝下架（顧客頁不顯示），開啟＝上架（顧客頁顯示）。切換開關後請按右上方「儲存所有變更」才會寫入試算表並生效。</p>
+            <p>狀態開關：關閉＝下架（顧客頁不顯示），開啟＝上架（顧客頁顯示）。切換開關後請按右上方「儲存所有變更」才會寫入試算表並生效。試算表商品工作表第一列需有「狀態」欄位（或「上架狀態」），儲存時才會寫入。</p>
             <p class="mt-2">若要產生客人訂單 PDF：在每筆訂單最右側「操作」欄點 <strong>產生 PDF</strong>，在跳出的列印視窗中選擇「另存為 PDF」即可。</p>
           </div>
         </div>
@@ -1807,9 +1807,17 @@
         var tbody = document.getElementById("tableBody");
         tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
         fetch(API_READ)
-          .then(function(r) { return r.json(); })
+          .then(function(r) {
+            if (!r.ok) throw new Error("HTTP " + r.status + "，請確認試算表已部署為「網頁應用程式」且「誰可以存取」選「任何人」");
+            return r.json();
+          })
           .then(function(data) {
-            products = data.products || [];
+            var raw = data.products || (Array.isArray(data) ? data : []);
+            products = raw.map(function(p, i) {
+              var q = typeof p === "object" && p !== null ? Object.assign({}, p) : {};
+              if (q._rowIndex == null || q._rowIndex < 2) q._rowIndex = i + 2;
+              return q;
+            });
             pendingStatusChanges = {};
             renderTable();
             updateSaveAllStatusBtn();
@@ -1948,7 +1956,10 @@
             e.preventDefault();
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
             var p = productByRowIndex(rowIndex);
-            if (!p) return;
+            if (!p) {
+              showMessage("找不到該列商品（列號 " + rowIndex + "），請重新整理頁面後再試", true);
+              return;
+            }
             var current = (this.getAttribute("data-status") || "上架").trim();
             var next = current === "上架" ? "下架" : "上架";
             p.status = next;
@@ -2039,7 +2050,7 @@
             });
           })(rowIndex, product);
         });
-        var timeoutMs = 30000;
+        var timeoutMs = 10000;
         var timeoutPromise = new Promise(function(_, reject) {
           setTimeout(function() { reject(new Error("儲存逾時，請檢查網路或稍後再試")); }, timeoutMs);
         });
@@ -2115,7 +2126,11 @@
         hiddenVariant.value = names.filter(Boolean).join(", ");
         if (hiddenImages) hiddenImages.value = urls.join(", ");
         if (hiddenStock) hiddenStock.value = qtys.map(function(q) { return q === "" ? "0" : q; }).join(", ");
-        var total = qtys.reduce(function(sum, q) { return sum + (q === "" ? 0 : Number(q)); }, 0);
+        var total = qtys.reduce(function(sum, q) {
+          if (q === "" || q === null || q === undefined) return sum + 0;
+          var n = Number(q);
+          return sum + (typeof n === "number" && !isNaN(n) ? n : 0);
+        }, 0);
         var stockInput = document.querySelector("input[name=\"stock\"]");
         if (stockInput) stockInput.value = total;
       }
@@ -2182,6 +2197,18 @@
           obj && obj.variantImages != null ? obj.variantImages : "",
           obj && obj.variantStock != null ? obj.variantStock : ""
         );
+        var mainStockVal = obj && (obj.stock !== undefined && obj.stock !== null && obj.stock !== "" ? obj.stock : obj.庫存);
+        var hasVariantStock = obj && obj.variantStock != null && String(obj.variantStock).trim() !== "";
+        if (mainStockVal !== undefined && mainStockVal !== null && mainStockVal !== "" && !hasVariantStock) {
+          var stockInp = form.querySelector("input[name=\"stock\"]");
+          if (stockInp) stockInp.value = Number(mainStockVal) === mainStockVal ? mainStockVal : parseInt(mainStockVal, 10);
+          var oneRow = document.querySelector("#variantListContainer .variant-item-row");
+          if (oneRow) {
+            var qtyInp = oneRow.querySelector(".variant-qty");
+            if (qtyInp) qtyInp.value = Number(mainStockVal) === mainStockVal ? mainStockVal : parseInt(mainStockVal, 10);
+            syncVariantToHidden();
+          }
+        }
         if (obj && obj.status != null) {
           var si = document.getElementById("statusInput");
           if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
