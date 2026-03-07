@@ -128,7 +128,7 @@ function doPost(e) {
         }
         var numCols = row.length;
         if (numCols > 0) {
-          sheet.getRange(rowNumUpdate, 1, rowNumUpdate, numCols).setValues([row]);
+          sheet.getRange(rowNumUpdate, 1, 1, numCols).setValues([row]);
         }
         out.message = "已更新第 " + rowNumUpdate + " 列";
         return jsonOutput(out);
@@ -191,11 +191,11 @@ function buildRowFromProduct(sheet, product) {
   var variantCol = -1;
   for (var i = 0; i < headers.length; i++) {
     var h = (headers[i] || "").toString().trim();
-    if (h === "庫存") stockCol = i;
-    if (h === "規格庫存") variantCol = i;
+    if (h === "庫存" || (h.indexOf("庫存") >= 0 && h.indexOf("規格") < 0)) stockCol = i;
+    if (h === "規格庫存" || (h.indexOf("規格") >= 0 && h.indexOf("庫存") >= 0)) variantCol = i;
   }
-  if (variantCol >= 0 && (product.variantStock !== undefined && product.variantStock !== null && product.variantStock !== "")) {
-    row[variantCol] = product.variantStock;
+  if (variantCol >= 0) {
+    row[variantCol] = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
   }
   if (stockCol >= 0) {
     var total = 0;
@@ -203,8 +203,8 @@ function buildRowFromProduct(sheet, product) {
       var n = Number(product.stock);
       if (isFinite(n)) total = n;
     }
-    if (product.variantStock !== undefined && product.variantStock !== null && product.variantStock !== "") {
-      var parts = String(product.variantStock).split(/[,，、\s]/);
+    if (product.variantStock !== undefined && product.variantStock !== null && String(product.variantStock).trim() !== "") {
+      var parts = String(product.variantStock).trim().split(/[,，、\s]+/);
       for (var p = 0; p < parts.length; p++) {
         var num = parseInt(parts[p], 10);
         if (!isNaN(num)) total += num;
@@ -231,24 +231,30 @@ function getApiData() {
 }
 
 /**
- * 從試算表「第二張」工作表讀取角色對應圖片。
- * 預期格式：第一列標題含「角色」或「角色名稱」、以及「圖片」或「圖片URL」；第二列起為角色名稱與圖片網址。
- * 回傳 { "角色名": "圖片URL", ... }，若無第二張或格式不符則回傳 {}。
+ * 從試算表讀取角色對應圖片。
+ * 優先使用名為「角色」或「角色圖片」的工作表，否則用第二張工作表。
+ * 預期格式：第一列標題含「角色」/「角色名稱」與「圖片」/「圖片URL」；第二列起為角色名稱與圖片網址。
+ * 回傳 { "角色名": "圖片URL", ... }，例如 { "全部": "https://...", "凱蒂貓": "https://..." }。
  */
 function getCharacterImages(ss) {
-  var sheets = ss.getSheets();
-  if (!sheets || sheets.length < 2) return {};
-  var sheet = sheets[1];
+  var sheet = ss.getSheetByName("角色") || ss.getSheetByName("角色圖片");
+  if (!sheet) {
+    var sheets = ss.getSheets();
+    if (!sheets || sheets.length < 2) return {};
+    sheet = sheets[1];
+  }
   var data = sheet.getDataRange().getValues();
   if (!data || data.length < 2) return {};
   var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
   var roleCol = -1;
   var imgCol = -1;
   for (var i = 0; i < headers.length; i++) {
-    var h = headers[i].toLowerCase();
-    if (h === "角色" || h === "角色名稱" || h === "character" || h === "name") roleCol = i;
-    if (h === "圖片" || h === "圖片url" || h === "image" || h === "圖片網址") imgCol = i;
+    var h = (headers[i] || "").toLowerCase();
+    if (h === "角色" || h === "角色名稱" || h === "character" || h === "name" || h.indexOf("角色") >= 0) roleCol = i;
+    if (h === "圖片" || h === "圖片url" || h === "image" || h === "圖片網址" || h.indexOf("圖片") >= 0) imgCol = i;
   }
+  if (roleCol < 0 && headers.length >= 1) roleCol = 0;
+  if (imgCol < 0 && headers.length >= 2) imgCol = 1;
   if (roleCol < 0 || imgCol < 0) return {};
   var out = {};
   for (var r = 1; r < data.length; r++) {
@@ -307,6 +313,7 @@ function getProducts(ss) {
       }
     }
     if (obj.name || obj["商品名稱"] || obj.title || obj["品名"]) {
+      obj._rowIndex = r + 1;
       list.push(obj);
     }
   }
@@ -340,6 +347,7 @@ function buildKeyMap(headers) {
     ["熱銷", "hot"],
     ["推薦", "recommended"],
     ["新品", "isNew"],
+    ["新上架", "isNewListing"],
     ["上架日期", "上架時間", "publishedAt"]
   ];
   for (var c = 0; c < headers.length; c++) {

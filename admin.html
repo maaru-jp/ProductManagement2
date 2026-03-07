@@ -862,10 +862,6 @@
             </div>
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">角色</label>
-            <input type="text" name="character" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：酷洛米、凱蒂貓" />
-          </div>
-          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆，每筆可填對應圖片網址；現貨時可填各規格數量，0 則顧客頁顯示已售完）</label>
             <div id="variantListContainer" class="space-y-2">
               <div class="variant-item-row flex flex-wrap gap-2 items-start">
@@ -957,6 +953,10 @@
             <label class="inline-flex items-center gap-2 cursor-pointer">
               <input type="checkbox" name="isNew" id="productIsNewCheck" class="rounded border-slate-300 text-rose-500" />
               <span class="text-sm text-slate-600">新品</span>
+            </label>
+            <label class="inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="isNewListing" id="productIsNewListingCheck" class="rounded border-slate-300 text-rose-500" />
+              <span class="text-sm text-slate-600">新上架</span>
             </label>
           </div>
           <div class="flex justify-between items-center gap-2 pt-4">
@@ -1828,13 +1828,18 @@
             var name = (p.name || p.商品名稱 || "").toString();
             var cat = (p.category || p.分類 || "").toString();
             var sub = (p.subcategory || p.子分類 || "").toString();
-          var char = (p.character || p.角色 || "").toString();
-          return name.toLowerCase().indexOf(q) >= 0 || cat.toLowerCase().indexOf(q) >= 0 || sub.toLowerCase().indexOf(q) >= 0 || char.toLowerCase().indexOf(q) >= 0;
+          return name.toLowerCase().indexOf(q) >= 0 || cat.toLowerCase().indexOf(q) >= 0 || sub.toLowerCase().indexOf(q) >= 0;
         });
       }
       if (list.length === 0) {
         tbody.innerHTML = "<tr><td colspan=\"11\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
         return;
+      }
+      function productByRowIndex(rowIndex) {
+        var r = parseInt(rowIndex, 10);
+        if (isNaN(r) || r < 2) return undefined;
+        var byRow = products.find(function(p) { return p._rowIndex === r; });
+        return byRow != null ? byRow : products[r - 2];
       }
       function fmtDate(v) {
         if (v == null || v === "") return "";
@@ -1843,7 +1848,7 @@
       }
       function yesNo(v) { return (v === "Y" || v === "1" || v === true) ? "Y" : ""; }
       tbody.innerHTML = list.map(function(p, idx) {
-        var rowNum = products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2;
+        var rowNum = (p._rowIndex != null && p._rowIndex >= 2) ? p._rowIndex : (products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2);
         var name = p.name || p.商品名稱 || "";
         var price = p.price != null ? p.price : p.priceTWD != null ? p.priceTWD : p.日幣價格 != null ? p.日幣價格 : "";
         var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : p.台幣售價 != null ? p.台幣售價 : "";
@@ -1872,7 +1877,7 @@
         tbody.querySelectorAll(".edit-btn").forEach(function(btn) {
           btn.addEventListener("click", function() {
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
-            var p = products[rowIndex - 2];
+            var p = productByRowIndex(rowIndex);
             if (!p) return;
             openModal(true);
             document.getElementById("editRowIndex").value = rowIndex;
@@ -1881,7 +1886,6 @@
               name: p.name || p.商品名稱,
               category: p.category || p.分類,
               subcategory: p.subcategory || p.子分類,
-              character: p.character || p.角色,
               variant: p.variant || p.規格,
               price: p.price != null ? p.price : p.日幣價格,
               sellingPrice: p.sellingPrice != null ? p.sellingPrice : p.售價 || p.台幣售價,
@@ -1899,7 +1903,8 @@
               publishedAt: p.publishedAt || p.上架日期 || "",
               hot: p.hot || p.熱銷 || "",
               recommended: p.recommended || p.推薦 || "",
-              isNew: p.isNew || p.新品 || ""
+              isNew: p.isNew || p.新品 || "",
+              isNewListing: p.isNewListing || p.新上架 || ""
             });
             document.getElementById("marginSelect").value = "custom";
             updateSellingPriceByMargin();
@@ -1931,7 +1936,7 @@
           el.addEventListener("click", function(e) {
             e.preventDefault();
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
-            var p = products[rowIndex - 2];
+            var p = productByRowIndex(rowIndex);
             if (!p) return;
             var current = (this.getAttribute("data-status") || "上架").trim();
             var next = current === "上架" ? "下架" : "上架";
@@ -1974,14 +1979,13 @@
         if (btn) { btn.disabled = true; btn.textContent = "儲存中..."; }
         var chain = Promise.resolve();
         rowIndices.forEach(function(rowIndex) {
-          var p = products[rowIndex - 2];
+          var p = productByRowIndex(rowIndex);
           if (!p) return;
           var next = pendingStatusChanges[rowIndex];
           var product = {
             name: p.name || p.商品名稱,
             category: p.category || p.分類,
             subcategory: p.subcategory || p.子分類,
-            character: p.character || p.角色,
             variant: p.variant || p.規格,
             price: p.price != null ? p.price : p.日幣價格,
             sellingPrice: p.sellingPrice != null ? p.sellingPrice : p.售價,
@@ -1999,7 +2003,8 @@
             publishedAt: p.publishedAt || p.上架日期,
             hot: p.hot || p.熱銷 ? "Y" : "",
             recommended: p.recommended || p.推薦 ? "Y" : "",
-            isNew: p.isNew || p.新品 ? "Y" : ""
+            isNew: p.isNew || p.新品 ? "Y" : "",
+            isNewListing: p.isNewListing || p.新上架 ? "Y" : ""
           };
           (function(ri, prod) {
             chain = chain.then(function() {
@@ -2123,11 +2128,11 @@
         var form = document.getElementById("productForm");
         updateSubcategoryOptions(obj && obj.category ? obj.category : "");
         Object.keys(obj || {}).forEach(function(key) {
-          if (key === "hot" || key === "recommended" || key === "isNew" || key === "variant") return;
+          if (key === "hot" || key === "recommended" || key === "isNew" || key === "isNewListing" || key === "variant") return;
           var input = form.querySelector("[name=" + key + "]");
           if (input) input.value = obj[key] != null ? obj[key] : "";
         });
-        ["hot", "recommended", "isNew"].forEach(function(key) {
+        ["hot", "recommended", "isNew", "isNewListing"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           if (el) el.checked = (obj[key] === "Y" || obj[key] === true || obj[key] === "1");
         });
@@ -2236,11 +2241,11 @@
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "character", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
+        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
-        ["hot", "recommended", "isNew"].forEach(function(key) {
+        ["hot", "recommended", "isNew", "isNewListing"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el && el.checked ? "Y" : "";
         });
@@ -2334,7 +2339,16 @@
         btnClearForm.addEventListener("click", function() {
           document.getElementById("editRowIndex").value = "";
           document.getElementById("modalTitle").textContent = "新增商品";
-          setFormValues({});
+          var form = document.getElementById("productForm");
+          if (form) {
+            var inputs = form.querySelectorAll("input, select, textarea");
+            inputs.forEach(function(el) {
+              if (el.type === "checkbox" || el.type === "radio") el.checked = false;
+              else el.value = "";
+            });
+          }
+          renderVariantList("", "", "");
+          updateSubcategoryOptions("");
           var statusInput = document.getElementById("statusInput");
           if (statusInput) statusInput.value = "上架";
           var marginSelect = document.getElementById("marginSelect");
@@ -2343,14 +2357,18 @@
         });
       }
 
+      var productFormSubmitting = false;
       document.getElementById("productForm").addEventListener("submit", function(e) {
         e.preventDefault();
+        if (productFormSubmitting) return;
         updateCalculatedFields();
         syncSellingPriceFromInput();
         syncVariantToHidden();
         var product = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
         if (hiddenStock) product.variantStock = String(hiddenStock.value != null ? hiddenStock.value : "").trim();
+        var stockInp = document.querySelector("#productForm input[name=\"stock\"]");
+        if (stockInp) product.stock = stockInp.value === "" ? "" : (Number(stockInp.value) || 0);
         if (!product.name || !String(product.name).trim()) {
           showMessage("請輸入商品名稱", true);
           return;
@@ -2365,6 +2383,9 @@
         var action = (rowIndexInput && !isNaN(rowIndexNum) && rowIndexNum >= 2) ? "update" : "append";
         var body = { action: action, product: product };
         if (action === "update") body.rowIndex = rowIndexNum;
+        var submitBtn = document.querySelector("#productForm button[type=\"submit\"]");
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "儲存中..."; }
+        productFormSubmitting = true;
         fetchWrite(body)
           .then(function(r) {
             return r.text().then(function(t) {
@@ -2385,6 +2406,10 @@
           })
           .catch(function(err) {
             showMessage("儲存失敗：" + (err && err.message ? err.message : "網路錯誤").replace(/^Failed to fetch$/i, "無法連線，請確認 API 網址與網路。"), true);
+          })
+          .finally(function() {
+            productFormSubmitting = false;
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "儲存"; }
           });
       });
 
@@ -2398,14 +2423,13 @@
 
       document.getElementById("btnExport").addEventListener("click", function() {
         if (products.length === 0) { showMessage("尚無商品可匯出", true); return; }
-        var headers = ["商品名稱", "分類", "子分類", "角色", "規格", "日幣價格", "售價", "利潤", "成本", "庫存", "貨況", "圖片", "描述"];
+        var headers = ["商品名稱", "分類", "子分類", "規格", "日幣價格", "售價", "利潤", "成本", "庫存", "貨況", "圖片", "描述"];
         var rows = [headers.join(",")];
         products.forEach(function(p) {
           var row = [
             (p.name || p.商品名稱 || ""),
             (p.category || p.分類 || ""),
             (p.subcategory || p.子分類 || ""),
-            (p.character || p.角色 || ""),
             (p.variant || p.規格 || ""),
             (p.price != null ? p.price : p.日幣價格 != null ? p.日幣價格 : ""),
             (p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : ""),
