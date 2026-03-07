@@ -1332,6 +1332,9 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                               </span>
                             ) : null}
                             <span>{label}</span>
+                            {item.variantStockQty !== undefined && item.variantStockQty !== null ? (
+                              <span className="text-xs text-slate-500">庫存 {item.variantStockQty}</span>
+                            ) : null}
                             {isSoldOut ? (
                               <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded">已售完</span>
                             ) : null}
