@@ -61,6 +61,17 @@ function toNumberOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** 從商品或 raw 取得單一庫存數字（含 0），沒資料回傳 null；供顧客頁穩定顯示庫存用 */
+function getProductStockNumber(p) {
+  if (!p || typeof p !== "object") return null;
+  const val =
+    p.stock ?? p.庫存 ?? p["庫存"] ?? p["庫存數量"] ?? p.Stock ??
+    p.raw?.stock ?? p.raw?.庫存 ?? p.raw?.["庫存"] ?? p.raw?.["庫存數量"] ?? p.raw?.Stock;
+  if (val === undefined || val === null || val === "") return null;
+  const n = typeof val === "number" ? val : parseInt(String(val).trim(), 10);
+  return Number.isFinite(n) ? Math.max(0, n) : null;
+}
+
 function toBoolFlag(v) {
   if (v === true) return true;
   if (v === false) return false;
@@ -162,12 +173,13 @@ function normalizeItem(row, index) {
     : typeof rawVariantStock === "string"
       ? rawVariantStock.split(/[,，、\s]+/).map((s) => Math.max(0, toNumberOrNull(s.trim()) ?? 0))
       : [];
-  // 後台只填「庫存」、未填「規格庫存」時，用主庫存作為唯一數量，顧客頁才能顯示/更新
-  if (variantStock.length === 0) {
-    const mainStock = toNumberOrNull(row.stock ?? row.庫存 ?? row["庫存"]);
-    if (mainStock !== null && mainStock !== undefined) variantStock = [Math.max(0, mainStock)];
+  const mainStockSource = row.stock ?? row.庫存 ?? row["庫存"] ?? row["庫存數量"] ?? row.Stock;
+  const mainStockNum = toNumberOrNull(mainStockSource);
+  // 後台只填「庫存」、未填「規格庫存」時，用主庫存作為唯一數量（含 0），顧客頁才能顯示
+  if (variantStock.length === 0 && mainStockNum !== null && mainStockNum !== undefined) {
+    variantStock = [Math.max(0, mainStockNum)];
   }
-  const stock = variantStock.length > 0 ? variantStock[0] : toNumberOrNull(row.stock ?? row.庫存 ?? row["庫存"]);
+  const stock = variantStock.length > 0 ? variantStock[0] : mainStockNum;
   const rawVariantImages =
     row.variantImages ?? row.規格圖片 ?? row["規格圖片"] ?? "";
   const variantImages = Array.isArray(rawVariantImages)
@@ -1153,20 +1165,42 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
         }
       }
     }
-    let stockList = Array.isArray(p0.variantStock) ? p0.variantStock : (typeof (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存) === "string" ? (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存 || "").split(/[,，、\s]+/).map((s) => Math.max(0, parseInt(String(s).trim(), 10) || 0)) : []);
-    if (stockList.length === 0 && (p0.stock != null || p0.raw?.stock != null || p0.raw?.庫存 != null)) {
-      const mainStock = Math.max(0, parseInt(String(p0.stock ?? p0.raw?.stock ?? p0.raw?.庫存 ?? 0).trim(), 10) || 0);
-      stockList = [mainStock];
+    const toQty = (v) => (v !== undefined && v !== null && v !== "") ? (typeof v === "number" ? Math.max(0, v) : Math.max(0, parseInt(String(v).trim(), 10) || 0)) : null;
+    let stockList = Array.isArray(p0.variantStock) ? p0.variantStock.map(toQty) : (typeof (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存) === "string" ? (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存 || "").split(/[,，、\s]+/).map((s) => toQty(s)) : []);
+    if (stockList.length === 0) {
+      let mainStock = getProductStockNumber(p0);
+      if (mainStock == null && baseGroup.length > 1) {
+        for (let i = 1; i < baseGroup.length; i++) {
+          mainStock = getProductStockNumber(baseGroup[i]);
+          if (mainStock != null) break;
+        }
+      }
+      if (mainStock != null) stockList = [mainStock];
+    }
+    if (allParts.length > 1 && baseGroup.length > 1) {
+      stockList = allParts.map((part) => {
+        const row = baseGroup.find((p) => {
+          const v = p.variant ?? p.規格 ?? "";
+          const str = Array.isArray(v) ? v.join(",") : String(v || "").trim();
+          if (str === part) return true;
+          const partsOfRow = splitVariantString(str);
+          return partsOfRow.indexOf(part) >= 0;
+        });
+        return row != null ? getProductStockNumber(row) : null;
+      });
+      for (let i = 0; i < stockList.length; i++) {
+        if (stockList[i] == null) stockList[i] = getProductStockNumber(p0) ?? stockList[0] ?? null;
+      }
     }
     if (allParts.length === 0) {
       const rawV = p0.variant ?? p0.規格 ?? "";
       const v = Array.isArray(rawV) ? rawV.join(",") : String(rawV || "").trim();
-      const qty = stockList[0];
-      return [{ ...p0, variant: v || "單一規格", sku: [p0.name, v || "單一規格", p0.price ?? ""].join("||"), variantStockQty: qty !== undefined ? qty : null }];
+      const qty = stockList[0] != null ? stockList[0] : getProductStockNumber(p0);
+      return [{ ...p0, variant: v || "單一規格", sku: [p0.name, v || "單一規格", p0.price ?? ""].join("||"), variantStockQty: qty }];
     }
     if (allParts.length === 1) {
-      const qty = stockList[0];
-      return [{ ...p0, variant: allParts[0], sku: [p0.name, allParts[0], p0.price ?? ""].join("||"), variantStockQty: qty !== undefined ? qty : null }];
+      const qty = stockList[0] != null ? stockList[0] : getProductStockNumber(p0);
+      return [{ ...p0, variant: allParts[0], sku: [p0.name, allParts[0], p0.price ?? ""].join("||"), variantStockQty: qty }];
     }
     const variantImgList =
       p0.variantImages && Array.isArray(p0.variantImages)
@@ -1179,7 +1213,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
         variantImgList[i] && String(variantImgList[i]).trim()
           ? variantImgList[i]
           : p0.image;
-      const stock = stockList[i] !== undefined ? stockList[i] : null;
+      const stock = stockList[i] != null ? stockList[i] : (getProductStockNumber(p0) ?? stockList[0] ?? null);
       return {
         ...p0,
         variant: part,
