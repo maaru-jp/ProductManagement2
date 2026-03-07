@@ -801,10 +801,10 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                         className={storeCategoryClass}
                       >
                         <span>{label}</span>
-                        <span className={["text-slate-400 transition-transform", isExpanded ? "rotate-90" : ""].join(" ")}>›</span>
+                        <span className={["text-slate-400 transition-transform duration-200", isExpanded ? "rotate-90" : ""].join(" ")}>›</span>
                       </button>
                       {isExpanded ? (
-                        <div>
+                        <div className="py-2 px-3 bg-slate-50/60 border-l-2 border-rose-200 ml-2 mr-2 mb-2 rounded-r-lg space-y-0.5">
                           {children.map((sub) => (
                             <button
                               key={sub.value}
@@ -813,10 +813,10 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                                 onNavigate("/?category=" + encodeURIComponent(value) + "&subcategory=" + encodeURIComponent(sub.value));
                                 onClose();
                               }}
-                              className="flex items-center justify-between w-full py-2.5 pl-6 pr-4 text-left text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0"
+                              className="flex items-center gap-2 w-full py-2 px-3 rounded-md text-sm text-slate-600 hover:text-rose-700 hover:bg-white hover:shadow-sm transition-all duration-150 text-left"
                             >
-                              <span>{sub.label}</span>
-                              <span className="text-slate-400">›</span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-300 shrink-0" aria-hidden />
+                              <span className="flex-1">{sub.label}</span>
                             </button>
                           ))}
                         </div>
