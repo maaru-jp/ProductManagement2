@@ -1280,7 +1280,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
 
       {!loading && !error && newTodayFromUrl && uniqueProducts.length > 0 && (
         <p className="mb-4 text-sm font-medium text-slate-700">
-          今日上架商品（上架日期為今天的商品）
+          今日上架商品
         </p>
       )}
 
