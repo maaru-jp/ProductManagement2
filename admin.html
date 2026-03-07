@@ -928,10 +928,6 @@
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">商品主圖</label>
             <input type="url" name="image" id="productImageInput" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="商品主圖網址 https://..." />
-            <div id="productImagePreviewWrap" class="mt-2 hidden">
-              <p class="text-xs text-slate-500 mb-1">預覽</p>
-              <img id="productImagePreview" src="" alt="主圖預覽" class="max-w-[200px] max-h-[200px] object-contain rounded-lg border border-slate-200 bg-slate-50" onerror="this.style.display='none'; document.getElementById('productImagePreviewWrap').classList.add('hidden');" />
-            </div>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">描述</label>
@@ -1877,7 +1873,7 @@
         var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
         var cost = p.cost != null ? p.cost : p.成本 != null ? p.成本 : "";
         var stock = stockDisplay(p);
-        var img = p.image || p.圖片 || "";
+        var img = (p.image || p.圖片 || p.商品主圖 || p.主圖 || "").toString().trim();
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
         var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
         var isListed = status === "上架";
@@ -2183,22 +2179,6 @@
         syncVariantToHidden();
       }
 
-      function updateMainImagePreview() {
-        var inp = document.getElementById("productImageInput");
-        var wrap = document.getElementById("productImagePreviewWrap");
-        var img = document.getElementById("productImagePreview");
-        if (!inp || !wrap || !img) return;
-        var url = (inp.value || "").trim();
-        if (!url) {
-          wrap.classList.add("hidden");
-          img.removeAttribute("src");
-          return;
-        }
-        wrap.classList.remove("hidden");
-        img.style.display = "";
-        img.src = url;
-      }
-
       function setFormValues(obj, opts) {
         var form = document.getElementById("productForm");
         var fromEdit = opts && opts.fromEdit === true;
@@ -2249,7 +2229,6 @@
         } else {
           updateCalculatedFields();
         }
-        updateMainImagePreview();
       }
 
       function updateCalculatedFields() {
@@ -2433,11 +2412,6 @@
         if (sellingInputEl) { sellingInputEl.addEventListener("input", syncSellingPriceFromInput); sellingInputEl.addEventListener("change", syncSellingPriceFromInput); }
       }
       bindAutoCalc();
-      var productImageInp = document.getElementById("productImageInput");
-      if (productImageInp) {
-        productImageInp.addEventListener("input", updateMainImagePreview);
-        productImageInp.addEventListener("change", updateMainImagePreview);
-      }
       document.getElementById("btnCancel").addEventListener("click", closeModal);
       document.getElementById("modalBackdrop").addEventListener("click", closeModal);
       var modalCloseBtn = document.getElementById("modalCloseBtn");
