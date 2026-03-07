@@ -1905,8 +1905,9 @@
               recommended: p.recommended || p.推薦 || "",
               isNew: p.isNew || p.新品 || "",
               isNewListing: p.isNewListing || p.新上架 || ""
-            });
-            document.getElementById("marginSelect").value = "custom";
+            }, { fromEdit: true });
+            var marginSelect = document.getElementById("marginSelect");
+            if (marginSelect && (p.sellingPrice != null || p.售價 != null)) marginSelect.value = "custom";
             updateSellingPriceByMargin();
           });
         });
@@ -2124,8 +2125,9 @@
         syncVariantToHidden();
       }
 
-      function setFormValues(obj) {
+      function setFormValues(obj, opts) {
         var form = document.getElementById("productForm");
+        var fromEdit = opts && opts.fromEdit === true;
         updateSubcategoryOptions(obj && obj.category ? obj.category : "");
         Object.keys(obj || {}).forEach(function(key) {
           if (key === "hot" || key === "recommended" || key === "isNew" || key === "isNewListing" || key === "variant") return;
@@ -2145,7 +2147,22 @@
           var si = document.getElementById("statusInput");
           if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
         }
-        updateCalculatedFields();
+        if (fromEdit) {
+          var costDisplay = document.getElementById("costDisplay");
+          var costHidden = document.getElementById("costValue");
+          if (costDisplay && costHidden && costHidden.value !== "") costDisplay.textContent = costHidden.value;
+          var sellingDisplay = document.getElementById("sellingPriceDisplay");
+          var sellingHidden = document.getElementById("sellingPriceValue");
+          var sellingInput = document.getElementById("sellingPriceInput");
+          if (sellingDisplay && sellingHidden && sellingHidden.value !== "") {
+            sellingDisplay.textContent = sellingHidden.value;
+            sellingDisplay.classList.remove("hidden");
+            if (sellingInput) sellingInput.classList.add("hidden");
+          }
+          updateProfitDisplay();
+        } else {
+          updateCalculatedFields();
+        }
       }
 
       function updateCalculatedFields() {
