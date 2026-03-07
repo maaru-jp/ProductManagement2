@@ -618,7 +618,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
               >
                 {CHARACTER_LIST.map((char) => {
                   const isSelected = (char.value || "").trim() === (selectedCharacter || "").trim();
-                  const imageUrl = (char.value && characterImages[char.value]) ? characterImages[char.value] : null;
+                  const imageUrl = (characterImages[char.value] || (char.label && characterImages[char.label])) || null;
                   return (
                     <button
                       key={char.value || "all"}
