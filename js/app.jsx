@@ -1151,11 +1151,12 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
       return result;
     }
 
-    // 上方放大鏡搜尋：僅依「商品名稱」篩選，顯示所有分類中符合的商品
+    // 左側欄放大鏡搜尋：依「商品名稱」或「規格」篩選，顯示所有分類中符合的商品
     if (q) {
       result = result.filter((p) => {
         const name = (p?.name ?? p?.商品名稱 ?? p?.raw?.商品名稱 ?? "").toString().toLowerCase();
-        return name.includes(q);
+        const variant = (p?.variant ?? p?.規格 ?? p?.raw?.規格 ?? p?.raw?.variant ?? "").toString().toLowerCase();
+        return name.includes(q) || variant.includes(q);
       });
       if (characterFromUrl) {
         const charFilter = (characterFromUrl || "").trim();
