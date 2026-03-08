@@ -705,6 +705,11 @@
                   <button type="button" id="settingsLogoDelete" class="px-4 py-2 rounded-lg bg-red-500 text-white text-sm hover:bg-red-600">刪除 Logo</button>
                 </div>
               </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">PDF 訂單 Logo 網址</label>
+                <input type="url" id="settingsPdfLogoUrl" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="https://...（產生訂單 PDF 時顯示於右上方）" />
+                <p class="text-xs text-slate-500 mt-1">訂單 PDF 右上方會顯示此 Logo，留空則不顯示。</p>
+              </div>
             </div>
           </div>
 
@@ -1077,6 +1082,20 @@
             <label class="block text-xs font-medium text-slate-500 mb-1">備註 (可編輯)</label>
             <textarea id="orderRemark" rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="選填"></textarea>
           </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">預購日期</label>
+              <input type="text" id="orderPreorderDate" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：2025/3/15" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">出貨日期</label>
+              <input type="text" id="orderShipDate" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：2025/4/1" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">收訂金歷程記錄（PDF 備註欄）</label>
+            <textarea id="orderDepositRemark" rows="4" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：2025/3/1 收訂金 NT$500&#10;2025/3/5 收尾款 NT$900"></textarea>
+          </div>
 
           <div class="flex justify-end gap-2 pt-4 border-t border-slate-200">
             <button type="button" id="orderFormCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm hover:bg-slate-50">取消</button>
@@ -1242,11 +1261,19 @@
         var changePassword = document.getElementById("settingsChangePassword");
         var logoUpload = document.getElementById("settingsLogoUpload");
         var logoDelete = document.getElementById("settingsLogoDelete");
+        var pdfLogoInput = document.getElementById("settingsPdfLogoUrl");
         if (saveShipping) saveShipping.addEventListener("click", function() { alert("運送方式已儲存（實際需串接後端）"); });
         if (saveCheckout) saveCheckout.addEventListener("click", function() { alert("結帳資訊已儲存（實際需串接後端）"); });
         if (changePassword) changePassword.addEventListener("click", function() { alert("變更密碼需串接後端驗證與更新"); });
         if (logoUpload) logoUpload.addEventListener("click", function() { alert("上傳 Logo 需串接後端或圖床 API"); });
         if (logoDelete) logoDelete.addEventListener("click", function() { if (confirm("確定要刪除 Logo？")) { alert("已刪除（實際需串接後端）"); } });
+        try {
+          if (pdfLogoInput) {
+            pdfLogoInput.value = localStorage.getItem("maaru_admin_pdf_logo") || "";
+            pdfLogoInput.addEventListener("change", function() { try { localStorage.setItem("maaru_admin_pdf_logo", (pdfLogoInput.value || "").trim()); } catch (e) {} });
+            pdfLogoInput.addEventListener("blur", function() { try { localStorage.setItem("maaru_admin_pdf_logo", (pdfLogoInput.value || "").trim()); } catch (e) {} });
+          }
+        } catch (e) {}
       })();
 
       (function initSidebarCollapse() {
@@ -2750,7 +2777,10 @@
             discount: discount,
             shippingFee: shipping,
             total: total,
-            remark: (document.getElementById("orderRemark").value || "").trim()
+            remark: (document.getElementById("orderRemark").value || "").trim(),
+            depositRemark: (document.getElementById("orderDepositRemark").value || "").trim(),
+            preorderDate: (document.getElementById("orderPreorderDate").value || "").trim(),
+            shipDate: (document.getElementById("orderShipDate").value || "").trim()
           };
         }
 
@@ -2769,6 +2799,9 @@
           document.getElementById("orderFixedDiscountCheck").checked = true;
           document.getElementById("orderShippingFee").value = String(o.shippingFee || 0);
           document.getElementById("orderRemark").value = o.remark || "";
+          document.getElementById("orderDepositRemark").value = o.depositRemark || "";
+          document.getElementById("orderPreorderDate").value = o.preorderDate || "";
+          document.getElementById("orderShipDate").value = o.shipDate || "";
           updateOrderTotal();
         }
 
@@ -2795,6 +2828,9 @@
             document.getElementById("orderStoreId").value = "";
             document.getElementById("orderAddress").value = "";
             document.getElementById("orderRemark").value = "";
+            document.getElementById("orderDepositRemark").value = "";
+            document.getElementById("orderPreorderDate").value = "";
+            document.getElementById("orderShipDate").value = "";
             updateOrderTotal();
           }
         }
@@ -2918,12 +2954,14 @@
           var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
           var itemsRows = "";
           if (ord.items && Array.isArray(ord.items) && ord.items.length > 0) {
-            itemsRows = "<h2 style=\"font-size:14px;margin-top:20px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>數量</th></tr>";
+            itemsRows = "<h2 style=\"font-size:14px;margin-top:20px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>價格</th><th>數量</th></tr>";
             for (var i = 0; i < ord.items.length; i++) {
               var it = ord.items[i];
               var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
               var qty = (it.qty != null && !isNaN(it.qty)) ? it.qty : 0;
-              itemsRows += "<tr><td>" + escapeHtml(name || "—") + "</td><td>" + escapeHtml(String(qty)) + "</td></tr>";
+              var priceVal = (it.price != null && !isNaN(it.price)) ? it.price : null;
+              var priceCell = priceVal !== null ? "NT$ " + (Number.isInteger(priceVal) ? priceVal : priceVal.toFixed(0)) : "—";
+              itemsRows += "<tr><td>" + escapeHtml(name || "—") + "</td><td>" + escapeHtml(priceCell) + "</td><td>" + escapeHtml(String(qty)) + "</td></tr>";
             }
             itemsRows += "</table>";
           }
@@ -2933,15 +2971,36 @@
             var isSameAsItems = remarkTrim.length > 50 && /商品總計|×\s*\d+/.test(remarkTrim);
             if (isSameAsItems) showRemark = false;
           }
+          var pdfLogoUrl = "";
+          try { pdfLogoUrl = (localStorage.getItem("maaru_admin_pdf_logo") || "").trim(); } catch (e) {}
+          var preorderStr = (ord.preorderDate != null && String(ord.preorderDate).trim() !== "") ? String(ord.preorderDate).trim() : "";
+          var shipStr = (ord.shipDate != null && String(ord.shipDate).trim() !== "") ? String(ord.shipDate).trim() : "";
+          var headerRight = "<div class=\"pdf-logo-wrap\">";
+          if (pdfLogoUrl) {
+            var safeLogoUrl = String(pdfLogoUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            headerRight += "<div class=\"pdf-logo-fallback\" style=\"display:none;\">品牌 Logo</div><img src=\"" + safeLogoUrl + "\" alt=\"Logo\" class=\"pdf-logo\" onerror=\"this.style.display=\\'none\\';var s=this.previousElementSibling;if(s)s.style.display=\\'flex\\';\" />";
+          } else {
+            headerRight += "<div class=\"pdf-logo-placeholder\">品牌 Logo</div>";
+          }
+          headerRight += "</div>";
+          headerRight += "<div class=\"pdf-dates\"><div class=\"pdf-date-row\"><span class=\"label\">預購日期</span><span class=\"value\">" + escapeHtml(preorderStr || "—") + "</span></div>";
+          headerRight += "<div class=\"pdf-date-row\"><span class=\"label\">出貨日期</span><span class=\"value\">" + escapeHtml(shipStr || "—") + "</span></div></div>";
           var html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>訂單 " + escapeHtml(ord.id) + "</title>" +
             "<style>body{font-family:'Microsoft JhengHei',sans-serif;padding:24px;max-width:600px;margin:0 auto;color:#1e293b;} " +
-            "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:8px;} .row{margin:10px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:2px;} " +
+            ".pdf-header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:20px;flex-wrap:wrap;} " +
+            ".pdf-header-left{flex:1;min-width:200px;} .pdf-header-right{text-align:right;min-width:240px;} " +
+            ".pdf-logo-wrap{margin-bottom:14px;} .pdf-logo{max-width:220px;max-height:100px;object-fit:contain;display:block;margin-left:auto;} " +
+            ".pdf-logo-placeholder,.pdf-logo-fallback{width:220px;height:88px;margin-left:auto;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:#94a3b8;font-size:16px;display:flex;align-items:center;justify-content:center;} " +
+            ".pdf-dates{font-size:17px;} .pdf-date-row{margin:10px 0;} .pdf-date-row .label{color:#64748b;font-size:15px;margin-right:8px;} .pdf-date-row .value{font-weight:600;font-size:17px;} " +
+            "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:8px;margin:0 0 10px 0;} .row{margin:10px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:2px;} " +
             "table{width:100%;border-collapse:collapse;margin:16px 0;} th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;} th{background:#f1f5f9;}" +
             ".total{font-size:16px;font-weight:bold;margin-top:12px;}</style></head><body>" +
+            "<div class=\"pdf-header\"><div class=\"pdf-header-left\">" +
             "<h1>訂單明細 " + escapeHtml(ord.id) + "</h1>" +
             "<div class=\"row\"><span class=\"label\">訂單編號</span><div class=\"value\">" + escapeHtml(ord.id) + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">日期</span><div class=\"value\">" + escapeHtml(dateStr) + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">狀態</span><div class=\"value\">" + escapeHtml(ord.status || "待處理") + "</div></div>" +
+            "</div><div class=\"pdf-header-right\">" + headerRight + "</div></div>" +
             "<h2 style=\"font-size:14px;margin-top:20px;\">客戶資訊</h2>" +
             "<div class=\"row\"><span class=\"label\">姓名</span><div class=\"value\">" + escapeHtml(ord.customerName || "") + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">電話</span><div class=\"value\">" + escapeHtml(ord.phone || "") + "</div></div>" +
@@ -2959,6 +3018,8 @@
             "<tr><td>運費</td><td>NT$ " + (ord.shippingFee != null ? ord.shippingFee : 0) + "</td></tr>" +
             "<tr><td><strong>總計</strong></td><td><strong>NT$ " + (ord.total != null ? ord.total : 0) + "</strong></td></tr></table>" +
             (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(ord.remark) + "</div></div>" : "") +
+            "<h2 style=\"font-size:14px;margin-top:20px;\">收訂金歷程記錄</h2>" +
+            "<div class=\"row\"><div class=\"value\" style=\"white-space:pre-wrap;min-height:3em;\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div></div>" +
             "</body></html>";
           var w = window.open("", "_blank", "width=640,height=800");
           w.document.write(html);
@@ -3014,18 +3075,20 @@
             if (!isNaN(n) && n >= 0) subtotal = n;
           }
           var items = [];
-          var lineRe = /^(.+?)\s+×\s*(\d+)\s+NT\$[\d,.]*/gm;
+          var lineRe = /^(.+?)\s+×\s*(\d+)\s+NT\$([\d,.]+)/gm;
           var lineMatch;
           while ((lineMatch = lineRe.exec(t)) !== null) {
             var lineName = (lineMatch[1] || "").trim();
             var qty = parseInt(lineMatch[2], 10);
-            if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty });
+            var priceStr = (lineMatch[3] || "").replace(/,/g, "");
+            var price = (priceStr !== "" && !isNaN(parseFloat(priceStr))) ? parseFloat(priceStr) : null;
+            if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty, price: price });
           }
           window.__lastPastedOrderItems = items.length ? items : null;
           return { subtotal: subtotal, remark: t };
         }
         var btnPasteOrder = document.getElementById("btnPasteOrder");
-        if (btnPasteOrder) btnPasteOrder.addEventListener("click", openPasteOrderModal);
+        if (btnPasteOrder) btnPasteOrder.addEventListener("click", function() { openPasteOrderModal(); });
         var pasteOrderModalClose = document.getElementById("pasteOrderModalClose");
         if (pasteOrderModalClose) pasteOrderModalClose.addEventListener("click", closePasteOrderModal);
         var pasteOrderCancel = document.getElementById("pasteOrderCancel");
@@ -3113,6 +3176,9 @@
               ord.shippingFee = data.shippingFee;
               ord.total = data.total;
               ord.remark = data.remark;
+              ord.depositRemark = data.depositRemark;
+              ord.preorderDate = data.preorderDate;
+              ord.shipDate = data.shipDate;
               saveOrders();
               renderOrders();
               showOrderMessage("訂單已更新");
@@ -3134,7 +3200,10 @@
               discount: data.discount,
               shippingFee: data.shippingFee,
               total: data.total,
-              remark: data.remark
+              remark: data.remark,
+              depositRemark: data.depositRemark,
+              preorderDate: data.preorderDate,
+              shipDate: data.shipDate
             };
             if (window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) && window.__lastPastedOrderItems.length) {
               newOrder.items = window.__lastPastedOrderItems.slice();
