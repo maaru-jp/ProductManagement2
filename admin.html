@@ -267,10 +267,16 @@
       <!-- 商品管理區塊 -->
       <section id="sectionProducts">
         <div class="flex items-center justify-between mb-6">
-          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
-            <svg class="section-title-icon text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-            商品管理
-          </h2>
+          <div class="flex items-center gap-4">
+            <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+              <svg class="section-title-icon text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+              商品管理
+            </h2>
+            <label class="text-sm text-slate-600 flex items-center gap-2">
+              匯率
+              <input type="number" id="productSectionRateInput" min="0" step="0.01" placeholder="例：0.23" class="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" title="日幣 × 匯率 = 台幣售價（儲存於本機）" />
+            </label>
+          </div>
           <div class="flex items-center gap-3">
             <button type="button" id="btnSaveAllStatus" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed">
               儲存所有變更
@@ -886,7 +892,7 @@
             <input type="number" name="sellingPrice" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：350（日幣×匯率自動帶出或手動輸入）" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">毛利率 %（選填，選後自動帶出利潤與成本）</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1">毛利率 %（自訂選擇後顯示利潤）</label>
             <select id="marginPercentSelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
               <option value="">請選擇</option>
               <option value="10">10%</option>
@@ -900,13 +906,13 @@
             </select>
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">成本(台幣)（選填，可由毛利率%自動帶出）</label>
-            <input type="number" name="cost" id="costValue" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：280" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（自動計算：售價－成本，或依毛利率%顯示）</label>
-            <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算</div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（選毛利率 % 後自動顯示）</label>
+            <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">請選擇毛利率 %</div>
             <input type="hidden" name="profit" id="profitValue" value="" />
+          </div>
+          <div class="hidden">
+            <label class="block text-xs font-medium text-slate-500 mb-1">成本(台幣)（選填）</label>
+            <input type="number" name="cost" id="costValue" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：280" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">庫存</label>
@@ -1100,7 +1106,12 @@
       }
 
       var products = [];
-      var globalRate = null;
+      var globalRate = (function() {
+        var v = localStorage.getItem("maaru_admin_rate");
+        if (v === null || v === "") return null;
+        var n = Number(v);
+        return (Number.isFinite(n) && n > 0) ? n : null;
+      })();
       var pendingStatusChanges = {};
       var searchKeyword = "";
 
@@ -1813,7 +1824,12 @@
             return r.json();
           })
           .then(function(data) {
-            globalRate = (data.rate != null && data.rate !== "" && Number(data.rate) > 0) ? Number(data.rate) : null;
+            if (globalRate == null && data.rate != null && data.rate !== "" && Number(data.rate) > 0) {
+              globalRate = Number(data.rate);
+              try { localStorage.setItem("maaru_admin_rate", String(globalRate)); } catch (e) {}
+              var rateInp = document.getElementById("productSectionRateInput");
+              if (rateInp) rateInp.value = globalRate;
+            }
             var raw = data.products || (Array.isArray(data) ? data : []);
             products = raw.map(function(p, i) {
               var q = typeof p === "object" && p !== null ? Object.assign({}, p) : {};
@@ -1824,6 +1840,7 @@
             renderTable();
             updateSaveAllStatusBtn();
             updateRateHint();
+            updateProductSectionRate();
           })
           .catch(function(err) {
             tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
@@ -2237,7 +2254,32 @@
         if (globalRate != null && Number(globalRate) > 0) {
           el.textContent = "目前匯率：" + globalRate + "（日幣 × 匯率 = 台幣售價）";
         } else {
-          el.textContent = "請在試算表「設定」工作表設定匯率，或直接輸入台幣售價";
+          el.textContent = "請在商品管理頁上方輸入匯率，或直接輸入台幣售價";
+        }
+      }
+
+      function saveRateFromInput() {
+        var inp = document.getElementById("productSectionRateInput");
+        if (!inp) return;
+        var v = (inp.value || "").trim();
+        if (v === "") {
+          globalRate = null;
+          try { localStorage.removeItem("maaru_admin_rate"); } catch (e) {}
+        } else {
+          var n = Number(v);
+          if (Number.isFinite(n) && n > 0) {
+            globalRate = n;
+            try { localStorage.setItem("maaru_admin_rate", v); } catch (e) {}
+          }
+        }
+        updateRateHint();
+      }
+
+      function updateProductSectionRate() {
+        var inp = document.getElementById("productSectionRateInput");
+        if (!inp) return;
+        if (globalRate != null && Number(globalRate) > 0) {
+          inp.value = globalRate;
         }
       }
 
@@ -2265,37 +2307,35 @@
       function applyMarginFromSelect() {
         var margin = getMarginPercent();
         var sellingInp = document.getElementById("sellingPriceInput");
-        var costInp = document.getElementById("costValue");
-        if (!sellingInp || !costInp || margin == null) return;
+        if (!sellingInp || margin == null) return;
         var selling = Number(sellingInp.value);
         if (!Number.isFinite(selling) || selling < 0) return;
         var profit = Math.round(selling * margin / 100);
-        var cost = selling - profit;
-        costInp.value = cost >= 0 ? cost : "";
-        updateProfitDisplay();
+        var display = document.getElementById("profitDisplay");
+        var hidden = document.getElementById("profitValue");
+        if (display) {
+          display.textContent = profit;
+          display.classList.remove("text-slate-400");
+          display.classList.remove("text-red-600");
+        }
+        if (hidden) hidden.value = profit;
       }
 
       function updateProfitDisplay() {
         var sellingVal = document.getElementById("sellingPriceInput") ? document.getElementById("sellingPriceInput").value : "";
-        var costVal = document.getElementById("costValue") ? document.getElementById("costValue").value : "";
         var display = document.getElementById("profitDisplay");
         var hidden = document.getElementById("profitValue");
         if (!display || !hidden) return;
         var sellingNum = sellingVal !== "" ? Number(sellingVal) : NaN;
-        var costNum = costVal !== "" ? Number(costVal) : NaN;
-        if (isFinite(sellingNum) && isFinite(costNum)) {
-          var profit = Math.round(sellingNum - costNum);
+        var margin = getMarginPercent();
+        if (margin != null && isFinite(sellingNum) && sellingNum >= 0) {
+          var profit = Math.round(sellingNum * margin / 100);
           display.textContent = profit;
           display.classList.remove("text-slate-400");
-          if (profit < 0) display.classList.add("text-red-600"); else display.classList.remove("text-red-600");
-          hidden.value = profit;
-        } else if (isFinite(sellingNum)) {
-          display.textContent = sellingNum + "（請填成本後自動算利潤）";
-          display.classList.add("text-slate-400");
           display.classList.remove("text-red-600");
-          hidden.value = "";
+          hidden.value = profit;
         } else {
-          display.textContent = "自動計算（售價－成本）";
+          display.textContent = "請選擇毛利率 %";
           display.classList.add("text-slate-400");
           display.classList.remove("text-red-600");
           hidden.value = "";
@@ -2369,6 +2409,11 @@
       document.getElementById("btnAdd").addEventListener("click", function() { openModal(false); });
       var btnSaveAllStatus = document.getElementById("btnSaveAllStatus");
       if (btnSaveAllStatus) btnSaveAllStatus.addEventListener("click", saveAllStatusChanges);
+      var productSectionRateInp = document.getElementById("productSectionRateInput");
+      if (productSectionRateInp) {
+        productSectionRateInp.addEventListener("change", saveRateFromInput);
+        productSectionRateInp.addEventListener("blur", saveRateFromInput);
+      }
 
       var btnAddVariant = document.getElementById("btnAddVariant");
       if (btnAddVariant) {
@@ -2903,6 +2948,7 @@
         renderOrders();
       })();
 
+      updateProductSectionRate();
       loadProducts();
     })();
   </script>
