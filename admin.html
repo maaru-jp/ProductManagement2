@@ -267,16 +267,10 @@
       <!-- 商品管理區塊 -->
       <section id="sectionProducts">
         <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center gap-4">
-            <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
-              <svg class="section-title-icon text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-              商品管理
-            </h2>
-            <label class="text-sm text-slate-600 flex items-center gap-2">
-              匯率
-              <input type="number" id="productSectionRateInput" min="0" step="0.01" placeholder="例：0.23" class="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" title="日幣 × 匯率 = 台幣售價（儲存於本機）" />
-            </label>
-          </div>
+          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+            <svg class="section-title-icon text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            商品管理
+          </h2>
           <div class="flex items-center gap-3">
             <button type="button" id="btnSaveAllStatus" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed">
               儲存所有變更
@@ -347,6 +341,9 @@
         <div class="flex flex-wrap items-center gap-3 mb-4">
           <button type="button" id="btnAddOrder" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">
             + 新增訂單
+          </button>
+          <button type="button" id="btnPasteOrder" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50" title="顧客一鍵複製後傳到官方 LINE 的內容，貼上即可帶入訂單">
+            從顧客訊息建立訂單
           </button>
           <button type="button" id="btnExportOrders" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
             匯出 CSV
@@ -883,6 +880,10 @@
             <input type="hidden" name="variantStock" id="variantStockValue" value="" />
           </div>
           <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">匯率（日幣→台幣，本機儲存）</label>
+            <input type="number" id="productFormRateInput" min="0" step="0.01" placeholder="例：0.23" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" title="日幣 × 匯率 = 台幣售價" />
+          </div>
+          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格 (JPY)</label>
             <input type="number" name="price" id="priceInput" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：1200（輸入後依匯率自動帶出台幣售價）" />
             <span id="rateHint" class="block text-xs text-slate-400 mt-1"></span>
@@ -1086,6 +1087,28 @@
     </div>
   </div>
 
+  <!-- 從顧客訊息建立訂單：貼上內容後解析並帶入新增訂單 -->
+  <div id="pasteOrderModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/50" aria-hidden="true"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="p-4 border-b border-slate-200 flex items-center justify-between shrink-0">
+          <h3 class="text-lg font-semibold text-slate-800">從顧客訊息建立訂單</h3>
+          <button type="button" id="pasteOrderModalClose" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="關閉">✕</button>
+        </div>
+        <div class="p-4 flex-1 min-h-0 flex flex-col gap-3">
+          <p class="text-sm text-slate-600">請貼上顧客傳到官方 LINE 的登記清單（含「商品總計」那一行），系統會自動帶入商品小計與備註，再補客戶資料即可建立訂單。</p>
+          <textarea id="pasteOrderText" rows="10" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono placeholder:text-slate-400" placeholder="例：&#10;MAARU 日本萌GO代購登記清單：&#10;&#10;商品名 規格 × 2  NT$700&#10;...&#10;商品總計：NT$1400"></textarea>
+          <p id="pasteOrderParseHint" class="text-xs text-slate-500 hidden"></p>
+        </div>
+        <div class="p-4 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+          <button type="button" id="pasteOrderCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm hover:bg-slate-50">取消</button>
+          <button type="button" id="pasteOrderApply" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">解析並帶入新增訂單</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     (function() {
       // ※ 重要：請換成「您自己的」Google 試算表網頁應用程式 URL，否則後台無法寫入試算表、顧客頁也讀不到資料。
@@ -1143,7 +1166,13 @@
         if (settingsSection) settingsSection.classList.toggle("hidden", sectionId !== "sectionSettings");
         if (sectionId === "sectionReports") setNavActive("navReports");
         else if (sectionId === "sectionOrders") setNavActive("navOrders");
-        else if (sectionId === "sectionPurchases") setNavActive("navPurchases");
+        else if (sectionId === "sectionPurchases") {
+          setNavActive("navPurchases");
+          var ps = document.getElementById("purchaseDateStart");
+          var pe = document.getElementById("purchaseDateEnd");
+          if (ps && pe && !ps.value && !pe.value) setPurchaseDateRange("today");
+          if (typeof updatePurchaseKPI === "function") updatePurchaseKPI();
+        }
         else if (sectionId === "sectionLayout") setNavActive("navLayout");
         else if (sectionId === "sectionSettings") setNavActive("navSettings");
         else setNavActive("navProducts");
@@ -1774,10 +1803,68 @@
       function updatePurchaseKPI() {
         var elTypes = document.getElementById("purchaseKpiTypes");
         var elItems = document.getElementById("purchaseKpiItems");
-        if (elTypes) elTypes.textContent = "0";
-        if (elItems) elItems.textContent = "0";
         var tbody = document.getElementById("purchaseTableBody");
-        if (tbody) tbody.innerHTML = "<tr><td colspan=\"4\" class=\"py-12 text-center text-slate-500\">此期間無訂單資料</td></tr>";
+        var dStart = document.getElementById("purchaseDateStart");
+        var dEnd = document.getElementById("purchaseDateEnd");
+        var startStr = (dStart && dStart.value) ? dStart.value.trim() : "";
+        var endStr = (dEnd && dEnd.value) ? dEnd.value.trim() : "";
+        var orders = [];
+        try {
+          var saved = localStorage.getItem("adminOrders");
+          if (saved) orders = JSON.parse(saved);
+          if (!Array.isArray(orders)) orders = [];
+        } catch (e) { orders = []; }
+        var inRange = orders.filter(function(o) {
+          var d = (o.date && String(o.date).slice(0, 10)) || "";
+          if (!d) return false;
+          if (startStr && d < startStr) return false;
+          if (endStr && d > endStr) return false;
+          return true;
+        });
+        var agg = {};
+        inRange.forEach(function(o) {
+          var items = (o.items && Array.isArray(o.items)) ? o.items : [];
+          items.forEach(function(it) {
+            var key = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name + " " + (it.variant || "")).trim() || "—";
+            if (!key) return;
+            var qty = (it.qty != null && !isNaN(it.qty)) ? Math.max(0, parseInt(it.qty, 10)) : 0;
+            if (qty <= 0) return;
+            if (!agg[key]) agg[key] = { qty: 0, orderIds: {} };
+            agg[key].qty += qty;
+            agg[key].orderIds[o.id] = true;
+          });
+        });
+        var rows = Object.keys(agg).sort().map(function(key) {
+          var r = agg[key];
+          var orderCount = r.orderIds ? Object.keys(r.orderIds).length : 0;
+          var namePart = key;
+          var variantPart = "";
+          var lastSpace = namePart.lastIndexOf(" ");
+          if (lastSpace > 0 && lastSpace < namePart.length - 1) {
+            variantPart = namePart.slice(lastSpace + 1);
+            namePart = namePart.slice(0, lastSpace);
+          }
+          return { name: namePart, variant: variantPart, qty: r.qty, orderCount: orderCount };
+        });
+        var totalTypes = rows.length;
+        var totalItems = rows.reduce(function(sum, r) { return sum + r.qty; }, 0);
+        if (elTypes) elTypes.textContent = totalTypes;
+        if (elItems) elItems.textContent = totalItems;
+        if (tbody) {
+          if (rows.length === 0) {
+            tbody.innerHTML = "<tr><td colspan=\"4\" class=\"py-12 text-center text-slate-500\">此期間無訂單資料</td></tr>";
+          } else {
+            tbody.innerHTML = rows.map(function(r) {
+              return "<tr class=\"border-b border-slate-100\"><td class=\"py-3 px-4\">" + escapeHtmlForPurchase(r.name) + "</td><td class=\"py-3 px-4\">" + escapeHtmlForPurchase(r.variant) + "</td><td class=\"py-3 px-4\">" + r.qty + "</td><td class=\"py-3 px-4\">" + r.orderCount + "</td></tr>";
+            }).join("");
+          }
+        }
+      }
+      function escapeHtmlForPurchase(s) {
+        if (s == null) return "";
+        var div = document.createElement("div");
+        div.textContent = String(s);
+        return div.innerHTML;
       }
       var reportRange = document.getElementById("reportRange");
       var reportCustomRange = document.getElementById("reportCustomRange");
@@ -1827,7 +1914,7 @@
             if (globalRate == null && data.rate != null && data.rate !== "" && Number(data.rate) > 0) {
               globalRate = Number(data.rate);
               try { localStorage.setItem("maaru_admin_rate", String(globalRate)); } catch (e) {}
-              var rateInp = document.getElementById("productSectionRateInput");
+              var rateInp = document.getElementById("productFormRateInput");
               if (rateInp) rateInp.value = globalRate;
             }
             var raw = data.products || (Array.isArray(data) ? data : []);
@@ -1840,7 +1927,7 @@
             renderTable();
             updateSaveAllStatusBtn();
             updateRateHint();
-            updateProductSectionRate();
+            updateFormRateInput();
           })
           .catch(function(err) {
             tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
@@ -2259,7 +2346,7 @@
       }
 
       function saveRateFromInput() {
-        var inp = document.getElementById("productSectionRateInput");
+        var inp = document.getElementById("productFormRateInput");
         if (!inp) return;
         var v = (inp.value || "").trim();
         if (v === "") {
@@ -2275,11 +2362,13 @@
         updateRateHint();
       }
 
-      function updateProductSectionRate() {
-        var inp = document.getElementById("productSectionRateInput");
+      function updateFormRateInput() {
+        var inp = document.getElementById("productFormRateInput");
         if (!inp) return;
         if (globalRate != null && Number(globalRate) > 0) {
           inp.value = globalRate;
+        } else {
+          inp.value = "";
         }
       }
 
@@ -2393,6 +2482,7 @@
         document.getElementById("modalTitle").textContent = isEdit ? "編輯商品" : "新增商品";
         document.getElementById("editRowIndex").value = "";
         updateRateHint();
+        updateFormRateInput();
         var marginSel = document.getElementById("marginPercentSelect");
         if (marginSel) marginSel.value = "";
         if (!isEdit) {
@@ -2409,10 +2499,10 @@
       document.getElementById("btnAdd").addEventListener("click", function() { openModal(false); });
       var btnSaveAllStatus = document.getElementById("btnSaveAllStatus");
       if (btnSaveAllStatus) btnSaveAllStatus.addEventListener("click", saveAllStatusChanges);
-      var productSectionRateInp = document.getElementById("productSectionRateInput");
-      if (productSectionRateInp) {
-        productSectionRateInp.addEventListener("change", saveRateFromInput);
-        productSectionRateInp.addEventListener("blur", saveRateFromInput);
+      var productFormRateInp = document.getElementById("productFormRateInput");
+      if (productFormRateInp) {
+        productFormRateInp.addEventListener("change", saveRateFromInput);
+        productFormRateInp.addEventListener("blur", saveRateFromInput);
       }
 
       var btnAddVariant = document.getElementById("btnAddVariant");
@@ -2851,10 +2941,77 @@
           setTimeout(function() { w.print(); }, 300);
         }
 
-        if (btnAddOrder) btnAddOrder.addEventListener("click", function() { openOrderModal(null); });
+        if (btnAddOrder) btnAddOrder.addEventListener("click", function() { window.__lastPastedOrderItems = null; openOrderModal(null); });
         if (orderModalClose) orderModalClose.addEventListener("click", closeOrderModal);
         if (orderFormCancel) orderFormCancel.addEventListener("click", closeOrderModal);
         if (orderModalBackdrop) orderModalBackdrop.addEventListener("click", closeOrderModal);
+
+        var pasteOrderModalEl = document.getElementById("pasteOrderModal");
+        var pasteOrderText = document.getElementById("pasteOrderText");
+        var pasteOrderParseHint = document.getElementById("pasteOrderParseHint");
+        function openPasteOrderModal() {
+          if (pasteOrderModalEl) pasteOrderModalEl.classList.remove("hidden");
+          if (pasteOrderText) { pasteOrderText.value = ""; pasteOrderText.focus(); }
+          if (pasteOrderParseHint) { pasteOrderParseHint.classList.add("hidden"); pasteOrderParseHint.textContent = ""; }
+        }
+        function closePasteOrderModal() {
+          if (pasteOrderModalEl) pasteOrderModalEl.classList.add("hidden");
+        }
+        function parsePastedOrderText(text) {
+          var t = (text || "").trim();
+          var subtotal = 0;
+          var match = t.match(/商品總計[：:]\s*NT\s*\$?\s*([\d,]+)/i);
+          if (match) {
+            var numStr = (match[1] || "").replace(/,/g, "");
+            var n = parseInt(numStr, 10);
+            if (!isNaN(n) && n >= 0) subtotal = n;
+          }
+          var items = [];
+          var lineRe = /^(.+?)\s+×\s*(\d+)\s+NT\$[\d,.]*/gm;
+          var lineMatch;
+          while ((lineMatch = lineRe.exec(t)) !== null) {
+            var lineName = (lineMatch[1] || "").trim();
+            var qty = parseInt(lineMatch[2], 10);
+            if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty });
+          }
+          window.__lastPastedOrderItems = items.length ? items : null;
+          return { subtotal: subtotal, remark: t };
+        }
+        var btnPasteOrder = document.getElementById("btnPasteOrder");
+        if (btnPasteOrder) btnPasteOrder.addEventListener("click", openPasteOrderModal);
+        var pasteOrderModalClose = document.getElementById("pasteOrderModalClose");
+        if (pasteOrderModalClose) pasteOrderModalClose.addEventListener("click", closePasteOrderModal);
+        var pasteOrderCancel = document.getElementById("pasteOrderCancel");
+        if (pasteOrderCancel) pasteOrderCancel.addEventListener("click", closePasteOrderModal);
+        if (pasteOrderModalEl && pasteOrderModalEl.querySelector(".bg-black/50")) {
+          pasteOrderModalEl.querySelector(".bg-black/50").addEventListener("click", closePasteOrderModal);
+        }
+        var pasteOrderApplyBtn = document.getElementById("pasteOrderApply");
+        if (pasteOrderApplyBtn) {
+          pasteOrderApplyBtn.addEventListener("click", function() {
+            var text = pasteOrderText ? pasteOrderText.value.trim() : "";
+            if (!text) {
+              if (pasteOrderParseHint) { pasteOrderParseHint.textContent = "請先貼上顧客傳來的登記清單內容。"; pasteOrderParseHint.classList.remove("hidden"); }
+              return;
+            }
+            var parsed;
+            try {
+              parsed = parsePastedOrderText(text);
+            } catch (e) {
+              if (pasteOrderParseHint) { pasteOrderParseHint.textContent = "解析失敗，請確認格式是否含「商品總計：NT$數字」。"; pasteOrderParseHint.classList.remove("hidden"); }
+              return;
+            }
+            closePasteOrderModal();
+            var subEl = document.getElementById("orderSubtotal");
+            var remarkEl = document.getElementById("orderRemark");
+            setTimeout(function() {
+              openOrderModal(null);
+              if (subEl) subEl.value = String(parsed.subtotal);
+              if (remarkEl) remarkEl.value = parsed.remark;
+              updateOrderTotal();
+            }, 50);
+          });
+        }
 
         ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount"].forEach(function(id) {
           var el = document.getElementById(id);
@@ -2916,6 +3073,10 @@
               total: data.total,
               remark: data.remark
             };
+            if (window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) && window.__lastPastedOrderItems.length) {
+              newOrder.items = window.__lastPastedOrderItems.slice();
+              window.__lastPastedOrderItems = null;
+            }
             orders.unshift(newOrder);
             saveOrders();
             renderOrders();
@@ -2948,7 +3109,7 @@
         renderOrders();
       })();
 
-      updateProductSectionRate();
+      updateFormRateInput();
       loadProducts();
     })();
   </script>
