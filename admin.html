@@ -929,6 +929,10 @@
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">商品主圖</label>
             <input type="url" name="image" id="productImageInput" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="商品主圖網址 https://..." />
+            <div class="mt-2 flex items-center gap-3">
+              <img id="productImagePreview" src="" alt="" class="w-20 h-20 object-cover rounded-lg border border-slate-200 bg-slate-50 hidden" />
+              <span id="productImagePreviewPlaceholder" class="text-xs text-slate-400">輸入網址後顯示預覽</span>
+            </div>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">描述</label>
@@ -1916,7 +1920,7 @@
               stock: p.stock != null ? p.stock : p.庫存,
               status: (p.status || p.狀態 || "上架").toString().trim() || "上架",
               stockType: p.stockType || p.貨況 || p.現貨預購 || "",
-              image: p.image || p.圖片,
+              image: p.image || p.圖片 || p.商品主圖 || p.主圖 || "",
               variantImages: (p.variantImages != null ? p.variantImages : p.規格圖片 != null ? p.規格圖片 : ""),
               variantStock: (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : ""),
               description: p.description || p.描述,
@@ -2246,6 +2250,30 @@
         } else {
           updateCalculatedFields();
         }
+        updateMainImagePreview();
+      }
+
+      function updateMainImagePreview() {
+        var inp = document.getElementById("productImageInput");
+        var img = document.getElementById("productImagePreview");
+        var placeholder = document.getElementById("productImagePreviewPlaceholder");
+        if (!inp || !img || !placeholder) return;
+        var url = (inp.value || "").trim();
+        if (url) {
+          img.src = url;
+          img.classList.remove("hidden");
+          placeholder.classList.add("hidden");
+          img.onerror = function() {
+            img.classList.add("hidden");
+            placeholder.classList.remove("hidden");
+            placeholder.textContent = "圖片無法載入";
+          };
+        } else {
+          img.src = "";
+          img.classList.add("hidden");
+          placeholder.classList.remove("hidden");
+          placeholder.textContent = "輸入網址後顯示預覽";
+        }
       }
 
       function updateCalculatedFields() {
@@ -2454,7 +2482,14 @@
           var marginSelect = document.getElementById("marginSelect");
           if (marginSelect) marginSelect.value = "";
           updateCalculatedFields();
+          updateMainImagePreview();
         });
+      }
+
+      var productImageInputEl = document.getElementById("productImageInput");
+      if (productImageInputEl) {
+        productImageInputEl.addEventListener("input", updateMainImagePreview);
+        productImageInputEl.addEventListener("change", updateMainImagePreview);
       }
 
       var productFormSubmitting = false;

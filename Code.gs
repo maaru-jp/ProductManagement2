@@ -187,13 +187,13 @@ function buildRowFromProduct(sheet, product) {
     }
     row.push(val);
   }
-  // 與 getProducts 一致：用 keyMap 找欄位，試算表標題用中文或英文都能正確寫入
+  // 與 getProducts 一致：用 keyMap 找欄位，試算表標題用中文或英文都能正確寫入（key 可能為 stock 或 Stock）
   var stockCol = -1;
   var variantCol = -1;
   var statusCol = -1;
   for (var i = 0; i < headers.length; i++) {
     var key = keyMap[i];
-    if (key === "stock") stockCol = i;
+    if (key && (key === "stock" || key.toLowerCase() === "stock")) stockCol = i;
     if (key === "variantStock") variantCol = i;
     if (key === "status") statusCol = i;
   }
@@ -204,16 +204,20 @@ function buildRowFromProduct(sheet, product) {
     row[variantCol] = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
   }
   if (stockCol >= 0) {
+    // 庫存總和：有規格庫存時為各規格數量加總，否則用表單的庫存欄位
     var total = 0;
-    if (product.stock !== undefined && product.stock !== null && product.stock !== "") {
-      var n = Number(product.stock);
-      if (isFinite(n)) total = n;
-    }
-    if (product.variantStock !== undefined && product.variantStock !== null && String(product.variantStock).trim() !== "") {
-      var parts = String(product.variantStock).trim().split(/[,，、\s]+/);
+    var variantStockStr = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
+    if (variantStockStr !== "") {
+      var parts = variantStockStr.split(/[,，、\s]+/);
       for (var p = 0; p < parts.length; p++) {
         var num = parseInt(parts[p], 10);
         if (!isNaN(num)) total += num;
+      }
+    } else {
+      var stockVal = product.stock !== undefined && product.stock !== null && product.stock !== "" ? product.stock : (product.Stock !== undefined && product.Stock !== null && product.Stock !== "" ? product.Stock : null);
+      if (stockVal !== null) {
+        var n = Number(stockVal);
+        if (isFinite(n)) total = n;
       }
     }
     row[stockCol] = total;
