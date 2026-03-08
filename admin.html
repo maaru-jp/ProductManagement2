@@ -878,40 +878,12 @@
             <input type="hidden" name="variantStock" id="variantStockValue" value="" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格 *</label>
-            <input type="number" name="price" id="priceInput" min="0" step="1" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：1000" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">匯率</label>
-            <input type="number" name="rate" id="rateInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：0.20（1 日幣＝0.20 台幣）" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">成本(台幣)</label>
-            <div id="costDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（日幣價格 × 匯率）</div>
-            <input type="hidden" name="cost" id="costValue" value="" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">毛利率</label>
-            <select id="marginSelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="">-- 請選擇 --</option>
-              <option value="20">20%</option>
-              <option value="25">25%</option>
-              <option value="30">30%</option>
-              <option value="35">35%</option>
-              <option value="40">40%</option>
-              <option value="custom">自訂售價</option>
-            </select>
+            <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格（選填，試算表用）</label>
+            <input type="number" name="price" id="priceInput" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：1000" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">台幣售價 *</label>
-            <div id="sellingPriceDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（成本 ÷ (1－毛利率)）</div>
-            <input type="number" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm hidden" placeholder="自訂售價" />
-            <input type="hidden" name="sellingPrice" id="sellingPriceValue" value="" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（自動計算：售價－成本）</label>
-            <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（售價－成本）</div>
-            <input type="hidden" name="profit" id="profitValue" value="" />
+            <input type="number" name="sellingPrice" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：350（顧客頁顯示此售價）" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">庫存</label>
@@ -1931,9 +1903,6 @@
               isNew: p.isNew || p.新品 || "",
               isNewListing: p.isNewListing || p.新上架 || ""
             }, { fromEdit: true });
-            var marginSelect = document.getElementById("marginSelect");
-            if (marginSelect && (p.sellingPrice != null || p.售價 != null)) marginSelect.value = "custom";
-            updateSellingPriceByMargin();
           });
         });
         tbody.querySelectorAll(".delete-btn").forEach(function(btn) {
@@ -2234,22 +2203,6 @@
           var si = document.getElementById("statusInput");
           if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
         }
-        if (fromEdit) {
-          var costDisplay = document.getElementById("costDisplay");
-          var costHidden = document.getElementById("costValue");
-          if (costDisplay && costHidden && costHidden.value !== "") costDisplay.textContent = costHidden.value;
-          var sellingDisplay = document.getElementById("sellingPriceDisplay");
-          var sellingHidden = document.getElementById("sellingPriceValue");
-          var sellingInput = document.getElementById("sellingPriceInput");
-          if (sellingDisplay && sellingHidden && sellingHidden.value !== "") {
-            sellingDisplay.textContent = sellingHidden.value;
-            sellingDisplay.classList.remove("hidden");
-            if (sellingInput) sellingInput.classList.add("hidden");
-          }
-          updateProfitDisplay();
-        } else {
-          updateCalculatedFields();
-        }
         updateMainImagePreview();
       }
 
@@ -2276,100 +2229,11 @@
         }
       }
 
-      function updateCalculatedFields() {
-        var priceEl = document.getElementById("priceInput");
-        var rateEl = document.getElementById("rateInput");
-        var priceNum = priceEl && priceEl.value !== "" ? Number(priceEl.value) : NaN;
-        var rateNum = rateEl && rateEl.value !== "" ? Number(rateEl.value) : NaN;
-
-        var costDisplay = document.getElementById("costDisplay");
-        var costHidden = document.getElementById("costValue");
-        if (isFinite(priceNum) && isFinite(rateNum) && rateNum > 0) {
-          var cost = Math.ceil(priceNum * rateNum);
-          costDisplay.textContent = cost;
-          costHidden.value = cost;
-        } else {
-          costDisplay.textContent = "自動計算（日幣價格 × 匯率）";
-          costHidden.value = "";
-        }
-        updateSellingPriceByMargin();
-      }
-
-      function updateSellingPriceByMargin() {
-        var marginSelect = document.getElementById("marginSelect");
-        var costVal = document.getElementById("costValue").value;
-        var margin = marginSelect ? marginSelect.value : "";
-        var sellingDisplay = document.getElementById("sellingPriceDisplay");
-        var sellingInput = document.getElementById("sellingPriceInput");
-        var sellingHidden = document.getElementById("sellingPriceValue");
-
-        if (margin && margin !== "custom" && margin !== "") {
-          var costNum = costVal !== "" ? Number(costVal) : NaN;
-          var marginNum = Number(margin);
-          if (isFinite(costNum) && isFinite(marginNum) && marginNum >= 0 && marginNum < 100) {
-            var selling = Math.ceil(costNum / (1 - marginNum / 100));
-            sellingDisplay.textContent = selling;
-            sellingHidden.value = selling;
-            sellingDisplay.classList.remove("hidden");
-            if (sellingInput) { sellingInput.classList.add("hidden"); sellingInput.value = ""; }
-          } else {
-            sellingDisplay.textContent = "自動計算（成本 ÷ (1－毛利率)）";
-            sellingHidden.value = "";
-            sellingDisplay.classList.remove("hidden");
-            if (sellingInput) sellingInput.classList.add("hidden");
-          }
-        } else {
-          sellingDisplay.classList.add("hidden");
-          if (sellingInput) {
-            sellingInput.classList.remove("hidden");
-            if (sellingHidden.value) sellingInput.value = sellingHidden.value;
-            sellingHidden.value = sellingInput.value;
-          } else {
-            sellingHidden.value = "";
-          }
-        }
-        updateProfitDisplay();
-      }
-
-      function syncSellingPriceFromInput() {
-        var marginSelect = document.getElementById("marginSelect");
-        if (marginSelect && marginSelect.value === "custom") {
-          var sellingInput = document.getElementById("sellingPriceInput");
-          var sellingHidden = document.getElementById("sellingPriceValue");
-          if (sellingInput && sellingHidden) sellingHidden.value = sellingInput.value;
-          updateProfitDisplay();
-        }
-      }
-
-      function updateProfitDisplay() {
-        var sellingVal = document.getElementById("sellingPriceValue").value;
-        var costVal = document.getElementById("costValue").value;
-        var display = document.getElementById("profitDisplay");
-        var hidden = document.getElementById("profitValue");
-        var sellingNum = sellingVal !== "" ? Number(sellingVal) : NaN;
-        var costNum = costVal !== "" ? Number(costVal) : NaN;
-        if (isFinite(sellingNum) && isFinite(costNum)) {
-          var profit = Math.ceil(sellingNum - costNum);
-          display.textContent = profit;
-          display.classList.remove("text-slate-400");
-          if (profit < 0) display.classList.add("text-red-600"); else display.classList.remove("text-red-600");
-          hidden.value = profit;
-        } else {
-          display.textContent = "自動計算（售價－成本）";
-          display.classList.add("text-slate-400");
-          display.classList.remove("text-red-600");
-          hidden.value = "";
-        }
-      }
-
       function getFormValues() {
-        updateCalculatedFields();
-        syncSellingPriceFromInput();
-        updateProfitDisplay();
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
+        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
@@ -2380,8 +2244,6 @@
         if (o.price !== "") o.price = Number(o.price);
         if (o.sellingPrice !== "") o.sellingPrice = o.sellingPrice !== "" ? Number(o.sellingPrice) : "";
         if (o.rate !== "") o.rate = Number(o.rate);
-        if (o.profit !== "") o.profit = Number(o.profit);
-        if (o.cost !== "") o.cost = o.cost !== "" ? Number(o.cost) : "";
         if (o.stock !== "") o.stock = Number(o.stock);
         if (!o.status) o.status = "上架";
         return o;
@@ -2395,10 +2257,7 @@
           setFormValues({});
           var statusInput = document.getElementById("statusInput");
           if (statusInput) statusInput.value = "上架";
-          var marginSelect = document.getElementById("marginSelect");
-          if (marginSelect) marginSelect.value = "";
         }
-        updateCalculatedFields();
       }
 
       function closeModal() {
@@ -2446,16 +2305,7 @@
         });
       }
 
-      function bindAutoCalc() {
-        var priceEl = document.getElementById("priceInput");
-        var rateEl = document.getElementById("rateInput");
-        var marginEl = document.getElementById("marginSelect");
-        if (priceEl) { priceEl.addEventListener("input", updateCalculatedFields); priceEl.addEventListener("change", updateCalculatedFields); }
-        if (rateEl) { rateEl.addEventListener("input", updateCalculatedFields); rateEl.addEventListener("change", updateCalculatedFields); }
-        if (marginEl) { marginEl.addEventListener("change", updateSellingPriceByMargin); }
-        var sellingInputEl = document.getElementById("sellingPriceInput");
-        if (sellingInputEl) { sellingInputEl.addEventListener("input", syncSellingPriceFromInput); sellingInputEl.addEventListener("change", syncSellingPriceFromInput); }
-      }
+      function bindAutoCalc() {}
       bindAutoCalc();
       document.getElementById("btnCancel").addEventListener("click", closeModal);
       document.getElementById("modalBackdrop").addEventListener("click", closeModal);
@@ -2479,9 +2329,6 @@
           updateSubcategoryOptions("");
           var statusInput = document.getElementById("statusInput");
           if (statusInput) statusInput.value = "上架";
-          var marginSelect = document.getElementById("marginSelect");
-          if (marginSelect) marginSelect.value = "";
-          updateCalculatedFields();
           updateMainImagePreview();
         });
       }
@@ -2496,8 +2343,6 @@
       document.getElementById("productForm").addEventListener("submit", function(e) {
         e.preventDefault();
         if (productFormSubmitting) return;
-        updateCalculatedFields();
-        syncSellingPriceFromInput();
         syncVariantToHidden();
         var product = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
@@ -2508,9 +2353,9 @@
           showMessage("請輸入商品名稱", true);
           return;
         }
-        var priceNum = product.price;
-        if (priceNum === "" || priceNum === undefined || priceNum === null || (typeof priceNum === "number" && !Number.isFinite(priceNum))) {
-          showMessage("請輸入日幣價格", true);
+        var sellingNum = product.sellingPrice;
+        if (sellingNum === "" || sellingNum === undefined || sellingNum === null || (typeof sellingNum === "number" && !Number.isFinite(sellingNum))) {
+          showMessage("請輸入台幣售價", true);
           return;
         }
         var rowIndexInput = document.getElementById("editRowIndex").value;
