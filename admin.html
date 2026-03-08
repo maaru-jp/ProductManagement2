@@ -304,10 +304,9 @@
                   <th class="text-left py-3 px-4 font-medium text-slate-600">編號</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">主圖</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">名稱</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">售價(JPY)</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">售價(TW)</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">利潤</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">售價</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">成本</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">利潤</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">庫存</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">上架日期</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
@@ -315,7 +314,7 @@
                 </tr>
               </thead>
               <tbody id="tableBody">
-                <tr><td colspan="11" class="py-8 text-center text-slate-500">載入中...</td></tr>
+                <tr><td colspan="10" class="py-8 text-center text-slate-500">載入中...</td></tr>
               </tbody>
             </table>
           </div>
@@ -878,12 +877,17 @@
             <input type="hidden" name="variantStock" id="variantStockValue" value="" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格（選填，試算表用）</label>
-            <input type="number" name="price" id="priceInput" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：1000" />
-          </div>
-          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">台幣售價 *</label>
             <input type="number" name="sellingPrice" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：350（顧客頁顯示此售價）" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">成本(台幣)（選填）</label>
+            <input type="number" name="cost" id="costValue" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：280" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（自動計算：售價－成本）</label>
+            <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（售價－成本）</div>
+            <input type="hidden" name="profit" id="profitValue" value="" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">庫存</label>
@@ -1782,7 +1786,7 @@
 
       function loadProducts() {
         var tbody = document.getElementById("tableBody");
-        tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
+        tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
         fetch(API_READ)
           .then(function(r) {
             if (!r.ok) throw new Error("HTTP " + r.status + "，請確認試算表已部署為「網頁應用程式」且「誰可以存取」選「任何人」");
@@ -1800,7 +1804,7 @@
             updateSaveAllStatusBtn();
           })
           .catch(function(err) {
-            tbody.innerHTML = "<tr><td colspan=\"12\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
+            tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
           });
       }
 
@@ -1817,7 +1821,7 @@
         });
       }
       if (list.length === 0) {
-        tbody.innerHTML = "<tr><td colspan=\"11\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
+        tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
         return;
       }
       function productByRowIndex(rowIndex) {
@@ -1845,10 +1849,9 @@
       tbody.innerHTML = list.map(function(p, idx) {
         var rowNum = (p._rowIndex != null && p._rowIndex >= 2) ? p._rowIndex : (products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2);
         var name = p.name || p.商品名稱 || "";
-        var price = (p.price != null && p.price !== "") ? p.price : (p.priceTWD != null && p.priceTWD !== "") ? p.priceTWD : (p.日幣價格 != null && p.日幣價格 !== "") ? p.日幣價格 : (p.價格 != null && p.價格 !== "") ? p.價格 : "";
         var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : p.台幣售價 != null ? p.台幣售價 : "";
-        var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
         var cost = p.cost != null ? p.cost : p.成本 != null ? p.成本 : "";
+        var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
         var stock = stockDisplay(p);
         var img = (p.image || p.圖片 || p.商品主圖 || p.主圖 || (p.raw && (p.raw.商品主圖 || p.raw.主圖 || p.raw.image || p.raw.圖片)) || "").toString().trim();
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
@@ -1861,10 +1864,9 @@
             "<td class=\"py-3 px-4 text-slate-500\">" + rowNum + "</td>" +
             "<td class=\"py-3 px-4 w-16\"><img src=\"" + imgSrc + "\" alt=\"\" class=\"w-12 h-12 object-cover rounded border border-slate-200\" onerror=\"this.src='" + placeholderSvg + "'\" loading=\"lazy\" /></td>" +
             "<td class=\"py-3 px-4 font-medium\">" + escapeHtml(name) + "</td>" +
-            "<td class=\"py-3 px-4\">" + escapeHtml(String(price)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(sellingPrice)) + "</td>" +
-            "<td class=\"py-3 px-4\">" + escapeHtml(String(profit)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(cost)) + "</td>" +
+            "<td class=\"py-3 px-4\">" + escapeHtml(String(profit)) + "</td>" +
             "<td class=\"py-3 px-4\">" + escapeHtml(String(stock)) + "</td>" +
             "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(publishedAt) + "</td>" +
             "<td class=\"py-3 px-4\"><div class=\"product-status-track " + (isListed ? "on" : "off") + "\" data-row=\"" + rowNum + "\" data-status=\"" + (isListed ? "上架" : "下架") + "\" title=\"" + (isListed ? "上架中（點擊切換為下架）" : "已下架（點擊切換為上架）") + "\" role=\"button\" tabindex=\"0\"><span class=\"product-status-knob\"></span></div></td>" +
@@ -2203,7 +2205,30 @@
           var si = document.getElementById("statusInput");
           if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
         }
+        updateProfitDisplay();
         updateMainImagePreview();
+      }
+
+      function updateProfitDisplay() {
+        var sellingVal = document.getElementById("sellingPriceInput") ? document.getElementById("sellingPriceInput").value : "";
+        var costVal = document.getElementById("costValue") ? document.getElementById("costValue").value : "";
+        var display = document.getElementById("profitDisplay");
+        var hidden = document.getElementById("profitValue");
+        if (!display || !hidden) return;
+        var sellingNum = sellingVal !== "" ? Number(sellingVal) : NaN;
+        var costNum = costVal !== "" ? Number(costVal) : NaN;
+        if (isFinite(sellingNum) && isFinite(costNum)) {
+          var profit = Math.ceil(sellingNum - costNum);
+          display.textContent = profit;
+          display.classList.remove("text-slate-400");
+          if (profit < 0) display.classList.add("text-red-600"); else display.classList.remove("text-red-600");
+          hidden.value = profit;
+        } else {
+          display.textContent = "自動計算（售價－成本）";
+          display.classList.add("text-slate-400");
+          display.classList.remove("text-red-600");
+          hidden.value = "";
+        }
       }
 
       function updateMainImagePreview() {
@@ -2230,10 +2255,11 @@
       }
 
       function getFormValues() {
+        updateProfitDisplay();
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
+        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
@@ -2244,6 +2270,8 @@
         if (o.price !== "") o.price = Number(o.price);
         if (o.sellingPrice !== "") o.sellingPrice = o.sellingPrice !== "" ? Number(o.sellingPrice) : "";
         if (o.rate !== "") o.rate = Number(o.rate);
+        if (o.profit !== "") o.profit = Number(o.profit);
+        if (o.cost !== "") o.cost = o.cost !== "" ? Number(o.cost) : "";
         if (o.stock !== "") o.stock = Number(o.stock);
         if (!o.status) o.status = "上架";
         return o;
@@ -2305,7 +2333,12 @@
         });
       }
 
-      function bindAutoCalc() {}
+      function bindAutoCalc() {
+        var sellingInputEl = document.getElementById("sellingPriceInput");
+        var costEl = document.getElementById("costValue");
+        if (sellingInputEl) { sellingInputEl.addEventListener("input", updateProfitDisplay); sellingInputEl.addEventListener("change", updateProfitDisplay); }
+        if (costEl) { costEl.addEventListener("input", updateProfitDisplay); costEl.addEventListener("change", updateProfitDisplay); }
+      }
       bindAutoCalc();
       document.getElementById("btnCancel").addEventListener("click", closeModal);
       document.getElementById("modalBackdrop").addEventListener("click", closeModal);
@@ -2329,6 +2362,7 @@
           updateSubcategoryOptions("");
           var statusInput = document.getElementById("statusInput");
           if (statusInput) statusInput.value = "上架";
+          updateProfitDisplay();
           updateMainImagePreview();
         });
       }
@@ -2343,6 +2377,7 @@
       document.getElementById("productForm").addEventListener("submit", function(e) {
         e.preventDefault();
         if (productFormSubmitting) return;
+        updateProfitDisplay();
         syncVariantToHidden();
         var product = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
