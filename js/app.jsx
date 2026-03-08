@@ -1712,7 +1712,6 @@ function CartDrawer({
       lines.push(`商品總計：NT$—`);
     }
     lines.push("");
-    lines.push("已複製完成，請直接回傳到官方LINE登記建立訂單");
 
     return lines.join("\n");
   }
