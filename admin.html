@@ -883,15 +883,29 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">台幣售價 *</label>
-            <input type="number" name="sellingPrice" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：350（可依日幣×匯率自動帶出或手動輸入）" />
+            <input type="number" name="sellingPrice" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：350（日幣×匯率自動帶出或手動輸入）" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">成本(台幣)（選填）</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1">毛利率 %（選填，選後自動帶出利潤與成本）</label>
+            <select id="marginPercentSelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="">請選擇</option>
+              <option value="10">10%</option>
+              <option value="15">15%</option>
+              <option value="20">20%</option>
+              <option value="25">25%</option>
+              <option value="30">30%</option>
+              <option value="35">35%</option>
+              <option value="40">40%</option>
+              <option value="50">50%</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">成本(台幣)（選填，可由毛利率%自動帶出）</label>
             <input type="number" name="cost" id="costValue" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：280" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（自動計算：台幣售價－成本）</label>
-            <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（售價－成本）</div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（自動計算：售價－成本，或依毛利率%顯示）</label>
+            <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算</div>
             <input type="hidden" name="profit" id="profitValue" value="" />
           </div>
           <div>
@@ -2237,6 +2251,27 @@
         if (!Number.isFinite(num) || num < 0) return;
         var twd = Math.round(num * globalRate);
         sellingInp.value = twd;
+        applyMarginFromSelect();
+        updateProfitDisplay();
+      }
+
+      function getMarginPercent() {
+        var sel = document.getElementById("marginPercentSelect");
+        if (!sel || !sel.value) return null;
+        var n = Number(sel.value);
+        return (Number.isFinite(n) && n >= 0 && n <= 100) ? n : null;
+      }
+
+      function applyMarginFromSelect() {
+        var margin = getMarginPercent();
+        var sellingInp = document.getElementById("sellingPriceInput");
+        var costInp = document.getElementById("costValue");
+        if (!sellingInp || !costInp || margin == null) return;
+        var selling = Number(sellingInp.value);
+        if (!Number.isFinite(selling) || selling < 0) return;
+        var profit = Math.round(selling * margin / 100);
+        var cost = selling - profit;
+        costInp.value = cost >= 0 ? cost : "";
         updateProfitDisplay();
       }
 
@@ -2318,6 +2353,8 @@
         document.getElementById("modalTitle").textContent = isEdit ? "編輯商品" : "新增商品";
         document.getElementById("editRowIndex").value = "";
         updateRateHint();
+        var marginSel = document.getElementById("marginPercentSelect");
+        if (marginSel) marginSel.value = "";
         if (!isEdit) {
           setFormValues({});
           var statusInput = document.getElementById("statusInput");
@@ -2374,8 +2411,10 @@
         var priceInputEl = document.getElementById("priceInput");
         var sellingInputEl = document.getElementById("sellingPriceInput");
         var costEl = document.getElementById("costValue");
+        var marginSelectEl = document.getElementById("marginPercentSelect");
         if (priceInputEl) { priceInputEl.addEventListener("input", syncSellingPriceFromPrice); priceInputEl.addEventListener("change", syncSellingPriceFromPrice); }
-        if (sellingInputEl) { sellingInputEl.addEventListener("input", updateProfitDisplay); sellingInputEl.addEventListener("change", updateProfitDisplay); }
+        if (sellingInputEl) { sellingInputEl.addEventListener("input", function() { applyMarginFromSelect(); updateProfitDisplay(); }); sellingInputEl.addEventListener("change", function() { applyMarginFromSelect(); updateProfitDisplay(); }); }
+        if (marginSelectEl) { marginSelectEl.addEventListener("change", applyMarginFromSelect); }
         if (costEl) { costEl.addEventListener("input", updateProfitDisplay); costEl.addEventListener("change", updateProfitDisplay); }
       }
       bindAutoCalc();
