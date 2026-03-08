@@ -877,15 +877,20 @@
             <input type="hidden" name="variantStock" id="variantStockValue" value="" />
           </div>
           <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">日幣價格 (JPY)</label>
+            <input type="number" name="price" id="priceInput" min="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：1200（輸入後依匯率自動帶出台幣售價）" />
+            <span id="rateHint" class="block text-xs text-slate-400 mt-1"></span>
+          </div>
+          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">台幣售價 *</label>
-            <input type="number" name="sellingPrice" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：350（顧客頁顯示此售價）" />
+            <input type="number" name="sellingPrice" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：350（可依日幣×匯率自動帶出或手動輸入）" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">成本(台幣)（選填）</label>
             <input type="number" name="cost" id="costValue" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：280" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（自動計算：售價－成本）</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（自動計算：台幣售價－成本）</label>
             <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">自動計算（售價－成本）</div>
             <input type="hidden" name="profit" id="profitValue" value="" />
           </div>
@@ -1081,6 +1086,7 @@
       }
 
       var products = [];
+      var globalRate = null;
       var pendingStatusChanges = {};
       var searchKeyword = "";
 
@@ -1793,6 +1799,7 @@
             return r.json();
           })
           .then(function(data) {
+            globalRate = (data.rate != null && data.rate !== "" && Number(data.rate) > 0) ? Number(data.rate) : null;
             var raw = data.products || (Array.isArray(data) ? data : []);
             products = raw.map(function(p, i) {
               var q = typeof p === "object" && p !== null ? Object.assign({}, p) : {};
@@ -1802,6 +1809,7 @@
             pendingStatusChanges = {};
             renderTable();
             updateSaveAllStatusBtn();
+            updateRateHint();
           })
           .catch(function(err) {
             tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
@@ -2209,6 +2217,29 @@
         updateMainImagePreview();
       }
 
+      function updateRateHint() {
+        var el = document.getElementById("rateHint");
+        if (!el) return;
+        if (globalRate != null && Number(globalRate) > 0) {
+          el.textContent = "目前匯率：" + globalRate + "（日幣 × 匯率 = 台幣售價）";
+        } else {
+          el.textContent = "請在試算表「設定」工作表設定匯率，或直接輸入台幣售價";
+        }
+      }
+
+      function syncSellingPriceFromPrice() {
+        var priceInp = document.getElementById("priceInput");
+        var sellingInp = document.getElementById("sellingPriceInput");
+        if (!priceInp || !sellingInp || globalRate == null || Number(globalRate) <= 0) return;
+        var jpy = (priceInp.value || "").trim();
+        if (jpy === "") return;
+        var num = Number(jpy);
+        if (!Number.isFinite(num) || num < 0) return;
+        var twd = Math.round(num * globalRate);
+        sellingInp.value = twd;
+        updateProfitDisplay();
+      }
+
       function updateProfitDisplay() {
         var sellingVal = document.getElementById("sellingPriceInput") ? document.getElementById("sellingPriceInput").value : "";
         var costVal = document.getElementById("costValue") ? document.getElementById("costValue").value : "";
@@ -2218,11 +2249,16 @@
         var sellingNum = sellingVal !== "" ? Number(sellingVal) : NaN;
         var costNum = costVal !== "" ? Number(costVal) : NaN;
         if (isFinite(sellingNum) && isFinite(costNum)) {
-          var profit = Math.ceil(sellingNum - costNum);
+          var profit = Math.round(sellingNum - costNum);
           display.textContent = profit;
           display.classList.remove("text-slate-400");
           if (profit < 0) display.classList.add("text-red-600"); else display.classList.remove("text-red-600");
           hidden.value = profit;
+        } else if (isFinite(sellingNum)) {
+          display.textContent = sellingNum + "（請填成本後自動算利潤）";
+          display.classList.add("text-slate-400");
+          display.classList.remove("text-red-600");
+          hidden.value = "";
         } else {
           display.textContent = "自動計算（售價－成本）";
           display.classList.add("text-slate-400");
@@ -2281,6 +2317,7 @@
         document.getElementById("modal").classList.remove("hidden");
         document.getElementById("modalTitle").textContent = isEdit ? "編輯商品" : "新增商品";
         document.getElementById("editRowIndex").value = "";
+        updateRateHint();
         if (!isEdit) {
           setFormValues({});
           var statusInput = document.getElementById("statusInput");
@@ -2334,8 +2371,10 @@
       }
 
       function bindAutoCalc() {
+        var priceInputEl = document.getElementById("priceInput");
         var sellingInputEl = document.getElementById("sellingPriceInput");
         var costEl = document.getElementById("costValue");
+        if (priceInputEl) { priceInputEl.addEventListener("input", syncSellingPriceFromPrice); priceInputEl.addEventListener("change", syncSellingPriceFromPrice); }
         if (sellingInputEl) { sellingInputEl.addEventListener("input", updateProfitDisplay); sellingInputEl.addEventListener("change", updateProfitDisplay); }
         if (costEl) { costEl.addEventListener("input", updateProfitDisplay); costEl.addEventListener("change", updateProfitDisplay); }
       }
@@ -2377,6 +2416,7 @@
       document.getElementById("productForm").addEventListener("submit", function(e) {
         e.preventDefault();
         if (productFormSubmitting) return;
+        syncSellingPriceFromPrice();
         updateProfitDisplay();
         syncVariantToHidden();
         var product = getFormValues();
