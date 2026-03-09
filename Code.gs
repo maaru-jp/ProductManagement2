@@ -350,7 +350,7 @@ function buildKeyMap(headers) {
     ["售價", "售價(TW)", "sellingPrice"],
     ["顧客顯示售價", "customerDisplayPrice"],
     ["利潤", "profit"],
-    ["成本", "cost"],
+    ["成本", "成本(台幣)", "Cost", "cost"],
     ["狀態", "上架狀態", "status", "Status"],
     ["貨況", "stockType"],
     ["庫存", "庫存數量", "stock", "Stock"],

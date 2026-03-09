@@ -2132,7 +2132,7 @@
         var rowNum = (p._rowIndex != null && p._rowIndex >= 2) ? p._rowIndex : (products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2);
         var name = p.name || p.商品名稱 || "";
         var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : p.台幣售價 != null ? p.台幣售價 : "";
-        var cost = p.cost != null ? p.cost : p.成本 != null ? p.成本 : "";
+        var cost = (p.cost !== undefined && p.cost !== null && p.cost !== "") ? p.cost : (p.成本 !== undefined && p.成本 !== null && p.成本 !== "") ? p.成本 : "";
         var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
         var stock = stockDisplay(p);
         var img = (p.image || p.圖片 || p.商品主圖 || p.主圖 || (p.raw && (p.raw.商品主圖 || p.raw.主圖 || p.raw.image || p.raw.圖片)) || "").toString().trim();
@@ -3222,12 +3222,20 @@
             }
             itemsRows += "</table>";
           }
-          var showRemark = (ord.remark != null && String(ord.remark).trim() !== "");
-          if (showRemark && ord.items && ord.items.length > 0) {
-            var remarkTrim = String(ord.remark).trim();
-            var isSameAsItems = remarkTrim.length > 50 && /商品總計|×\s*\d+/.test(remarkTrim);
-            if (isSameAsItems) showRemark = false;
+          function stripItemLinesFromRemark(remarkStr) {
+            if (remarkStr == null || String(remarkStr).trim() === "") return "";
+            var lines = String(remarkStr).split(/\r?\n/);
+            var itemLineRe = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
+            var kept = lines.filter(function(line) {
+              var norm = line.replace(/ＮＴ＄/g, "NT$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
+              if (/商品總計[：:]\s*NT\s*\$?\s*[\d,\s]+/i.test(norm)) return false;
+              if (itemLineRe.test(norm)) return false;
+              return true;
+            });
+            return kept.join("\n").trim();
           }
+          var displayRemark = stripItemLinesFromRemark(ord.remark);
+          var showRemark = displayRemark !== "";
           var pdfLogoUrl = "";
           try { pdfLogoUrl = (localStorage.getItem("maaru_admin_pdf_logo") || "").trim(); } catch (e) {}
           var preorderStr = (ord.preorderDate != null && String(ord.preorderDate).trim() !== "") ? String(ord.preorderDate).trim() : "";
@@ -3274,7 +3282,7 @@
             "<tr><td>折扣</td><td>- NT$ " + (ord.discount != null ? ord.discount : 0) + "</td></tr>" +
             "<tr><td>運費</td><td>NT$ " + (ord.shippingFee != null ? ord.shippingFee : 0) + "</td></tr>" +
             "<tr><td><strong>總計</strong></td><td><strong>NT$ " + (ord.total != null ? ord.total : 0) + "</strong></td></tr></table>" +
-            (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(ord.remark) + "</div></div>" : "") +
+            (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(displayRemark) + "</div></div>" : "") +
             "<h2 style=\"font-size:14px;margin-top:20px;\">收訂金歷程記錄</h2>" +
             "<div class=\"row\"><div class=\"value\" style=\"white-space:pre-wrap;min-height:3em;\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div></div>" +
             "</body></html>";
@@ -3344,7 +3352,15 @@
             if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty, price: unitPrice });
           }
           window.__lastPastedOrderItems = items.length ? items : null;
-          return { subtotal: subtotal, remark: t };
+          var itemLineRe = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
+          var remarkOnlyLines = t.split(/\r?\n/).filter(function(line) {
+            var norm = line.replace(/ＮＴ＄/g, "NT$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
+            if (/商品總計[：:]\s*NT\s*\$?\s*[\d,\s]+/i.test(norm)) return false;
+            if (itemLineRe.test(norm)) return false;
+            return true;
+          });
+          var remarkOnly = remarkOnlyLines.join("\n").trim();
+          return { subtotal: subtotal, remark: remarkOnly };
         }
         var btnPasteOrder = document.getElementById("btnPasteOrder");
         if (btnPasteOrder) btnPasteOrder.addEventListener("click", function() { openPasteOrderModal(); });
