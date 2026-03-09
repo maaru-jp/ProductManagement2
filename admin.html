@@ -2954,14 +2954,16 @@
           var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
           var itemsRows = "";
           if (ord.items && Array.isArray(ord.items) && ord.items.length > 0) {
-            itemsRows = "<h2 style=\"font-size:14px;margin-top:20px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>價格</th><th>數量</th></tr>";
+            itemsRows = "<h2 style=\"font-size:14px;margin-top:20px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>價格</th><th>數量</th><th>金額</th></tr>";
             for (var i = 0; i < ord.items.length; i++) {
               var it = ord.items[i];
               var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
-              var qty = (it.qty != null && !isNaN(it.qty)) ? it.qty : 0;
-              var priceVal = (it.price != null && !isNaN(it.price)) ? it.price : null;
-              var priceCell = priceVal !== null ? "NT$ " + (Number.isInteger(priceVal) ? priceVal : priceVal.toFixed(0)) : "—";
-              itemsRows += "<tr><td>" + escapeHtml(name || "—") + "</td><td>" + escapeHtml(priceCell) + "</td><td>" + escapeHtml(String(qty)) + "</td></tr>";
+              var qty = (it.qty != null && !isNaN(it.qty)) ? Number(it.qty) : 0;
+              var priceNum = (it.price != null && it.price !== "" && !isNaN(Number(it.price))) ? Number(it.price) : null;
+              var priceCell = priceNum !== null ? "NT$ " + (Number.isInteger(priceNum) ? priceNum : Math.round(priceNum)) : "—";
+              var lineTotal = (priceNum !== null && qty > 0) ? (priceNum * qty) : null;
+              var lineTotalCell = lineTotal !== null ? "NT$ " + (Number.isInteger(lineTotal) ? lineTotal : Math.round(lineTotal)) : "—";
+              itemsRows += "<tr><td>" + escapeHtml(name || "—") + "</td><td>" + escapeHtml(priceCell) + "</td><td>" + escapeHtml(String(qty)) + "</td><td>" + escapeHtml(lineTotalCell) + "</td></tr>";
             }
             itemsRows += "</table>";
           }
@@ -3067,22 +3069,24 @@
         }
         function parsePastedOrderText(text) {
           var t = (text || "").trim();
+          var normalized = t.replace(/ＮＴ＄/g, "NT$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
           var subtotal = 0;
-          var match = t.match(/商品總計[：:]\s*NT\s*\$?\s*([\d,]+)/i);
+          var match = normalized.match(/商品總計[：:]\s*NT\s*\$?\s*([\d,\s]+)/i);
           if (match) {
-            var numStr = (match[1] || "").replace(/,/g, "");
+            var numStr = (match[1] || "").replace(/[\s,]/g, "");
             var n = parseInt(numStr, 10);
             if (!isNaN(n) && n >= 0) subtotal = n;
           }
           var items = [];
-          var lineRe = /^(.+?)\s+×\s*(\d+)\s+NT\$([\d,.]+)/gm;
+          var lineRe = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/gm;
           var lineMatch;
-          while ((lineMatch = lineRe.exec(t)) !== null) {
+          while ((lineMatch = lineRe.exec(normalized)) !== null) {
             var lineName = (lineMatch[1] || "").trim();
             var qty = parseInt(lineMatch[2], 10);
-            var priceStr = (lineMatch[3] || "").replace(/,/g, "");
-            var price = (priceStr !== "" && !isNaN(parseFloat(priceStr))) ? parseFloat(priceStr) : null;
-            if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty, price: price });
+            var amountStr = (lineMatch[3] || "").replace(/,/g, "").replace(/\s/g, "");
+            var lineTotal = (amountStr !== "" && !isNaN(parseFloat(amountStr))) ? parseFloat(amountStr) : null;
+            var unitPrice = (lineTotal != null && qty > 0) ? Math.round(lineTotal / qty) : null;
+            if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty, price: unitPrice });
           }
           window.__lastPastedOrderItems = items.length ? items : null;
           return { subtotal: subtotal, remark: t };
