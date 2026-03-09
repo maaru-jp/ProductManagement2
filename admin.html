@@ -2715,13 +2715,21 @@
           o[key] = el ? el.value : "";
         });
         var suggestedNum = getSuggestedPriceNumber();
-        o.customerDisplayPrice = (suggestedNum != null && suggestedNum !== "") ? String(suggestedNum) : "";
+        if (suggestedNum != null && suggestedNum !== "") {
+          o.customerDisplayPrice = String(suggestedNum);
+        } else if ((!o.customerDisplayPrice || o.customerDisplayPrice === "") && o.sellingPrice !== "" && o.sellingPrice !== undefined) {
+          o.customerDisplayPrice = String(o.sellingPrice);
+        }
+        if (suggestedNum != null && Number.isFinite(suggestedNum)) {
+          o.sellingPrice = suggestedNum;
+        }
         ["hot", "recommended", "isNew", "isNewListing"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el && el.checked ? "Y" : "";
         });
         if (o.price !== "") o.price = Number(o.price);
-        if (o.sellingPrice !== "") o.sellingPrice = o.sellingPrice !== "" ? Number(o.sellingPrice) : "";
+        if (o.sellingPrice !== "" && o.sellingPrice !== undefined) o.sellingPrice = Number(o.sellingPrice);
+        else if (o.sellingPrice === "" || o.sellingPrice === undefined) o.sellingPrice = "";
         if (o.rate !== "") o.rate = Number(o.rate);
         if (o.profit !== "") o.profit = Number(o.profit);
         if (o.cost !== "") o.cost = o.cost !== "" ? Number(o.cost) : "";
@@ -2878,7 +2886,7 @@
         }
         var sellingNum = product.sellingPrice;
         if (sellingNum === "" || sellingNum === undefined || sellingNum === null || (typeof sellingNum === "number" && !Number.isFinite(sellingNum))) {
-          showMessage("請輸入台幣售價", true);
+          showMessage("請輸入日幣、匯率並選擇目標毛利 %（會帶入建議售價），或直接輸入台幣售價", true);
           return;
         }
         var rowIndexInput = document.getElementById("editRowIndex").value;
