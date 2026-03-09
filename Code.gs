@@ -348,6 +348,7 @@ function buildKeyMap(headers) {
     ["子分類", "subcategory"],
     ["角色", "character"],
     ["售價", "售價(TW)", "sellingPrice"],
+    ["顧客顯示售價", "customerDisplayPrice"],
     ["利潤", "profit"],
     ["成本", "cost"],
     ["狀態", "上架狀態", "status", "Status"],

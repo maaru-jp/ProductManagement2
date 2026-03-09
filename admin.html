@@ -924,6 +924,15 @@
             <button type="button" id="btnApplySuggestedPrice" class="mt-1 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-100 text-amber-800 text-sm hover:bg-amber-200 hidden">帶入為台幣售價</button>
           </div>
           <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">顧客頁顯示金額</label>
+            <select id="customerPriceDisplaySelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="selling">台幣售價（表單上的實際售價）</option>
+              <option value="suggested">建議售價（依目標毛利 % 計算，存檔時會寫入）</option>
+            </select>
+            <p class="text-xs text-slate-400 mt-1">選「建議售價」時，顧客頁會顯示依目標毛利 % 算出的金額（存檔時會寫入試算表「顧客顯示售價」欄，若無該欄請在試算表新增一欄）。選「台幣售價」則顯示表單的台幣售價。</p>
+            <input type="hidden" name="customerDisplayPrice" id="customerDisplayPriceValue" value="" />
+          </div>
+          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">利潤（選目標毛利 % 時為預估；實際售價會顯示下方利潤分析）</label>
             <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">請選擇目標毛利 % 或輸入實際售價</div>
             <input type="hidden" name="profit" id="profitValue" value="" />
@@ -2183,7 +2192,8 @@
               hot: p.hot || p.熱銷 || "",
               recommended: p.recommended || p.推薦 || "",
               isNew: p.isNew || p.新品 || "",
-              isNewListing: p.isNewListing || p.新上架 || ""
+              isNewListing: p.isNewListing || p.新上架 || "",
+              customerDisplayPrice: (p.customerDisplayPrice != null && p.customerDisplayPrice !== "" ? p.customerDisplayPrice : (p.顧客顯示售價 != null && p.顧客顯示售價 !== "" ? p.顧客顯示售價 : ""))
             }, { fromEdit: true });
           });
         });
@@ -2486,6 +2496,11 @@
           var si = document.getElementById("statusInput");
           if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
         }
+        var customerDisplayVal = (obj && (obj.customerDisplayPrice != null && obj.customerDisplayPrice !== "" ? obj.customerDisplayPrice : (obj.顧客顯示售價 != null && obj.顧客顯示售價 !== "" ? obj.顧客顯示售價 : "")));
+        var customerPriceSel = document.getElementById("customerPriceDisplaySelect");
+        var customerDisplayInp = document.getElementById("customerDisplayPriceValue");
+        if (customerPriceSel) customerPriceSel.value = customerDisplayVal ? "suggested" : "selling";
+        if (customerDisplayInp) customerDisplayInp.value = customerDisplayVal != null ? String(customerDisplayVal) : "";
         updateProfitDisplay();
         updateSuggestedPriceDisplay();
         updateProfitAnalysis();
@@ -2610,6 +2625,17 @@
         updateProfitAnalysis();
       }
 
+      function getSuggestedPriceNumber() {
+        var priceInp = document.getElementById("priceInput");
+        var margin = getMarginPercent();
+        var jpy = (priceInp && priceInp.value) ? Number(priceInp.value) : NaN;
+        var rate = getFormRate();
+        if (rate == null && globalRate != null) rate = globalRate;
+        if (margin == null || margin >= 100 || !Number.isFinite(jpy) || jpy < 0 || rate == null || rate <= 0) return null;
+        var costTwd = jpy * rate;
+        return Math.ceil(costTwd / (1 - margin / 100));
+      }
+
       function updateSuggestedPriceDisplay() {
         var priceInp = document.getElementById("priceInput");
         var margin = getMarginPercent();
@@ -2637,6 +2663,9 @@
           btn.classList.remove("hidden");
           btn.setAttribute("data-suggested", suggested);
         }
+        var sel = document.getElementById("customerPriceDisplaySelect");
+        var hiddenVal = document.getElementById("customerDisplayPriceValue");
+        if (sel && sel.value === "suggested" && hiddenVal) hiddenVal.value = suggested;
       }
 
       function updateProfitAnalysis() {
@@ -2691,10 +2720,17 @@
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt"].forEach(function(key) {
+        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "rate", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt", "customerDisplayPrice"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
+        var customerPriceSel = document.getElementById("customerPriceDisplaySelect");
+        if (customerPriceSel && customerPriceSel.value === "suggested") {
+          var suggestedNum = getSuggestedPriceNumber();
+          o.customerDisplayPrice = (suggestedNum != null && suggestedNum !== "") ? String(suggestedNum) : (o.customerDisplayPrice || "");
+        } else {
+          o.customerDisplayPrice = "";
+        }
         ["hot", "recommended", "isNew", "isNewListing"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el && el.checked ? "Y" : "";
@@ -2705,6 +2741,7 @@
         if (o.profit !== "") o.profit = Number(o.profit);
         if (o.cost !== "") o.cost = o.cost !== "" ? Number(o.cost) : "";
         if (o.stock !== "") o.stock = Number(o.stock);
+        if (o.customerDisplayPrice !== "") o.customerDisplayPrice = Number(o.customerDisplayPrice) || "";
         if (!o.status) o.status = "上架";
         return o;
       }
@@ -2795,6 +2832,11 @@
           sellingInputEl.addEventListener("change", function() { applyMarginFromSelect(); updateProfitDisplay(); updateProfitAnalysis(); });
         }
         if (marginSelectEl) { marginSelectEl.addEventListener("change", function() { applyMarginFromSelect(); updateSuggestedPriceDisplay(); }); }
+        var customerPriceSelEl = document.getElementById("customerPriceDisplaySelect");
+        if (customerPriceSelEl) customerPriceSelEl.addEventListener("change", function() {
+          if (this.value === "suggested") updateSuggestedPriceDisplay();
+          else document.getElementById("customerDisplayPriceValue").value = "";
+        });
         if (costEl) { costEl.addEventListener("input", function() { updateProfitDisplay(); updateProfitAnalysis(); }); costEl.addEventListener("change", function() { updateProfitDisplay(); updateProfitAnalysis(); }); }
         var btnApply = document.getElementById("btnApplySuggestedPrice");
         if (btnApply) btnApply.addEventListener("click", function() {
