@@ -300,6 +300,7 @@
         </div>
 
         <div id="message" class="mb-3 text-sm hidden"></div>
+        <p class="mb-3 text-xs text-slate-500">每個商品的「狀態」可點擊開關切換<strong>上架</strong>／<strong>下架</strong>：上架時顧客頁會顯示該商品，下架時顧客頁不會顯示。切換後請按右上方「儲存所有變更」寫入試算表後才會永久生效。</p>
 
         <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div class="overflow-x-auto">
@@ -314,7 +315,7 @@
                   <th class="text-left py-3 px-4 font-medium text-slate-600">利潤</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">庫存</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">上架日期</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600" title="點擊開關切換上架／下架">狀態（上架/下架）</th>
                   <th class="text-left py-3 px-4 font-medium text-slate-600">操作</th>
                 </tr>
               </thead>
@@ -851,6 +852,7 @@
               <label class="block text-xs font-medium text-slate-500 mb-1">分類</label>
               <select name="category" id="productCategorySelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
                 <option value="">-- 請選擇 --</option>
+                <option value="預購商品">預購商品</option>
                 <option value="絨毛玩偶">絨毛玩偶</option>
                 <option value="公仔玩具">公仔玩具</option>
                 <option value="包包時尚小物">包包時尚小物</option>
@@ -2349,6 +2351,7 @@
       }
 
       var SUBCATEGORY_BY_CATEGORY = {
+        "預購商品": ["2026年03月"],
         "絨毛玩偶": ["玩偶公仔", "吊飾娃"],
         "公仔玩具": ["食玩盲盒", "公仔吊飾"],
         "包包時尚小物": ["托特包", "肩包", "後背包", "購物環保袋", "皮夾", "零錢包", "票卡收納夾", "化妝包", "多功能收納包", "束口袋"],
