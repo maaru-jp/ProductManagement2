@@ -352,9 +352,10 @@ function useProducts() {
             const normalized = rows
               .map((row, idx) => normalizeItem(row, idx))
               .filter((x) => x && x.name);
-            const onlyListed = normalized.filter(
-              (x) => (x.status || "").trim() === "" || (x.status || "").trim().toLowerCase() === "上架"
-            );
+            const onlyListed = normalized.filter((x) => {
+              const s = (x.status ?? x.狀態 ?? "").toString().trim();
+              return s !== "下架";
+            });
             try {
               const hiddenRaw = localStorage.getItem("maaru_admin_hidden_product_names");
               const hiddenNames = hiddenRaw ? JSON.parse(hiddenRaw) : [];
