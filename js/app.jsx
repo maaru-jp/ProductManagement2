@@ -389,16 +389,17 @@ function useProducts() {
     };
     document.addEventListener("visibilitychange", onVisible);
 
-    // 後台在同站另一分頁切換狀態開關時，localStorage 變更會觸發此事件，重新套用隱藏名單
+    // 後台在同站另一分頁變更時，localStorage 會觸發此事件：隱藏名單、商品/庫存更新後顧客頁立即重抓
     const onStorage = (e) => {
-      if (e.key === "maaru_admin_hidden_product_names" && fetchDataRef.current) fetchDataRef.current(true);
+      if (!fetchDataRef.current) return;
+      if (e.key === "maaru_admin_hidden_product_names" || e.key === "maaru_products_updated") fetchDataRef.current(true);
     };
     window.addEventListener("storage", onStorage);
 
-    // 每 15 秒輪詢一次（帶快取破壞參數），後台編輯庫存/上架下架後顧客頁會顯示最新
+    // 每 5 秒輪詢一次（帶快取破壞參數），後台編輯庫存/上架下架後顧客頁會較快顯示最新
     const interval = setInterval(() => {
       if (fetchDataRef.current) fetchDataRef.current(true);
-    }, 15000);
+    }, 5000);
 
     return () => {
       cancelled = true;
@@ -682,16 +683,8 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
         ].join(" ")}
         aria-label="商品分類選單"
       >
-        {/* Header：關閉鈕加大（手機至少 44px 觸控）、右側品牌名 */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-w-[44px] min-h-[44px] w-12 h-12 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 active:bg-slate-100 flex items-center justify-center transition-colors text-lg"
-            aria-label="關閉選單"
-          >
-            ✕
-          </button>
+        {/* Header：右側品牌名（關閉請點擊遮罩或底部「關閉選單」） */}
+        <div className="flex items-center justify-end p-4 border-b border-slate-200 shrink-0">
           <span className="text-sm font-semibold text-slate-900 tracking-wide uppercase">MENU</span>
         </div>
 
