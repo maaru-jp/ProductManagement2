@@ -376,5 +376,11 @@ function buildKeyMap(headers) {
       if (map[c]) break;
     }
   }
+  for (var c = 0; c < headers.length; c++) {
+    if (map[c]) continue;
+    var h = (headers[c] || "").toString().trim();
+    if (h.indexOf("成本") >= 0) map[c] = "cost";
+    else if (h.indexOf("利潤") >= 0) map[c] = "profit";
+  }
   return map;
 }

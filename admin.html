@@ -2133,7 +2133,7 @@
         var name = p.name || p.商品名稱 || "";
         var sellingPrice = p.sellingPrice != null ? p.sellingPrice : p.售價 != null ? p.售價 : p.台幣售價 != null ? p.台幣售價 : "";
         var cost = (p.cost !== undefined && p.cost !== null && p.cost !== "") ? p.cost : (p.成本 !== undefined && p.成本 !== null && p.成本 !== "") ? p.成本 : "";
-        var profit = p.profit != null ? p.profit : p.利潤 != null ? p.利潤 : "";
+        var profit = (p.profit !== undefined && p.profit !== null && p.profit !== "") ? p.profit : (p.利潤 !== undefined && p.利潤 !== null && p.利潤 !== "") ? p.利潤 : "";
         var stock = stockDisplay(p);
         var img = (p.image || p.圖片 || p.商品主圖 || p.主圖 || (p.raw && (p.raw.商品主圖 || p.raw.主圖 || p.raw.image || p.raw.圖片)) || "").toString().trim();
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
@@ -3000,6 +3000,21 @@
           try { localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(orders)); } catch (err) {}
         }
 
+        function getNextOrderId() {
+          var maxNum = 0;
+          var ordNumRe = /^ORD(\d{1,6})$/i;
+          for (var i = 0; i < orders.length; i++) {
+            var m = (orders[i].id || "").toString().match(ordNumRe);
+            if (m) {
+              var n = parseInt(m[1], 10);
+              if (!isNaN(n) && n >= 1 && n <= 999999 && n > maxNum) maxNum = n;
+            }
+          }
+          var next = maxNum + 1;
+          var numStr = ("000000" + next).slice(-6);
+          return "ORD" + numStr;
+        }
+
         function showOrderMessage(text, isError) {
           if (!orderMessage) return;
           orderMessage.textContent = text;
@@ -3460,7 +3475,7 @@
             }
           } else {
             var newOrder = {
-              id: "ORD" + Date.now(),
+              id: getNextOrderId(),
               date: new Date().toISOString(),
               status: "待處理",
               customerName: data.customerName,
