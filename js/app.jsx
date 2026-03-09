@@ -1146,11 +1146,12 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
     // products 已僅含「上架」商品；點「全部」時無 category/subcategory/character，顯示全部
     let result = products;
 
-    // 左側欄「今日上架」：只顯示上架日期為今天的商品
+    // 左側欄「今日上架」：只顯示試算表有勾選「新上架」的商品
     if (newTodayFromUrl) {
-      result = result.filter((p) =>
-        isPublishedToday(p?.publishedAt ?? p?.上架日期 ?? p?.上架時間 ?? p?.raw?.上架日期 ?? p?.raw?.publishedAt)
-      );
+      result = result.filter((p) => {
+        const flag = p?.isNewListing ?? p?.新上架 ?? p?.raw?.isNewListing ?? p?.raw?.新上架;
+        return flag === true || String(flag).trim().toLowerCase() === "y" || String(flag).trim().toLowerCase() === "true" || String(flag).trim() === "1";
+      });
       return result;
     }
 
@@ -1292,7 +1293,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
         <div className="text-center text-sm text-slate-500 space-y-1">
           <p>目前沒有可顯示的商品。</p>
           {newTodayFromUrl ? (
-            <p className="text-xs">今日尚無上架商品，請試算表「上架日期」填寫今天日期（YYYY-MM-DD）並儲存。</p>
+            <p className="text-xs">尚無「今日上架」商品，請在試算表勾選「新上架」欄位並儲存。</p>
           ) : characterFromUrl ? (
             <p className="text-xs">
               篩選角色「{characterFromUrl}」：依商品「規格」顯示，試算表「規格」欄需包含該名稱（如 酷洛米,大耳狗 即含酷洛米）。
