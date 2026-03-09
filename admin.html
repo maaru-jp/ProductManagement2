@@ -218,9 +218,14 @@
             <svg class="section-title-icon text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
             總覽報表
           </h2>
-          <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
-            前往官網 ↗
-          </a>
+          <div class="flex items-center gap-3">
+            <button type="button" id="btnExportReportCsv" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
+              匯出 CSV
+            </button>
+            <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
+              前往官網 ↗
+            </a>
+          </div>
         </div>
 
         <div class="mb-6">
@@ -898,9 +903,10 @@
             <input type="number" name="sellingPrice" id="sellingPriceInput" min="0" step="0.01" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：350（日幣×匯率自動帶出或手動輸入）" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">毛利率 %（自訂選擇後顯示利潤）</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1">目標毛利 %（選擇後顯示建議售價）</label>
             <select id="marginPercentSelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
               <option value="">請選擇</option>
+              <option value="5">5%</option>
               <option value="10">10%</option>
               <option value="15">15%</option>
               <option value="20">20%</option>
@@ -908,13 +914,23 @@
               <option value="30">30%</option>
               <option value="35">35%</option>
               <option value="40">40%</option>
+              <option value="45">45%</option>
               <option value="50">50%</option>
             </select>
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（選毛利率 % 後自動顯示）</label>
-            <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">請選擇毛利率 %</div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">建議售價（依目標毛利 %，成本＝日幣×匯率）</label>
+            <div id="suggestedPriceDisplay" class="w-full rounded-lg border border-slate-200 bg-amber-50 px-3 py-2 text-sm text-slate-700">請輸入日幣、匯率並選擇目標毛利 %</div>
+            <button type="button" id="btnApplySuggestedPrice" class="mt-1 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-100 text-amber-800 text-sm hover:bg-amber-200 hidden">帶入為台幣售價</button>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">利潤（選目標毛利 % 時為預估；實際售價會顯示下方利潤分析）</label>
+            <div id="profitDisplay" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">請選擇目標毛利 % 或輸入實際售價</div>
             <input type="hidden" name="profit" id="profitValue" value="" />
+          </div>
+          <div id="profitAnalysisBlock" class="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-2">
+            <div class="text-sm font-medium text-slate-700">利潤分析（此商品賺多少）</div>
+            <div id="profitAnalysisContent" class="text-sm text-slate-600">請輸入日幣、匯率與實際台幣售價後顯示</div>
           </div>
           <div class="hidden">
             <label class="block text-xs font-medium text-slate-500 mb-1">成本(台幣)（選填）</label>
@@ -1198,28 +1214,136 @@
         else setNavActive("navProducts");
       }
 
-      function updateReportKPI() {
-        var totalCost = 0, totalProfit = 0;
-        products.forEach(function(p) {
-          var cost = p.cost != null ? p.cost : (p.成本 != null ? p.成本 : 0);
-          var profit = p.profit != null ? p.profit : (p.利潤 != null ? p.利潤 : 0);
-          if (typeof cost === "number" && isFinite(cost)) totalCost += cost;
-          if (typeof profit === "number" && isFinite(profit)) totalProfit += profit;
+      function getReportData() {
+        var orders = [];
+        try {
+          var saved = localStorage.getItem("adminOrders");
+          if (saved) orders = JSON.parse(saved);
+          if (!Array.isArray(orders)) orders = [];
+        } catch (e) { orders = []; }
+        var rangeVal = (document.getElementById("reportRange") && document.getElementById("reportRange").value) ? document.getElementById("reportRange").value : "all";
+        var rangeLabels = { all: "全部", today: "今日", "7days": "近7天", month: "本月", year: "今年", custom: "自訂範圍" };
+        var rangeLabel = rangeLabels[rangeVal] || rangeVal;
+        var dateStart = null, dateEnd = null;
+        var now = new Date();
+        if (rangeVal === "today") {
+          dateStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          dateEnd = new Date(dateStart.getTime() + 86400000);
+        } else if (rangeVal === "7days") {
+          dateEnd = new Date(now.getTime() + 86400000);
+          dateStart = new Date(dateEnd.getTime() - 7 * 86400000);
+        } else if (rangeVal === "month") {
+          dateStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          dateEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        } else if (rangeVal === "year") {
+          dateStart = new Date(now.getFullYear(), 0, 1);
+          dateEnd = new Date(now.getFullYear() + 1, 0, 1);
+        } else if (rangeVal === "custom") {
+          var ds = document.getElementById("reportDateStart");
+          var de = document.getElementById("reportDateEnd");
+          if (ds && ds.value) dateStart = new Date(ds.value);
+          if (de && de.value) dateEnd = new Date(de.value);
+          if (dateEnd) dateEnd.setHours(23, 59, 59, 999);
+        }
+        function orderInRange(ord) {
+          if (!dateStart && !dateEnd) return true;
+          var d = ord.date ? new Date(ord.date) : null;
+          if (!d || isNaN(d.getTime())) return false;
+          if (dateStart && d < dateStart) return false;
+          if (dateEnd && d >= dateEnd) return false;
+          return true;
+        }
+        function norm(s) { return (s != null ? String(s).trim() : "").replace(/\s+/g, " "); }
+        function itemKey(it) {
+          var k = (it.lineName != null ? String(it.lineName).trim() : "") || ((it.name || "") + " " + (it.variant || "")).trim();
+          return norm(k) || "—";
+        }
+        function productKey(p) { return norm((p.name || "") + " " + (p.variant || "")); }
+        function findProductCost(itemName) {
+          var key = norm(itemName);
+          if (!key || key === "—") return null;
+          for (var i = 0; i < products.length; i++) {
+            var p = products[i];
+            var pk = productKey(p);
+            if (pk && (key === pk || key.indexOf(pk) >= 0 || pk.indexOf(key) >= 0)) {
+              var c = p.cost != null ? p.cost : (p.成本 != null ? p.成本 : null);
+              if (typeof c === "number" && isFinite(c)) return c;
+              return 0;
+            }
+          }
+          return null;
+        }
+        var revenue = 0, estimatedCost = 0, totalOrders = 0, pendingOrders = 0, confirmedOrders = [];
+        orders.forEach(function(ord) {
+          if (!orderInRange(ord)) return;
+          totalOrders += 1;
+          if ((ord.status || "").trim() === "待處理") pendingOrders += 1;
+          if ((ord.status || "").trim() === "已確認") {
+            var t = ord.total != null ? Number(ord.total) : 0;
+            if (isFinite(t)) revenue += t;
+            confirmedOrders.push(ord);
+            if (ord.items && Array.isArray(ord.items)) {
+              for (var j = 0; j < ord.items.length; j++) {
+                var it = ord.items[j];
+                var qty = (it.qty != null && !isNaN(it.qty)) ? Math.max(0, Number(it.qty)) : 0;
+                if (qty <= 0) continue;
+                var costPer = findProductCost(itemKey(it));
+                if (costPer !== null) estimatedCost += costPer * qty;
+              }
+            }
+          }
         });
-        var revenue = 0;
-        var marginPct = (revenue > 0 && totalCost >= 0) ? Math.round((revenue - totalCost) / revenue * 100) : 0;
+        var estimatedProfit = Math.max(0, Math.round(revenue - estimatedCost));
+        var marginPct = (revenue > 0) ? Math.round((revenue - estimatedCost) / revenue * 100) : 0;
+        return { rangeLabel: rangeLabel, revenue: Math.round(revenue), estimatedCost: Math.round(estimatedCost), estimatedProfit: estimatedProfit, marginPct: marginPct, totalOrders: totalOrders, pendingOrders: pendingOrders, confirmedOrders: confirmedOrders };
+      }
+
+      function updateReportKPI() {
+        var data = getReportData();
         var elRevenue = document.getElementById("kpiRevenue");
         var elCost = document.getElementById("kpiCost");
         var elProfit = document.getElementById("kpiProfit");
         var elMargin = document.getElementById("kpiMargin");
         var elOrders = document.getElementById("kpiOrders");
         var elPending = document.getElementById("kpiPending");
-        if (elRevenue) elRevenue.textContent = revenue.toLocaleString("zh-TW");
-        if (elCost) elCost.textContent = totalCost.toLocaleString("zh-TW");
-        if (elProfit) elProfit.textContent = totalProfit.toLocaleString("zh-TW");
-        if (elMargin) elMargin.textContent = marginPct;
-        if (elOrders) elOrders.textContent = "0";
-        if (elPending) elPending.textContent = "0";
+        if (elRevenue) elRevenue.textContent = data.revenue.toLocaleString("zh-TW");
+        if (elCost) elCost.textContent = data.estimatedCost.toLocaleString("zh-TW");
+        if (elProfit) elProfit.textContent = data.estimatedProfit.toLocaleString("zh-TW");
+        if (elMargin) elMargin.textContent = data.marginPct;
+        if (elOrders) elOrders.textContent = String(data.totalOrders);
+        if (elPending) elPending.textContent = String(data.pendingOrders);
+      }
+
+      function exportReportCsv() {
+        var data = getReportData();
+        var esc = function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+        var rows = [
+          "總覽報表",
+          "統計範圍," + esc(data.rangeLabel),
+          "",
+          "項目,數值",
+          "已確認總營業額," + data.revenue,
+          "預估總成本," + data.estimatedCost,
+          "預估毛利," + data.estimatedProfit,
+          "毛利率%," + data.marginPct,
+          "訂單數," + data.totalOrders,
+          "待處理," + data.pendingOrders,
+          "",
+          "已確認訂單明細",
+          "訂單編號,日期,狀態,客戶姓名,電話,總計"
+        ];
+        data.confirmedOrders.forEach(function(ord) {
+          var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+          rows.push([ord.id || "", dateStr, ord.status || "", ord.customerName || "", (ord.phone || "").replace(/"/g, '""'), ord.total != null ? ord.total : ""].join(","));
+        });
+        var csv = "\uFEFF" + rows.join("\r\n");
+        var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "總覽報表-" + (data.rangeLabel || "全部").replace(/\s/g, "") + "-" + new Date().toISOString().slice(0, 10) + ".csv";
+        a.click();
+        URL.revokeObjectURL(a.href);
+        if (typeof showMessage === "function") showMessage("已匯出 CSV");
       }
 
       document.getElementById("navReports").addEventListener("click", function(e) {
@@ -1756,14 +1880,6 @@
         setGlobalSelected(true);
       })();
 
-      document.getElementById("navPurchases").addEventListener("click", function(e) {
-        e.preventDefault();
-        showSection("sectionPurchases");
-        updatePurchaseDates();
-        updatePurchaseQuickBtns("today");
-        updatePurchaseKPI();
-      });
-
       function setPurchaseDateRange(range) {
         var today = new Date();
         var start = new Date(today);
@@ -1826,6 +1942,14 @@
         var dEnd = document.getElementById("purchaseDateEnd");
         if (dStart) dStart.addEventListener("change", updatePurchaseKPI);
         if (dEnd) dEnd.addEventListener("change", updatePurchaseKPI);
+        var navPurchases = document.getElementById("navPurchases");
+        if (navPurchases) navPurchases.addEventListener("click", function(e) {
+          e.preventDefault();
+          showSection("sectionPurchases");
+          updatePurchaseDates();
+          updatePurchaseQuickBtns("today");
+          updatePurchaseKPI();
+        });
       })();
 
       function updatePurchaseKPI() {
@@ -1906,6 +2030,8 @@
         var el = document.getElementById(id);
         if (el) el.addEventListener("change", updateReportKPI);
       });
+      var btnExportReportCsv = document.getElementById("btnExportReportCsv");
+      if (btnExportReportCsv) btnExportReportCsv.addEventListener("click", function() { exportReportCsv(); });
 
       function showMessage(text, isError) {
         var toaster = document.getElementById("notificationToaster");
@@ -2201,6 +2327,7 @@
                 localStorage.setItem("maaru_admin_hidden_product_names", JSON.stringify(hidden));
               }
             } catch (e) {}
+            try { localStorage.setItem("maaru_products_updated", String(Date.now())); } catch (e2) {}
             showMessage("已將所有狀態變更寫入試算表");
             loadProducts();
           })
@@ -2360,6 +2487,8 @@
           if (si) si.value = (obj.status === "下架" ? "下架" : "上架");
         }
         updateProfitDisplay();
+        updateSuggestedPriceDisplay();
+        updateProfitAnalysis();
         updateMainImagePreview();
       }
 
@@ -2400,18 +2529,39 @@
         }
       }
 
+      function getFormRate() {
+        var inp = document.getElementById("productFormRateInput");
+        if (!inp) return null;
+        var v = (inp.value || "").trim();
+        if (v === "") return null;
+        var n = Number(v);
+        return (Number.isFinite(n) && n > 0) ? n : null;
+      }
+
       function syncSellingPriceFromPrice() {
         var priceInp = document.getElementById("priceInput");
         var sellingInp = document.getElementById("sellingPriceInput");
-        if (!priceInp || !sellingInp || globalRate == null || Number(globalRate) <= 0) return;
+        var rate = getFormRate();
+        if (rate == null) rate = globalRate;
+        if (!priceInp || !sellingInp || rate == null || Number(rate) <= 0) {
+          updateSuggestedPriceDisplay();
+          updateProfitAnalysis();
+          return;
+        }
         var jpy = (priceInp.value || "").trim();
-        if (jpy === "") return;
+        if (jpy === "") {
+          updateSuggestedPriceDisplay();
+          updateProfitAnalysis();
+          return;
+        }
         var num = Number(jpy);
         if (!Number.isFinite(num) || num < 0) return;
-        var twd = Math.round(num * globalRate);
+        var twd = Math.round(num * rate);
         sellingInp.value = twd;
         applyMarginFromSelect();
         updateProfitDisplay();
+        updateSuggestedPriceDisplay();
+        updateProfitAnalysis();
       }
 
       function getMarginPercent() {
@@ -2424,18 +2574,18 @@
       function applyMarginFromSelect() {
         var margin = getMarginPercent();
         var sellingInp = document.getElementById("sellingPriceInput");
-        if (!sellingInp || margin == null) return;
-        var selling = Number(sellingInp.value);
-        if (!Number.isFinite(selling) || selling < 0) return;
-        var profit = Math.round(selling * margin / 100);
-        var display = document.getElementById("profitDisplay");
-        var hidden = document.getElementById("profitValue");
-        if (display) {
-          display.textContent = profit;
-          display.classList.remove("text-slate-400");
-          display.classList.remove("text-red-600");
+        if (sellingInp && margin != null) {
+          var selling = Number(sellingInp.value);
+          if (Number.isFinite(selling) && selling >= 0) {
+            var profit = Math.round(selling * margin / 100);
+            var display = document.getElementById("profitDisplay");
+            var hidden = document.getElementById("profitValue");
+            if (display) { display.textContent = profit; display.classList.remove("text-slate-400", "text-red-600"); }
+            if (hidden) hidden.value = profit;
+          }
         }
-        if (hidden) hidden.value = profit;
+        updateSuggestedPriceDisplay();
+        updateProfitAnalysis();
       }
 
       function updateProfitDisplay() {
@@ -2452,11 +2602,65 @@
           display.classList.remove("text-red-600");
           hidden.value = profit;
         } else {
-          display.textContent = "請選擇毛利率 %";
+          display.textContent = "請選擇目標毛利 % 或輸入實際售價";
           display.classList.add("text-slate-400");
           display.classList.remove("text-red-600");
           hidden.value = "";
         }
+        updateProfitAnalysis();
+      }
+
+      function updateSuggestedPriceDisplay() {
+        var priceInp = document.getElementById("priceInput");
+        var margin = getMarginPercent();
+        var el = document.getElementById("suggestedPriceDisplay");
+        var btn = document.getElementById("btnApplySuggestedPrice");
+        if (!el) return;
+        var jpy = (priceInp && priceInp.value) ? Number(priceInp.value) : NaN;
+        var rate = getFormRate();
+        if (rate == null && globalRate != null) rate = globalRate;
+        if (margin == null || !Number.isFinite(jpy) || jpy < 0 || rate == null || rate <= 0) {
+          el.textContent = "請輸入日幣、匯率並選擇目標毛利 %";
+          if (btn) btn.classList.add("hidden");
+          return;
+        }
+        var costTwd = jpy * rate;
+        if (margin >= 100) {
+          el.textContent = "目標毛利不可為 100%";
+          if (btn) btn.classList.add("hidden");
+          return;
+        }
+        var exact = costTwd / (1 - margin / 100);
+        var suggested = Math.ceil(exact);
+        el.textContent = "NT$ " + suggested + "（成本 NT$ " + Math.round(costTwd) + "，目標毛利 " + margin + "%，至少達標）";
+        if (btn) {
+          btn.classList.remove("hidden");
+          btn.setAttribute("data-suggested", suggested);
+        }
+      }
+
+      function updateProfitAnalysis() {
+        var priceInp = document.getElementById("priceInput");
+        var sellingInp = document.getElementById("sellingPriceInput");
+        var costHidden = document.getElementById("costValue");
+        var content = document.getElementById("profitAnalysisContent");
+        if (!content) return;
+        var rate = getFormRate();
+        if (rate == null && globalRate != null) rate = globalRate;
+        var jpy = (priceInp && priceInp.value) ? Number(priceInp.value) : NaN;
+        var costTwd = (rate != null && Number.isFinite(jpy) && jpy >= 0) ? jpy * rate : (costHidden && costHidden.value !== "" ? Number(costHidden.value) : NaN);
+        var selling = (sellingInp && sellingInp.value !== "") ? Number(sellingInp.value) : NaN;
+        if (!Number.isFinite(costTwd) || costTwd < 0) {
+          content.innerHTML = "請輸入日幣、匯率（或成本）與實際台幣售價後顯示";
+          return;
+        }
+        if (!Number.isFinite(selling) || selling < 0) {
+          content.innerHTML = "成本（台幣）：NT$ " + Math.round(costTwd) + " &middot; 請輸入實際售價以計算利潤";
+          return;
+        }
+        var profit = selling - costTwd;
+        var marginPct = selling > 0 ? ((profit / selling) * 100).toFixed(1) : "—";
+        content.innerHTML = "成本（台幣）：NT$ " + Math.round(costTwd) + "<br>實際售價：NT$ " + Math.round(selling) + "<br><strong>單件利潤：NT$ " + Math.round(profit) + "</strong><br>毛利率：" + marginPct + "%";
       }
 
       function updateMainImagePreview() {
@@ -2517,6 +2721,8 @@
           setFormValues({});
           var statusInput = document.getElementById("statusInput");
           if (statusInput) statusInput.value = "上架";
+          updateSuggestedPriceDisplay();
+          updateProfitAnalysis();
         }
       }
 
@@ -2575,10 +2781,28 @@
         var sellingInputEl = document.getElementById("sellingPriceInput");
         var costEl = document.getElementById("costValue");
         var marginSelectEl = document.getElementById("marginPercentSelect");
-        if (priceInputEl) { priceInputEl.addEventListener("input", syncSellingPriceFromPrice); priceInputEl.addEventListener("change", syncSellingPriceFromPrice); }
-        if (sellingInputEl) { sellingInputEl.addEventListener("input", function() { applyMarginFromSelect(); updateProfitDisplay(); }); sellingInputEl.addEventListener("change", function() { applyMarginFromSelect(); updateProfitDisplay(); }); }
-        if (marginSelectEl) { marginSelectEl.addEventListener("change", applyMarginFromSelect); }
-        if (costEl) { costEl.addEventListener("input", updateProfitDisplay); costEl.addEventListener("change", updateProfitDisplay); }
+        var rateInp = document.getElementById("productFormRateInput");
+        function onPriceOrRateChange() {
+          saveRateFromInput();
+          syncSellingPriceFromPrice();
+          updateSuggestedPriceDisplay();
+          updateProfitAnalysis();
+        }
+        if (priceInputEl) { priceInputEl.addEventListener("input", onPriceOrRateChange); priceInputEl.addEventListener("change", onPriceOrRateChange); }
+        if (rateInp) { rateInp.addEventListener("input", onPriceOrRateChange); rateInp.addEventListener("change", onPriceOrRateChange); }
+        if (sellingInputEl) {
+          sellingInputEl.addEventListener("input", function() { applyMarginFromSelect(); updateProfitDisplay(); updateProfitAnalysis(); });
+          sellingInputEl.addEventListener("change", function() { applyMarginFromSelect(); updateProfitDisplay(); updateProfitAnalysis(); });
+        }
+        if (marginSelectEl) { marginSelectEl.addEventListener("change", function() { applyMarginFromSelect(); updateSuggestedPriceDisplay(); }); }
+        if (costEl) { costEl.addEventListener("input", function() { updateProfitDisplay(); updateProfitAnalysis(); }); costEl.addEventListener("change", function() { updateProfitDisplay(); updateProfitAnalysis(); }); }
+        var btnApply = document.getElementById("btnApplySuggestedPrice");
+        if (btnApply) btnApply.addEventListener("click", function() {
+          var v = this.getAttribute("data-suggested");
+          if (v == null) return;
+          var sellingInp = document.getElementById("sellingPriceInput");
+          if (sellingInp) { sellingInp.value = v; applyMarginFromSelect(); updateProfitDisplay(); updateProfitAnalysis(); }
+        });
       }
       bindAutoCalc();
       document.getElementById("btnCancel").addEventListener("click", closeModal);
@@ -2659,6 +2883,7 @@
             }
             showMessage((res && res.message) ? res.message : "已儲存");
             if (body.rowIndex != null) delete pendingStatusChanges[body.rowIndex];
+            try { localStorage.setItem("maaru_products_updated", String(Date.now())); } catch (e) {}
             var savedName = (product && product.name) ? String(product.name).trim() : "";
             if (savedName) {
               try {
