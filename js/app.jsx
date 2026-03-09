@@ -442,6 +442,13 @@ function getUniqueProductsByName(products) {
 // 分類選單結構：主分類 + 子分類（與試算表 分類／子分類 對應，可展開/收合）
 const CATEGORY_MENU = [
   {
+    label: "預購商品",
+    value: "預購商品",
+    children: [
+      { label: "2026年03月", value: "2026年03月" },
+    ],
+  },
+  {
     label: "絨毛玩偶",
     value: "絨毛玩偶",
     children: [
@@ -634,6 +641,7 @@ const STORE_CATEGORIES = [
   "全商品一覧",
   "新上架商品",
   "HOT預購商品",
+  { label: "預購商品", children: ["2026年03月"] },
   { label: "絨毛玩偶", children: ["玩偶公仔", "吊飾娃"] },
   { label: "公仔玩具", children: ["食玩盲盒", "公仔吊飾"] },
   { label: "包包時尚小物", children: ["托特包", "肩包", "後背包", "購物環保袋", "皮夾", "零錢包", "票卡收納夾", "化妝包", "多功能收納包", "束口袋"] },
