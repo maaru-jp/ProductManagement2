@@ -132,8 +132,12 @@ function formatTWDFromJPY(jpy, rate) {
   return "NT$" + Math.round(j * r).toLocaleString("zh-TW");
 }
 
-// 顧客頁顯示價：優先使用商品「台幣售價」，沒有則用日幣 × 匯率
+// 顧客頁顯示價：優先「顧客顯示售價」（後台選建議售價時），否則台幣售價，再否則日幣×匯率
 function getDisplayPrice(product, rate) {
+  const customerPrice = toNumberOrNull(product?.customerDisplayPrice);
+  if (customerPrice != null && Number.isFinite(customerPrice)) {
+    return "NT$" + Math.round(customerPrice).toLocaleString("zh-TW");
+  }
   const twd = toNumberOrNull(product?.sellingPrice);
   if (twd != null && Number.isFinite(twd)) {
     return "NT$" + Math.round(twd).toLocaleString("zh-TW");
@@ -141,8 +145,10 @@ function getDisplayPrice(product, rate) {
   return formatTWDFromJPY(product?.price, rate);
 }
 
-// 每單位台幣金額（用於購物車小計／總計）
+// 每單位台幣金額（用於購物車小計／總計）：與顧客頁顯示一致，優先顧客顯示售價
 function getUnitTWD(product, rate) {
+  const customerPrice = toNumberOrNull(product?.customerDisplayPrice);
+  if (customerPrice != null && Number.isFinite(customerPrice)) return customerPrice;
   const twd = toNumberOrNull(product?.sellingPrice);
   if (twd != null && Number.isFinite(twd)) return twd;
   const j = toNumberOrNull(product?.price);
@@ -180,6 +186,9 @@ function normalizeItem(row, index) {
   const rawSelling =
     row.sellingPrice ?? row.售價 ?? row.台幣售價 ?? row["台幣售價"] ?? null;
   const sellingPrice = toNumberOrNull(rawSelling);
+  const rawCustomerDisplay =
+    row.customerDisplayPrice ?? row.顧客顯示售價 ?? row["顧客顯示售價"] ?? null;
+  const customerDisplayPrice = toNumberOrNull(rawCustomerDisplay);
   // 顧客頁商品卡主圖：優先使用試算表「商品主圖」／「圖片URL」欄位，有填則不顯示 No Image
   const image = (
     row["商品主圖"] ??
@@ -261,6 +270,7 @@ function normalizeItem(row, index) {
     name,
     price,
     sellingPrice,
+    customerDisplayPrice: customerDisplayPrice != null && Number.isFinite(customerDisplayPrice) ? customerDisplayPrice : null,
     image,
     variantImages,
     variantStock,
