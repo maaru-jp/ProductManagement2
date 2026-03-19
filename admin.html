@@ -277,9 +277,6 @@
             商品管理
           </h2>
           <div class="flex items-center gap-3">
-            <button type="button" id="btnSaveAllStatus" disabled class="px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed">
-              儲存所有變更
-            </button>
             <a href="./index.html" target="_blank" class="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
               前往官網 ↗
             </a>
@@ -300,7 +297,7 @@
         </div>
 
         <div id="message" class="mb-3 text-sm hidden"></div>
-        <p class="mb-3 text-xs text-slate-500">每個商品的「狀態」可點擊開關切換<strong>上架</strong>／<strong>下架</strong>：上架時顧客頁會顯示該商品，下架時顧客頁不會顯示。切換後請按右上方「儲存所有變更」寫入試算表後才會永久生效。</p>
+        <p class="mb-3 text-xs text-slate-500">每個商品的「狀態」可點擊開關切換<strong>上架</strong>／<strong>下架</strong>：上架時顧客頁會顯示該商品，下架時顧客頁不會顯示。點擊開關即直接寫入試算表，無需另按儲存。</p>
 
         <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div class="overflow-x-auto">
@@ -1014,6 +1011,11 @@
         </div>
         <form id="orderForm" class="p-6 space-y-5">
           <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">訂單編號</label>
+            <input type="text" id="orderId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="留空自動產生，或輸入如 ORD00001（共5碼數字）" maxlength="12" />
+            <p class="text-xs text-slate-400 mt-1">可自行輸入編號，或留空由系統自動產生下一號（ORD00001～ORD99999）</p>
+          </div>
+          <div>
             <h4 class="text-sm font-medium text-slate-700 mb-3">客戶資訊 (可編輯)</h4>
             <div class="grid grid-cols-2 gap-4">
               <div>
@@ -1089,11 +1091,22 @@
                 <input type="number" id="orderShippingFee" min="0" value="0" step="1" class="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                 <span class="text-sm text-slate-600">元</span>
               </div>
+              <label class="mt-2 inline-flex items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" id="orderShippingStatusCoupon" class="rounded border-slate-300" />
+                <span>運費狀態：免運券折抵</span>
+              </label>
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1">訂單總計</label>
+              <label class="block text-xs font-medium text-slate-500 mb-1">訂單總計（已自動扣除預購訂金）</label>
               <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800">
                 NT$ <span id="orderTotalDisplay">0</span>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">預購訂金</label>
+              <div class="flex items-center gap-2">
+                <input type="number" id="orderDepositAmount" min="0" value="0" step="1" class="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="0" />
+                <span class="text-sm text-slate-600">元</span>
               </div>
             </div>
           </div>
@@ -1136,9 +1149,9 @@
           <button type="button" id="pasteOrderModalClose" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="關閉">✕</button>
         </div>
         <div class="p-4 flex-1 min-h-0 flex flex-col gap-3">
-          <p id="pasteOrderModalDesc" class="text-sm text-slate-600">請貼上顧客傳到官方 LINE 的登記清單（含「商品總計」那一行），系統會自動帶入商品小計與備註，再補客戶資料即可建立訂單。</p>
+          <p id="pasteOrderModalDesc" class="text-sm text-slate-600">請貼上顧客傳到官方 LINE 的登記清單（可含「以下」、含「商品總計」那一行），系統會自動帶入商品小計與備註，再補客戶資料即可建立訂單。</p>
           <p id="pasteOrderAppendHint" class="text-sm font-medium text-rose-600 hidden"></p>
-          <textarea id="pasteOrderText" rows="10" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono placeholder:text-slate-400" placeholder="例：&#10;MAARU 日本萌GO代購登記清單：&#10;&#10;商品名 規格 × 2  NT$700&#10;...&#10;商品總計：NT$1400"></textarea>
+          <textarea id="pasteOrderText" rows="10" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono placeholder:text-slate-400" placeholder="例：&#10;MAARU 日本萌GO代購登記清單：&#10;以下&#10;商品名 規格 × 2  NT$700&#10;...&#10;商品總計：NT$1400"></textarea>
           <p id="pasteOrderParseHint" class="text-xs text-slate-500 hidden"></p>
         </div>
         <div class="p-4 border-t border-slate-200 flex justify-end gap-2 shrink-0">
@@ -2083,7 +2096,6 @@
             });
             pendingStatusChanges = {};
             renderTable();
-            updateSaveAllStatusBtn();
             updateRateHint();
             updateFormRateInput();
           })
@@ -2139,8 +2151,9 @@
         var stock = stockDisplay(p);
         var img = (p.image || p.圖片 || p.商品主圖 || p.主圖 || (p.raw && (p.raw.商品主圖 || p.raw.主圖 || p.raw.image || p.raw.圖片)) || "").toString().trim();
         var publishedAt = fmtDate(p.publishedAt || p.上架日期);
-        var status = (p.status || p.狀態 || "上架").toString().trim() || "上架";
-        var isListed = status === "上架";
+        var statusRaw = (p.status != null ? p.status : p.狀態 != null ? p.狀態 : "上架");
+        var status = String(statusRaw).trim();
+        var isListed = status !== "下架";
         var stockType = (p.stockType || p.貨況 || p.現貨預購 || "").toString().trim();
         var placeholderSvg = "data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2748%27 height=%2748%27%3E%3Crect width=%2748%27 height=%2748%27 fill=%27%23e2e8f0%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 dominant-baseline=%27middle%27 text-anchor=%27middle%27 fill=%27%2394a3b8%27 font-size=%2710%27%3E?%3C/text%3E%3C/svg%3E";
         var imgSrc = img ? escapeAttr(img) : placeholderSvg;
@@ -2217,131 +2230,77 @@
         tbody.querySelectorAll(".product-status-track").forEach(function(el) {
           el.addEventListener("click", function(e) {
             e.preventDefault();
-            var rowIndex = parseInt(this.getAttribute("data-row"), 10);
+            var track = this;
+            if (track.getAttribute("data-saving") === "1") return;
+            var rowIndex = parseInt(track.getAttribute("data-row"), 10);
             var p = productByRowIndex(rowIndex);
             if (!p) {
               showMessage("找不到該列商品（列號 " + rowIndex + "），請重新整理頁面後再試", true);
               return;
             }
-            var current = (this.getAttribute("data-status") || "上架").trim();
-            var next = current === "上架" ? "下架" : "上架";
-            p.status = next;
-            p.狀態 = next;
-            pendingStatusChanges[rowIndex] = next;
+            var current = (track.getAttribute("data-status") || "上架").trim();
+            var next = current === "下架" ? "上架" : "下架";
             var productName = (p.name || p.商品名稱 || "").toString().trim();
-            try {
-              var hidden = JSON.parse(localStorage.getItem("maaru_admin_hidden_product_names") || "[]");
-              if (!Array.isArray(hidden)) hidden = [];
-              var idx = hidden.indexOf(productName);
-              if (next === "下架") { if (idx < 0) hidden.push(productName); }
-              else { if (idx >= 0) hidden.splice(idx, 1); }
-              localStorage.setItem("maaru_admin_hidden_product_names", JSON.stringify(hidden));
-            } catch (e) {}
-            renderTable();
-            updateSaveAllStatusBtn();
-            showMessage(next === "上架" ? "已設為上架；請按右上方「儲存所有變更」寫入試算表後才會生效。" : "已設為下架；請按右上方「儲存所有變更」寫入試算表後才會生效。");
+            var product = {
+              name: p.name || p.商品名稱,
+              category: p.category || p.分類,
+              subcategory: p.subcategory || p.子分類,
+              variant: p.variant || p.規格,
+              price: p.price != null ? p.price : p.日幣價格,
+              sellingPrice: p.sellingPrice != null ? p.sellingPrice : p.售價,
+              customerDisplayPrice: (p.customerDisplayPrice !== undefined && p.customerDisplayPrice !== null && p.customerDisplayPrice !== "") ? p.customerDisplayPrice : (p.顧客顯示售價 !== undefined && p.顧客顯示售價 !== null && p.顧客顯示售價 !== "" ? p.顧客顯示售價 : ""),
+              rate: p.rate != null ? p.rate : p.匯率,
+              profit: p.profit != null ? p.profit : p.利潤,
+              cost: p.cost != null ? p.cost : p.成本,
+              stock: p.stock != null ? p.stock : p.庫存,
+              status: next,
+              stockType: p.stockType || p.貨況 || p.現貨預購 || "",
+              image: p.image || p.圖片,
+              variantImages: p.variantImages != null ? p.variantImages : p.規格圖片,
+              variantStock: p.variantStock != null ? p.variantStock : p.規格庫存,
+              description: p.description || p.描述,
+              introduction: p.introduction || p.商品介紹,
+              publishedAt: p.publishedAt || p.上架日期,
+              hot: p.hot || p.熱銷 ? "Y" : "",
+              recommended: p.recommended || p.推薦 ? "Y" : "",
+              isNew: p.isNew || p.新品 ? "Y" : "",
+              isNewListing: p.isNewListing || p.新上架 ? "Y" : ""
+            };
+            track.setAttribute("data-saving", "1");
+            track.style.pointerEvents = "none";
+            fetchWrite({ action: "update", rowIndex: rowIndex, product: product })
+              .then(function(r) { return r.text().then(function(t) {
+                try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; }
+              }); })
+              .then(function(res) {
+                if (res && res.error) throw new Error(res.message || "更新失敗");
+                p.status = next;
+                p.狀態 = next;
+                try {
+                  var hidden = JSON.parse(localStorage.getItem("maaru_admin_hidden_product_names") || "[]");
+                  if (!Array.isArray(hidden)) hidden = [];
+                  var idx = hidden.indexOf(productName);
+                  if (next === "下架") { if (idx < 0) hidden.push(productName); }
+                  else { if (idx >= 0) hidden.splice(idx, 1); }
+                  localStorage.setItem("maaru_admin_hidden_product_names", JSON.stringify(hidden));
+                } catch (e) {}
+                try { localStorage.setItem("maaru_products_updated", String(Date.now())); } catch (e2) {}
+                showMessage(next === "上架" ? "已設為上架，試算表已更新。" : "已設為下架，試算表已更新。");
+                renderTable();
+              })
+              .catch(function(err) {
+                showMessage("儲存失敗：" + (err.message || "網路錯誤"), true);
+                renderTable();
+              })
+              .finally(function() {
+                track.removeAttribute("data-saving");
+                track.style.pointerEvents = "";
+              });
           });
           el.addEventListener("keydown", function(e) {
             if (e.key === " " || e.key === "Enter") { e.preventDefault(); el.click(); }
           });
         });
-        updateSaveAllStatusBtn();
-      }
-
-      function updateSaveAllStatusBtn() {
-        var btn = document.getElementById("btnSaveAllStatus");
-        if (!btn) return;
-        var count = Object.keys(pendingStatusChanges).length;
-        if (count === 0) {
-          btn.disabled = true;
-          btn.className = "px-4 py-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 text-sm cursor-not-allowed";
-          btn.textContent = "儲存所有變更";
-        } else {
-          btn.disabled = false;
-          btn.className = "px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium hover:bg-slate-700";
-          btn.textContent = "儲存所有變更 (" + count + ")";
-        }
-      }
-
-      function saveAllStatusChanges() {
-        var rowIndices = Object.keys(pendingStatusChanges).map(function(k) { return parseInt(k, 10); }).filter(function(r) { return r >= 2; });
-        if (rowIndices.length === 0) {
-          updateSaveAllStatusBtn();
-          return;
-        }
-        var btn = document.getElementById("btnSaveAllStatus");
-        if (btn) { btn.disabled = true; btn.textContent = "儲存中..."; }
-        var chain = Promise.resolve();
-        rowIndices.forEach(function(rowIndex) {
-          var p = productByRowIndex(rowIndex);
-          if (!p) return;
-          var next = pendingStatusChanges[rowIndex];
-          var product = {
-            name: p.name || p.商品名稱,
-            category: p.category || p.分類,
-            subcategory: p.subcategory || p.子分類,
-            variant: p.variant || p.規格,
-            price: p.price != null ? p.price : p.日幣價格,
-            sellingPrice: p.sellingPrice != null ? p.sellingPrice : p.售價,
-            rate: p.rate != null ? p.rate : p.匯率,
-            profit: p.profit != null ? p.profit : p.利潤,
-            cost: p.cost != null ? p.cost : p.成本,
-            stock: p.stock != null ? p.stock : p.庫存,
-            status: next,
-            stockType: p.stockType || p.貨況 || p.現貨預購 || "",
-            image: p.image || p.圖片,
-            variantImages: p.variantImages != null ? p.variantImages : p.規格圖片,
-            variantStock: p.variantStock != null ? p.variantStock : p.規格庫存,
-            description: p.description || p.描述,
-            introduction: p.introduction || p.商品介紹,
-            publishedAt: p.publishedAt || p.上架日期,
-            hot: p.hot || p.熱銷 ? "Y" : "",
-            recommended: p.recommended || p.推薦 ? "Y" : "",
-            isNew: p.isNew || p.新品 ? "Y" : "",
-            isNewListing: p.isNewListing || p.新上架 ? "Y" : ""
-          };
-          (function(ri, prod) {
-            chain = chain.then(function() {
-              return fetchWrite({ action: "update", rowIndex: ri, product: prod })
-                .then(function(r) { return r.text().then(function(t) {
-                  try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; }
-                }); })
-                .then(function(res) {
-                  if (res && res.error) throw new Error(res.message || "更新失敗");
-                  return res;
-                });
-            });
-          })(rowIndex, product);
-        });
-        var timeoutMs = 10000;
-        var timeoutPromise = new Promise(function(_, reject) {
-          setTimeout(function() { reject(new Error("儲存逾時，請檢查網路或稍後再試")); }, timeoutMs);
-        });
-        Promise.race([chain, timeoutPromise])
-          .then(function() {
-            var savedNames = [];
-            rowIndices.forEach(function(ri) {
-              var pt = productByRowIndex(ri);
-              if (pt && (pt.name || pt.商品名稱)) savedNames.push(String(pt.name || pt.商品名稱).trim());
-              delete pendingStatusChanges[ri];
-            });
-            try {
-              var hidden = JSON.parse(localStorage.getItem("maaru_admin_hidden_product_names") || "[]");
-              if (Array.isArray(hidden)) {
-                hidden = hidden.filter(function(n) { return savedNames.indexOf(String(n).trim()) < 0; });
-                localStorage.setItem("maaru_admin_hidden_product_names", JSON.stringify(hidden));
-              }
-            } catch (e) {}
-            try { localStorage.setItem("maaru_products_updated", String(Date.now())); } catch (e2) {}
-            showMessage("已將所有狀態變更寫入試算表");
-            loadProducts();
-          })
-          .catch(function(err) {
-            showMessage("儲存失敗：" + (err.message || "網路錯誤"), true);
-          })
-          .finally(function() {
-            if (btn) updateSaveAllStatusBtn();
-          });
       }
 
       function escapeHtml(s) {
@@ -2764,8 +2723,6 @@
       }
 
       document.getElementById("btnAdd").addEventListener("click", function() { openModal(false); });
-      var btnSaveAllStatus = document.getElementById("btnSaveAllStatus");
-      if (btnSaveAllStatus) btnSaveAllStatus.addEventListener("click", saveAllStatusChanges);
       var productFormRateInp = document.getElementById("productFormRateInput");
       if (productFormRateInp) {
         productFormRateInp.addEventListener("change", saveRateFromInput);
@@ -2993,28 +2950,62 @@
         var orderTableBody = document.getElementById("orderTableBody");
 
         var orders = [];
-        try {
-          var saved = localStorage.getItem(ORDER_STORAGE_KEY);
-          if (saved) orders = JSON.parse(saved);
-          if (!Array.isArray(orders)) orders = [];
-        } catch (err) { orders = []; }
 
         function saveOrders() {
-          try { localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(orders)); } catch (err) {}
+          // 訂單改為以 Google Sheet 為準，不再寫入 localStorage
+        }
+
+        function upsertOrderToSheet(ord) {
+          if (!ord || !ord.id) return Promise.resolve(null);
+          return fetchWrite({ action: "order_upsert", order: ord })
+            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
+            .then(function(res) {
+              if (res && res.error) throw new Error(res.message || "寫入訂單失敗");
+              return res;
+            });
+        }
+
+        function deleteOrderFromSheet(id) {
+          var safeId = (id || "").toString().trim();
+          if (!safeId) return Promise.resolve(null);
+          return fetchWrite({ action: "order_delete", id: safeId })
+            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
+            .then(function(res) {
+              if (res && res.error) throw new Error(res.message || "刪除訂單失敗");
+              return res;
+            });
+        }
+
+        function loadOrdersFromSheet() {
+          showOrderMessage("載入訂單中...");
+          return fetchWrite({ action: "order_list" })
+            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
+            .then(function(res) {
+              if (res && res.error) throw new Error(res.message || "載入訂單失敗");
+              var list = res.orders || [];
+              orders = Array.isArray(list) ? list : [];
+              renderOrders();
+              showOrderMessage("已從試算表載入訂單");
+              return res;
+            })
+            .catch(function(err) {
+              showOrderMessage("載入失敗：" + (err.message || "網路錯誤"), true);
+              throw err;
+            });
         }
 
         function getNextOrderId() {
           var maxNum = 0;
-          var ordNumRe = /^ORD(\d{1,6})$/i;
+          var ordNumRe = /^ORD(\d+)$/i;
           for (var i = 0; i < orders.length; i++) {
             var m = (orders[i].id || "").toString().match(ordNumRe);
             if (m) {
               var n = parseInt(m[1], 10);
-              if (!isNaN(n) && n >= 1 && n <= 999999 && n > maxNum) maxNum = n;
+              if (!isNaN(n) && n >= 1 && n > maxNum) maxNum = n;
             }
           }
-          var next = maxNum + 1;
-          var numStr = ("000000" + next).slice(-6);
+          var next = Math.min(maxNum + 1, 99999);
+          var numStr = ("00000" + next).slice(-5);
           return "ORD" + numStr;
         }
 
@@ -3029,6 +3020,8 @@
         function getOrderFromForm() {
           var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
           var shipping = Number(document.getElementById("orderShippingFee").value) || 0;
+          var shipCouponEl = document.getElementById("orderShippingStatusCoupon");
+          var shipCouponOn = !!(shipCouponEl && shipCouponEl.checked);
           var rateCheck = document.getElementById("orderDiscountRateCheck").checked;
           var fixedCheck = document.getElementById("orderFixedDiscountCheck").checked;
           var rateVal = Number(document.getElementById("orderDiscountRate").value) || 0;
@@ -3036,7 +3029,8 @@
           var discount = 0;
           if (rateCheck && rateVal >= 0 && rateVal <= 100) discount = Math.ceil(subtotal * (1 - rateVal / 100));
           if (fixedCheck) discount = Math.ceil(fixedVal);
-          var total = Math.max(0, Math.ceil(subtotal - discount + shipping));
+          var effectiveShipping = shipCouponOn ? 0 : shipping;
+          var total = Math.max(0, Math.ceil(subtotal - discount + effectiveShipping));
           return {
             customerName: (document.getElementById("orderCustomerName").value || "").trim(),
             phone: (document.getElementById("orderPhone").value || "").trim(),
@@ -3049,15 +3043,22 @@
             subtotal: subtotal,
             discount: discount,
             shippingFee: shipping,
+            shippingStatus: (function() {
+              var el = document.getElementById("orderShippingStatusCoupon");
+              return (el && el.checked) ? "免運券折抵" : "";
+            })(),
             total: total,
             remark: (document.getElementById("orderRemark").value || "").trim(),
             depositRemark: (document.getElementById("orderDepositRemark").value || "").trim(),
+            depositAmount: (function() { var v = document.getElementById("orderDepositAmount"); return v && v.value !== "" && !isNaN(Number(v.value)) ? Number(v.value) : 0; })(),
             preorderDate: (document.getElementById("orderPreorderDate").value || "").trim(),
             shipDate: (document.getElementById("orderShipDate").value || "").trim()
           };
         }
 
         function setFormFromOrder(o) {
+          var orderIdEl = document.getElementById("orderId");
+          if (orderIdEl) { orderIdEl.value = o.id || ""; orderIdEl.readOnly = true; }
           document.getElementById("orderCustomerName").value = o.customerName || "";
           document.getElementById("orderPhone").value = o.phone || "";
           document.getElementById("orderEmail").value = o.email || "";
@@ -3070,9 +3071,13 @@
           document.getElementById("orderFixedDiscount").value = String(o.discount || 0);
           document.getElementById("orderDiscountRateCheck").checked = false;
           document.getElementById("orderFixedDiscountCheck").checked = true;
-          document.getElementById("orderShippingFee").value = String(o.shippingFee || 0);
+          document.getElementById("orderShippingFee").value = String(o.shippingFee != null && o.shippingFee !== "" ? o.shippingFee : 38);
+          var shipStatusEl = document.getElementById("orderShippingStatusCoupon");
+          if (shipStatusEl) shipStatusEl.checked = (o.shippingStatus && String(o.shippingStatus).indexOf("免運") >= 0);
           document.getElementById("orderRemark").value = o.remark || "";
           document.getElementById("orderDepositRemark").value = o.depositRemark || "";
+          var depEl = document.getElementById("orderDepositAmount");
+          if (depEl) depEl.value = o.depositAmount != null && o.depositAmount !== "" ? String(o.depositAmount) : "0";
           document.getElementById("orderPreorderDate").value = o.preorderDate || "";
           document.getElementById("orderShipDate").value = o.shipDate || "";
           updateOrderTotal();
@@ -3086,12 +3091,16 @@
             setFormFromOrder(editOrder);
           } else {
             document.querySelector("#orderModal h3").textContent = "訂單詳情 (新訂單)";
+            var orderIdEl = document.getElementById("orderId");
+            if (orderIdEl) { orderIdEl.value = getNextOrderId(); orderIdEl.readOnly = false; }
             document.getElementById("orderSubtotal").value = "0";
             document.getElementById("orderDiscountRate").value = "90";
             document.getElementById("orderDiscountRateCheck").checked = false;
             document.getElementById("orderFixedDiscountCheck").checked = false;
             document.getElementById("orderFixedDiscount").value = "0";
-            document.getElementById("orderShippingFee").value = "0";
+            document.getElementById("orderShippingFee").value = "38";
+            var shipStatusEl = document.getElementById("orderShippingStatusCoupon");
+            if (shipStatusEl) shipStatusEl.checked = false;
             document.getElementById("orderCustomerName").value = "";
             document.getElementById("orderPhone").value = "";
             document.getElementById("orderEmail").value = "";
@@ -3102,6 +3111,8 @@
             document.getElementById("orderAddress").value = "";
             document.getElementById("orderRemark").value = "";
             document.getElementById("orderDepositRemark").value = "";
+            var depEl = document.getElementById("orderDepositAmount");
+            if (depEl) depEl.value = "0";
             document.getElementById("orderPreorderDate").value = "";
             document.getElementById("orderShipDate").value = "";
             updateOrderTotal();
@@ -3115,6 +3126,8 @@
         function updateOrderTotal() {
           var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
           var shipping = Number(document.getElementById("orderShippingFee").value) || 0;
+          var shipCouponEl = document.getElementById("orderShippingStatusCoupon");
+          var shipCouponOn = !!(shipCouponEl && shipCouponEl.checked);
           var rateCheck = document.getElementById("orderDiscountRateCheck").checked;
           var fixedCheck = document.getElementById("orderFixedDiscountCheck").checked;
           var rateVal = Number(document.getElementById("orderDiscountRate").value) || 0;
@@ -3132,10 +3145,13 @@
             document.getElementById("orderDiscountRateAmount").textContent = "0";
           }
 
-          var total = subtotal - discount + shipping;
+          var total = subtotal - discount + (shipCouponOn ? 0 : shipping);
           total = Math.ceil(total);
           if (total < 0) total = 0;
-          document.getElementById("orderTotalDisplay").textContent = total;
+          var depositEl = document.getElementById("orderDepositAmount");
+          var depositNum = (depositEl && depositEl.value !== "" && !isNaN(Number(depositEl.value))) ? Number(depositEl.value) : 0;
+          var displayTotal = (depositNum > 0) ? Math.max(0, total - depositNum) : total;
+          document.getElementById("orderTotalDisplay").textContent = displayTotal;
         }
 
         function escapeHtml(s) {
@@ -3187,7 +3203,12 @@
             sel.addEventListener("change", function() {
               var id = this.getAttribute("data-order-id");
               var ord = orders.find(function(o) { return o.id === id; });
-              if (ord) { ord.status = this.value; saveOrders(); }
+              if (ord) {
+                ord.status = this.value;
+                upsertOrderToSheet(ord).catch(function(err) {
+                  showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
+                });
+              }
             });
           });
           orderTableBody.querySelectorAll(".order-edit-btn").forEach(function(btn) {
@@ -3203,9 +3224,11 @@
               var name = this.getAttribute("data-name") || "此訂單";
               if (!confirm("確定要刪除訂單「" + name + "」嗎？")) return;
               orders = orders.filter(function(o) { return o.id !== id; });
-              saveOrders();
               renderOrders();
               showOrderMessage("已刪除訂單");
+              deleteOrderFromSheet(id).catch(function(err) {
+                showOrderMessage("刪除試算表訂單失敗：" + (err.message || "網路錯誤"), true);
+              });
             });
           });
           orderTableBody.querySelectorAll(".order-pdf-btn").forEach(function(btn) {
@@ -3227,7 +3250,7 @@
           var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
           var itemsRows = "";
           if (ord.items && Array.isArray(ord.items) && ord.items.length > 0) {
-            itemsRows = "<h2 style=\"font-size:14px;margin-top:20px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>價格</th><th>數量</th><th>金額</th></tr>";
+            itemsRows = "<h2 style=\"font-size:14px;margin-top:20px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
             for (var i = 0; i < ord.items.length; i++) {
               var it = ord.items[i];
               var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
@@ -3266,17 +3289,20 @@
             headerRight += "<div class=\"pdf-logo-placeholder\">品牌 Logo</div>";
           }
           headerRight += "</div>";
-          headerRight += "<div class=\"pdf-dates\"><div class=\"pdf-date-row\"><span class=\"label\">預購日期</span><span class=\"value\">" + escapeHtml(preorderStr || "—") + "</span></div>";
+          headerRight += "<div class=\"pdf-dates-box\"><div class=\"pdf-date-row\"><span class=\"label\">預購日期</span><span class=\"value\">" + escapeHtml(preorderStr || "—") + "</span></div>";
           headerRight += "<div class=\"pdf-date-row\"><span class=\"label\">出貨日期</span><span class=\"value\">" + escapeHtml(shipStr || "—") + "</span></div></div>";
           var html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>訂單 " + escapeHtml(ord.id) + "</title>" +
             "<style>body{font-family:'Microsoft JhengHei',sans-serif;padding:24px;max-width:600px;margin:0 auto;color:#1e293b;} " +
             ".pdf-header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:20px;flex-wrap:wrap;} " +
             ".pdf-header-left{flex:1;min-width:200px;} .pdf-header-right{text-align:right;min-width:240px;} " +
-            ".pdf-logo-wrap{margin-bottom:14px;} .pdf-logo{max-width:220px;max-height:100px;object-fit:contain;display:block;margin-left:auto;} " +
-            ".pdf-logo-placeholder,.pdf-logo-fallback{width:220px;height:88px;margin-left:auto;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:#94a3b8;font-size:16px;display:flex;align-items:center;justify-content:center;} " +
-            ".pdf-dates{font-size:17px;} .pdf-date-row{margin:10px 0;} .pdf-date-row .label{color:#64748b;font-size:15px;margin-right:8px;} .pdf-date-row .value{font-weight:600;font-size:17px;} " +
+            ".pdf-logo-wrap{margin-bottom:14px;text-align:center;} .pdf-logo{max-width:320px;max-height:160px;width:100%;object-fit:contain;display:block;margin:0 auto;} " +
+            ".pdf-logo-placeholder,.pdf-logo-fallback{width:320px;height:140px;margin:0 auto;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:#94a3b8;font-size:16px;display:flex;align-items:center;justify-content:center;} " +
+            ".pdf-dates-box{border:2px solid #64748b;border-radius:6px;padding:10px 14px;display:inline-block;margin-right:24px;} " +
+            ".pdf-dates{font-size:17px;} .pdf-date-row{display:flex;align-items:center;margin:10px 0;} .pdf-date-row:first-child{margin-top:0;} .pdf-date-row:last-child{margin-bottom:0;} .pdf-date-row .label{color:#64748b;font-size:15px;flex:0 0 auto;width:4.5em;} .pdf-date-row .value{font-weight:600;font-size:17px;flex:1;min-width:0;text-align:right;} " +
             "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:8px;margin:0 0 10px 0;} .row{margin:10px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:2px;} " +
-            "table{width:100%;border-collapse:collapse;margin:16px 0;} th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;} th{background:#f1f5f9;}" +
+            "table{width:100%;border-collapse:collapse;margin:16px 0;} th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;} th{background:#f1f5f9;} " +
+            ".pdf-deposit-box{border:2px solid #64748b;border-radius:6px;padding:12px 14px;margin-top:8px;min-height:3em;background:#f8fafc;white-space:pre-wrap;font-size:15px;line-height:1.5;} " +
+            ".pdf-two-cols{display:flex;gap:24px;margin-top:12px;flex-wrap:wrap;} .pdf-two-cols .pdf-col{flex:1;min-width:200px;} " +
             ".total{font-size:16px;font-weight:bold;margin-top:12px;}</style></head><body>" +
             "<div class=\"pdf-header\"><div class=\"pdf-header-left\">" +
             "<h1>訂單明細 " + escapeHtml(ord.id) + "</h1>" +
@@ -3284,25 +3310,25 @@
             "<div class=\"row\"><span class=\"label\">日期</span><div class=\"value\">" + escapeHtml(dateStr) + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">狀態</span><div class=\"value\">" + escapeHtml(ord.status || "待處理") + "</div></div>" +
             "</div><div class=\"pdf-header-right\">" + headerRight + "</div></div>" +
-            "<h2 style=\"font-size:14px;margin-top:20px;\">客戶資訊</h2>" +
-            "<div class=\"row\"><span class=\"label\">姓名</span><div class=\"value\">" + escapeHtml(ord.customerName || "") + "</div></div>" +
-            "<div class=\"row\"><span class=\"label\">電話</span><div class=\"value\">" + escapeHtml(ord.phone || "") + "</div></div>" +
-            "<div class=\"row\"><span class=\"label\">Email</span><div class=\"value\">" + escapeHtml(ord.email || "") + "</div></div>" +
-            "<div class=\"row\"><span class=\"label\">Line ID</span><div class=\"value\">" + escapeHtml(ord.lineId || "") + "</div></div>" +
-            "<h2 style=\"font-size:14px;margin-top:20px;\">運送方式</h2>" +
-            "<div class=\"row\"><span class=\"label\">方式</span><div class=\"value\">" + escapeHtml(ord.shippingMethod || "") + "</div></div>" +
+            "<h2 style=\"font-size:14px;margin-top:20px;\">客戶資訊 / 運送方式</h2>" +
+            "<div class=\"pdf-two-cols\">" +
+            "<div class=\"pdf-col\"><div class=\"row\"><span class=\"label\">姓名</span><div class=\"value\">" + escapeHtml(ord.customerName || "") + "</div></div></div>" +
+            "<div class=\"pdf-col\"><div class=\"row\"><span class=\"label\">方式</span><div class=\"value\">" + escapeHtml(ord.shippingMethod || "") + "</div></div>" +
             (ord.storeName || ord.storeId ? "<div class=\"row\"><span class=\"label\">門市</span><div class=\"value\">" + escapeHtml((ord.storeName || "") + (ord.storeId ? " (" + ord.storeId + ")" : "")) + "</div></div>" : "") +
-            "<div class=\"row\"><span class=\"label\">地址</span><div class=\"value\">" + escapeHtml(ord.address || "") + "</div></div>" +
+            "<div class=\"row\"><span class=\"label\">地址</span><div class=\"value\">" + escapeHtml(ord.address || "") + "</div></div></div>" +
+            "</div>" +
             itemsRows +
             "<h2 style=\"font-size:14px;margin-top:20px;\">金額</h2>" +
             "<table><tr><th>項目</th><th>金額</th></tr>" +
             "<tr><td>商品小計</td><td>NT$ " + (ord.subtotal != null ? ord.subtotal : 0) + "</td></tr>" +
             "<tr><td>折扣</td><td>- NT$ " + (ord.discount != null ? ord.discount : 0) + "</td></tr>" +
-            "<tr><td>運費</td><td>NT$ " + (ord.shippingFee != null ? ord.shippingFee : 0) + "</td></tr>" +
+            "<tr><td>運費</td><td>NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "</td></tr>" +
+            ((ord.shippingStatus != null && String(ord.shippingStatus).trim() !== "") ? "<tr><td>運費折抵</td><td>- NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "（" + escapeHtml(String(ord.shippingStatus).trim()) + "）</td></tr>" : "") +
+            "<tr><td>預購訂金</td><td>NT$ " + (ord.depositAmount != null ? ord.depositAmount : 0) + "</td></tr>" +
             "<tr><td><strong>總計</strong></td><td><strong>NT$ " + (ord.total != null ? ord.total : 0) + "</strong></td></tr></table>" +
             (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(displayRemark) + "</div></div>" : "") +
             "<h2 style=\"font-size:14px;margin-top:20px;\">收訂金歷程記錄</h2>" +
-            "<div class=\"row\"><div class=\"value\" style=\"white-space:pre-wrap;min-height:3em;\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div></div>" +
+            "<div class=\"pdf-deposit-box\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div>" +
             "</body></html>";
           var w = window.open("", "_blank", "width=640,height=800");
           w.document.write(html);
@@ -3336,7 +3362,7 @@
             if (pasteOrderApplyBtnEl) pasteOrderApplyBtnEl.textContent = "解析並追加到此訂單";
           } else {
             if (pasteOrderModalTitle) pasteOrderModalTitle.textContent = "從顧客訊息建立訂單";
-            if (pasteOrderModalDesc) pasteOrderModalDesc.textContent = "請貼上顧客傳到官方 LINE 的登記清單（含「商品總計」那一行），系統會自動帶入商品小計與備註，再補客戶資料即可建立訂單。";
+            if (pasteOrderModalDesc) pasteOrderModalDesc.textContent = "請貼上顧客傳到官方 LINE 的登記清單（可含「以下」、含「商品總計」那一行），系統會自動帶入商品小計與備註，再補客戶資料即可建立訂單。";
             if (pasteOrderAppendHint) pasteOrderAppendHint.classList.add("hidden");
             if (pasteOrderApplyBtnEl) pasteOrderApplyBtnEl.textContent = "解析並帶入新增訂單";
           }
@@ -3350,31 +3376,61 @@
         }
         function parsePastedOrderText(text) {
           var t = (text || "").trim();
-          var normalized = t.replace(/ＮＴ＄/g, "NT$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+          var normalized = t.replace(/ＮＴ＄/g, "NT$").replace(/＄/g, "$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+          var parseBlock = normalized;
+          var idxList = normalized.indexOf("MAARU 日本萌GO代購登記清單");
+          var idxPre = normalized.indexOf("預購款式");
+          var idxBelow = normalized.indexOf("以下");
+          if (idxList >= 0) {
+            parseBlock = normalized.substring(idxList).trim();
+          } else if (idxPre >= 0) {
+            parseBlock = normalized.substring(idxPre).trim();
+          } else if (idxBelow >= 0) {
+            parseBlock = normalized.substring(idxBelow + 2).trim();
+          }
           var subtotal = 0;
-          var match = normalized.match(/商品總計[：:]\s*NT\s*\$?\s*([\d,\s]+)/i);
+          var match = parseBlock.match(/(?:商品總計|總金額)[：:]\s*NT\s*\$?\s*([\d,\s]+)/i);
           if (match) {
             var numStr = (match[1] || "").replace(/[\s,]/g, "");
             var n = parseInt(numStr, 10);
             if (!isNaN(n) && n >= 0) subtotal = n;
           }
           var items = [];
-          var lineRe = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/gm;
-          var lineMatch;
-          while ((lineMatch = lineRe.exec(normalized)) !== null) {
-            var lineName = (lineMatch[1] || "").trim();
-            var qty = parseInt(lineMatch[2], 10);
-            var amountStr = (lineMatch[3] || "").replace(/,/g, "").replace(/\s/g, "");
-            var lineTotal = (amountStr !== "" && !isNaN(parseFloat(amountStr))) ? parseFloat(amountStr) : null;
-            var unitPrice = (lineTotal != null && qty > 0) ? Math.round(lineTotal / qty) : null;
-            if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty, price: unitPrice });
-          }
+          var lines = parseBlock.split(/\r?\n/);
+          var lineReA = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
+          var lineReB = /^(?:\d+[、．.]\s*)?(.+?)\s+\$?\s*([\d,]+)\s*[×*x]\s*(\d+)/i;
+          lines.forEach(function(line) {
+            var norm = line.replace(/ＮＴ＄/g, "NT$").replace(/＄/g, "$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
+            var m = norm.match(lineReA);
+            if (m) {
+              var lineName = (m[1] || "").trim();
+              var qty = parseInt(m[2], 10);
+              var amountStr = (m[3] || "").replace(/,/g, "").replace(/\s/g, "");
+              var lineTotal = (amountStr !== "" && !isNaN(parseFloat(amountStr))) ? parseFloat(amountStr) : null;
+              var unitPrice = (lineTotal != null && qty > 0) ? Math.round(lineTotal / qty) : null;
+              if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty, price: unitPrice });
+              return;
+            }
+            m = norm.match(lineReB);
+            if (m) {
+              var lineNameB = (m[1] || "").trim();
+              var priceStr = (m[2] || "").replace(/,/g, "");
+              var qtyB = parseInt(m[3], 10);
+              var unitPriceB = (priceStr !== "" && !isNaN(parseFloat(priceStr))) ? Math.round(parseFloat(priceStr)) : null;
+              if (lineNameB && !isNaN(qtyB) && qtyB > 0 && unitPriceB != null) items.push({ lineName: lineNameB, qty: qtyB, price: unitPriceB });
+            }
+          });
           window.__lastPastedOrderItems = items.length ? items : null;
-          var itemLineRe = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
+          var itemLineReA = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
+          var itemLineReB = /^(?:\d+[、．.]\s*)?(.+?)\s+\$?\s*([\d,]+)\s*[×*x]\s*(\d+)/i;
           var remarkOnlyLines = t.split(/\r?\n/).filter(function(line) {
-            var norm = line.replace(/ＮＴ＄/g, "NT$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
-            if (/商品總計[：:]\s*NT\s*\$?\s*[\d,\s]+/i.test(norm)) return false;
-            if (itemLineRe.test(norm)) return false;
+            var norm = line.replace(/ＮＴ＄/g, "NT$").replace(/＄/g, "$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
+            if (/^以下\s*[：:]?\s*$/.test(norm) || norm === "以下") return false;
+            if (/MAARU\s*日本萌GO\s*代購登記清單\s*[：:]?\s*$/.test(norm) || /^MAARU\s*日本萌GO/.test(norm)) return false;
+            if (/預購款式\s*[：:]?\s*$/.test(norm) || /^🛒?\s*預購款式/.test(norm)) return false;
+            if (/數量[：:]\s*共\s*\d+\s*款/.test(norm)) return false;
+            if (/(?:商品總計|總金額)[：:]\s*NT\s*\$?\s*[\d,\s]+/i.test(norm)) return false;
+            if (itemLineReA.test(norm) || itemLineReB.test(norm)) return false;
             return true;
           });
           var remarkOnly = remarkOnlyLines.join("\n").trim();
@@ -3408,12 +3464,16 @@
                 var newItems = window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) ? window.__lastPastedOrderItems : [];
                 ord.items = (ord.items && Array.isArray(ord.items) ? ord.items : []).concat(newItems);
                 ord.subtotal = (Number(ord.subtotal) || 0) + (parsed.subtotal || 0);
-                ord.total = Math.max(0, Math.ceil((ord.subtotal || 0) - (Number(ord.discount) || 0) + (Number(ord.shippingFee) || 0)));
+                var shipCouponOn = !!(ord.shippingStatus && String(ord.shippingStatus).indexOf("免運") >= 0);
+                var effectiveShipping = shipCouponOn ? 0 : (Number(ord.shippingFee) || 0);
+                ord.total = Math.max(0, Math.ceil((ord.subtotal || 0) - (Number(ord.discount) || 0) + effectiveShipping));
                 window.__lastPastedOrderItems = null;
-                saveOrders();
                 renderOrders();
                 closePasteOrderModal();
                 showOrderMessage("已追加商品至訂單 " + ord.id);
+                upsertOrderToSheet(ord).catch(function(err) {
+                  showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
+                });
               } else {
                 closePasteOrderModal();
                 showOrderMessage("找不到該訂單", true);
@@ -3432,7 +3492,7 @@
           });
         }
 
-        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount"].forEach(function(id) {
+        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount", "orderDepositAmount", "orderShippingStatusCoupon"].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) { el.addEventListener("input", updateOrderTotal); el.addEventListener("change", updateOrderTotal); }
         });
@@ -3467,18 +3527,31 @@
               ord.subtotal = data.subtotal;
               ord.discount = data.discount;
               ord.shippingFee = data.shippingFee;
+              ord.shippingStatus = data.shippingStatus || "";
               ord.total = data.total;
               ord.remark = data.remark;
               ord.depositRemark = data.depositRemark;
+              ord.depositAmount = data.depositAmount != null ? data.depositAmount : 0;
               ord.preorderDate = data.preorderDate;
               ord.shipDate = data.shipDate;
-              saveOrders();
               renderOrders();
               showOrderMessage("訂單已更新");
+              upsertOrderToSheet(ord).catch(function(err) {
+                showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
+              });
             }
           } else {
+            var orderIdInput = (document.getElementById("orderId") && document.getElementById("orderId").value) ? document.getElementById("orderId").value.trim() : "";
+            var newId = orderIdInput || getNextOrderId();
+            if (/^\d+$/.test(newId)) newId = "ORD" + ("00000" + newId).slice(-5);
+            else if (!/^ORD\d+$/i.test(newId)) newId = getNextOrderId();
+            else newId = newId.toUpperCase();
+            if (orders.some(function(o) { return (o.id || "").toUpperCase() === newId; })) {
+              showOrderMessage("此訂單編號已存在，請改用其他編號或留空自動產生", true);
+              return;
+            }
             var newOrder = {
-              id: getNextOrderId(),
+              id: newId,
               date: new Date().toISOString(),
               status: "待處理",
               customerName: data.customerName,
@@ -3492,9 +3565,11 @@
               subtotal: data.subtotal,
               discount: data.discount,
               shippingFee: data.shippingFee,
+              shippingStatus: data.shippingStatus || "",
               total: data.total,
               remark: data.remark,
               depositRemark: data.depositRemark,
+              depositAmount: data.depositAmount != null ? data.depositAmount : 0,
               preorderDate: data.preorderDate,
               shipDate: data.shipDate
             };
@@ -3503,9 +3578,11 @@
               window.__lastPastedOrderItems = null;
             }
             orders.unshift(newOrder);
-            saveOrders();
             renderOrders();
             showOrderMessage("訂單已建立");
+            upsertOrderToSheet(newOrder).catch(function(err) {
+              showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
+            });
           }
           closeOrderModal();
         });
@@ -3527,10 +3604,17 @@
           URL.revokeObjectURL(a.href);
           showOrderMessage("已匯出 CSV");
         });
-        if (btnSaveOrders) { btnSaveOrders.disabled = false; btnSaveOrders.classList.remove("cursor-not-allowed", "bg-slate-100", "text-slate-400"); btnSaveOrders.classList.add("bg-slate-800", "text-white", "hover:bg-slate-700"); btnSaveOrders.addEventListener("click", function() { saveOrders(); showOrderMessage("已儲存所有變更"); }); }
+        if (btnSaveOrders) {
+          btnSaveOrders.disabled = false;
+          btnSaveOrders.classList.remove("cursor-not-allowed", "bg-slate-100", "text-slate-400");
+          btnSaveOrders.classList.add("bg-slate-800", "text-white", "hover:bg-slate-700");
+          btnSaveOrders.textContent = "重新載入（從試算表）";
+          btnSaveOrders.addEventListener("click", function() { loadOrdersFromSheet(); });
+        }
         if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { renderOrders(); });
         if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders(); } });
         if (orderStatusFilter) orderStatusFilter.addEventListener("change", function() { renderOrders(); });
+        loadOrdersFromSheet();
         renderOrders();
       })();
 

@@ -15,7 +15,9 @@ var CONFIG = {
   sheetName: "",
   // 若有「匯率」或「設定」工作表，可從這裡讀 rate（欄位名：rate 或 匯率）
   rateSheetName: "設定",
-  rateColumnName: "匯率"
+  rateColumnName: "匯率",
+  // 訂單工作表名稱（不存在會自動建立）
+  orderSheetName: "訂單"
 };
 
 /**
@@ -70,6 +72,48 @@ function doPost(e) {
       out.message = "已連線";
       return jsonOutput(out);
     }
+
+    // 訂單：list / upsert / delete
+    if (action === "order_list" || action === "order_upsert" || action === "order_delete") {
+      var orderSheet = getOrderSheet(ss);
+      if (!orderSheet) {
+        out.error = true;
+        out.message = "找不到訂單工作表";
+        return jsonOutput(out);
+      }
+      if (action === "order_list") {
+        out.orders = getOrders(orderSheet);
+        out.message = "OK";
+        return jsonOutput(out);
+      }
+      if (action === "order_delete") {
+        var delId = (body && body.id != null) ? String(body.id).trim() : "";
+        if (!delId) {
+          out.error = true;
+          out.message = "缺少訂單編號 id";
+          return jsonOutput(out);
+        }
+        var deleted = deleteOrderById(orderSheet, delId);
+        out.message = deleted ? ("已刪除訂單 " + delId) : ("找不到訂單 " + delId);
+        return jsonOutput(out);
+      }
+      var order = body.order;
+      if (!order || typeof order !== "object") {
+        out.error = true;
+        out.message = "缺少 order 資料";
+        return jsonOutput(out);
+      }
+      var upId = (order.id != null) ? String(order.id).trim() : "";
+      if (!upId) {
+        out.error = true;
+        out.message = "訂單缺少 id";
+        return jsonOutput(out);
+      }
+      upsertOrder(orderSheet, order);
+      out.message = "已寫入訂單 " + upId;
+      return jsonOutput(out);
+    }
+
     var sheet = getProductSheet(ss);
     if (!sheet) {
       out.error = true;
@@ -148,6 +192,239 @@ function doPost(e) {
   }
 }
 
+function getOrderSheet(ss) {
+  var name = CONFIG.orderSheetName || "訂單";
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  ensureOrderHeaderRow_(sheet);
+  return sheet;
+}
+
+function ensureOrderHeaderRow_(sheet) {
+  var headers = [
+    "訂單編號",
+    "狀態",
+    "日期",
+    "客戶姓名",
+    "電話",
+    "Email",
+    "Line ID",
+    "運送方式",
+    "門市",
+    "店號",
+    "地址",
+    "小計",
+    "折扣",
+    "運費",
+    "運費狀態",
+    "預購訂金",
+    "總計",
+    "備註",
+    "收訂金歷程記錄",
+    "預購日期",
+    "出貨日期",
+    "品項(JSON)"
+  ];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 1) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return;
+  }
+  var row1 = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length)).getValues()[0];
+  var existing = row1.map(function(h) { return (h || "").toString().trim(); }).filter(Boolean);
+  if (!existing.length) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return;
+  }
+  // 若已有表頭，則保持不動（避免覆蓋使用者自訂欄位順序）
+}
+
+function getOrderHeaders_(sheet) {
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return [];
+  var row1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  return row1.map(function(h) { return (h || "").toString().trim(); });
+}
+
+function orderKeyMap_(headers) {
+  var map = {};
+  var aliases = [
+    ["訂單編號", "id", "ID"],
+    ["狀態", "status"],
+    ["日期", "date"],
+    ["客戶姓名", "customerName", "姓名", "name"],
+    ["電話", "phone"],
+    ["Email", "email"],
+    ["Line ID", "lineId", "LineID", "line id"],
+    ["運送方式", "shippingMethod"],
+    ["門市", "storeName"],
+    ["店號", "storeId"],
+    ["地址", "address"],
+    ["小計", "subtotal"],
+    ["折扣", "discount"],
+    ["運費", "shippingFee"],
+    ["運費狀態", "shippingStatus"],
+    ["預購訂金", "depositAmount"],
+    ["總計", "total"],
+    ["備註", "remark"],
+    ["收訂金歷程記錄", "depositRemark"],
+    ["預購日期", "preorderDate"],
+    ["出貨日期", "shipDate"],
+    ["品項(JSON)", "itemsJson", "items"]
+  ];
+  for (var c = 0; c < headers.length; c++) {
+    var h = (headers[c] || "").toString().trim();
+    if (!h) continue;
+    for (var a = 0; a < aliases.length; a++) {
+      var group = aliases[a];
+      for (var g = 0; g < group.length; g++) {
+        if (h === group[g] || h.toLowerCase() === String(group[g]).toLowerCase()) {
+          map[c] = group[group.length - 1];
+          break;
+        }
+      }
+      if (map[c]) break;
+    }
+  }
+  return map;
+}
+
+function normalizeOrderForSheet_(order) {
+  var o = order || {};
+  var id = (o.id != null) ? String(o.id).trim() : "";
+  var out = {
+    id: id,
+    status: (o.status != null && String(o.status).trim() !== "") ? String(o.status).trim() : "",
+    date: (o.date != null) ? String(o.date) : "",
+    customerName: (o.customerName != null) ? String(o.customerName) : "",
+    phone: (o.phone != null) ? String(o.phone) : "",
+    email: (o.email != null) ? String(o.email) : "",
+    lineId: (o.lineId != null) ? String(o.lineId) : "",
+    shippingMethod: (o.shippingMethod != null) ? String(o.shippingMethod) : "",
+    storeName: (o.storeName != null) ? String(o.storeName) : "",
+    storeId: (o.storeId != null) ? String(o.storeId) : "",
+    address: (o.address != null) ? String(o.address) : "",
+    subtotal: (o.subtotal != null && o.subtotal !== "") ? Number(o.subtotal) : "",
+    discount: (o.discount != null && o.discount !== "") ? Number(o.discount) : "",
+    shippingFee: (o.shippingFee != null && o.shippingFee !== "") ? Number(o.shippingFee) : "",
+    shippingStatus: (o.shippingStatus != null) ? String(o.shippingStatus) : "",
+    depositAmount: (o.depositAmount != null && o.depositAmount !== "") ? Number(o.depositAmount) : "",
+    total: (o.total != null && o.total !== "") ? Number(o.total) : "",
+    remark: (o.remark != null) ? String(o.remark) : "",
+    depositRemark: (o.depositRemark != null) ? String(o.depositRemark) : "",
+    preorderDate: (o.preorderDate != null) ? String(o.preorderDate) : "",
+    shipDate: (o.shipDate != null) ? String(o.shipDate) : "",
+    itemsJson: ""
+  };
+  try {
+    if (o.items != null) out.itemsJson = JSON.stringify(o.items);
+  } catch (e) {
+    out.itemsJson = "";
+  }
+  return out;
+}
+
+function findOrderRowById_(sheet, id, headers) {
+  var safeId = (id || "").toString().trim();
+  if (!safeId) return -1;
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) return -1;
+  var idCol = -1;
+  for (var c = 0; c < headers.length; c++) {
+    var h = (headers[c] || "").toString().trim();
+    if (h === "訂單編號") { idCol = c; break; }
+  }
+  if (idCol < 0) idCol = 0;
+  for (var r = 1; r < data.length; r++) {
+    var v = data[r][idCol];
+    if (v != null && String(v).trim() === safeId) return r + 1; // 1-indexed row
+  }
+  return -1;
+}
+
+function buildRowFromOrder_(sheet, order) {
+  var headers = getOrderHeaders_(sheet);
+  var keyMap = orderKeyMap_(headers);
+  var norm = normalizeOrderForSheet_(order);
+  var row = [];
+  for (var c = 0; c < headers.length; c++) {
+    var key = keyMap[c];
+    var val = "";
+    if (key === "items") key = "itemsJson";
+    if (key && norm[key] !== undefined && norm[key] !== null && norm[key] !== "") val = norm[key];
+    row.push(val);
+  }
+  return row;
+}
+
+function upsertOrder(sheet, order) {
+  ensureOrderHeaderRow_(sheet);
+  var headers = getOrderHeaders_(sheet);
+  var id = (order && order.id != null) ? String(order.id).trim() : "";
+  if (!id) return;
+  var row = buildRowFromOrder_(sheet, order);
+  var existingRow = findOrderRowById_(sheet, id, headers);
+  if (existingRow >= 2) {
+    sheet.getRange(existingRow, 1, 1, row.length).setValues([row]);
+  } else {
+    sheet.appendRow(row);
+  }
+}
+
+function deleteOrderById(sheet, id) {
+  ensureOrderHeaderRow_(sheet);
+  var headers = getOrderHeaders_(sheet);
+  var row = findOrderRowById_(sheet, id, headers);
+  if (row >= 2) {
+    sheet.deleteRow(row);
+    return true;
+  }
+  return false;
+}
+
+function getOrders(sheet) {
+  ensureOrderHeaderRow_(sheet);
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+  var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
+  var keyMap = orderKeyMap_(headers);
+  var list = [];
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var obj = {};
+    for (var c = 0; c < headers.length; c++) {
+      var key = keyMap[c];
+      if (!key) continue;
+      var val = row[c];
+      if (val === "" || val === null || val === undefined) continue;
+      if (key === "items") key = "itemsJson";
+      obj[key] = val;
+    }
+    var id = (obj.id != null) ? String(obj.id).trim() : "";
+    if (!id) continue;
+    // itemsJson → items
+    if (obj.itemsJson != null && String(obj.itemsJson).trim() !== "") {
+      try {
+        var parsed = JSON.parse(String(obj.itemsJson));
+        if (parsed && typeof parsed === "object") obj.items = parsed;
+      } catch (e) {
+        // ignore parse error
+      }
+    }
+    delete obj.itemsJson;
+    list.push(obj);
+  }
+  // 依日期由新到舊（無日期則置底）
+  list.sort(function(a, b) {
+    var ad = a.date ? new Date(a.date).getTime() : 0;
+    var bd = b.date ? new Date(b.date).getTime() : 0;
+    if (!isFinite(ad)) ad = 0;
+    if (!isFinite(bd)) bd = 0;
+    return bd - ad;
+  });
+  return list;
+}
+
 function jsonOutput(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
@@ -198,7 +475,8 @@ function buildRowFromProduct(sheet, product) {
     if (key === "status") statusCol = i;
   }
   if (statusCol >= 0) {
-    row[statusCol] = (product.status !== undefined && product.status !== null && String(product.status).trim() !== "") ? String(product.status).trim() : "上架";
+    var statusVal = (product.status !== undefined && product.status !== null && String(product.status).trim() !== "") ? String(product.status).trim() : "上架";
+    row[statusCol] = (statusVal === "下架") ? "下架" : "上架";
   }
   if (variantCol >= 0) {
     row[variantCol] = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
@@ -318,7 +596,9 @@ function getProducts(ss) {
       var key = keyMap[c];
       if (!key) continue;
       var val = row[c];
-      if (val !== "" && val !== null && val !== undefined) {
+      if (key === "status") {
+        obj.status = (val !== "" && val !== null && val !== undefined && String(val).trim() === "下架") ? "下架" : "上架";
+      } else if (val !== "" && val !== null && val !== undefined) {
         obj[key] = val;
       }
     }
@@ -381,6 +661,7 @@ function buildKeyMap(headers) {
     var h = (headers[c] || "").toString().trim();
     if (h.indexOf("成本") >= 0) map[c] = "cost";
     else if (h.indexOf("利潤") >= 0) map[c] = "profit";
+    else if (h.indexOf("狀態") >= 0) map[c] = "status";
   }
   return map;
 }
