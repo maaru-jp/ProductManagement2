@@ -3649,8 +3649,9 @@
               ord.shipDate = data.shipDate;
               saveOrders();
               renderOrders();
+              closeOrderModal();
+              showOrderMessage("訂單已更新");
               upsertOrderToSheet(ord).then(function() {
-                closeOrderModal();
                 showOrderMessage("訂單已更新（試算表已同步）");
               }).catch(function(err) {
                 showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
@@ -3712,23 +3713,31 @@
 
         function exportOrdersCsvFromCurrentList() {
           if (orders.length === 0) { showOrderMessage("目前沒有訂單可匯出", true); return; }
-          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "Line ID", "運送方式", "門市", "店號", "地址", "購買商品清單", "小計", "折扣", "運費", "運費狀態", "預購訂金", "總計", "備註", "收訂金歷程記錄", "預購日期", "出貨日期"];
+          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "Line ID", "運送方式", "門市", "店號", "地址", "購買商品清單", "數量", "單價", "小計", "折扣", "運費", "運費狀態", "預購訂金", "總計", "備註", "收訂金歷程記錄", "預購日期", "出貨日期"];
           var rows = [headers.join(",")];
           orders.forEach(function(ord) {
             var dateStr = ord.date ? new Date(ord.date).toISOString() : "";
-            var itemsText = "";
+            var itemsNamesText = "";
+            var itemsQtyText = "";
+            var itemsPriceText = "";
             if (ord.items && Array.isArray(ord.items) && ord.items.length) {
-              itemsText = ord.items.map(function(it) {
+              itemsNamesText = ord.items.map(function(it) {
                 var n = (it.lineName != null ? String(it.lineName).trim() : "") || ((it.name || "") + (it.variant ? " " + it.variant : ""));
+                return n;
+              }).join(" | ");
+              itemsQtyText = ord.items.map(function(it) {
                 var q = (it.qty != null && !isNaN(Number(it.qty))) ? Number(it.qty) : 0;
-                var p = (it.price != null && !isNaN(Number(it.price))) ? Math.round(Number(it.price)) : null;
-                return n + " x" + q + (p != null ? " (NT$" + p + ")" : "");
+                return String(q);
+              }).join(" | ");
+              itemsPriceText = ord.items.map(function(it) {
+                var p = (it.price != null && !isNaN(Number(it.price))) ? Math.round(Number(it.price)) : 0;
+                return String(p);
               }).join(" | ");
             }
             var row = [
               ord.id || "", ord.status || "", dateStr, ord.customerName || "", ord.phone || "", ord.email || "", ord.lineId || "",
               ord.shippingMethod || "", ord.storeName || "", ord.storeId || "", (ord.address || "").replace(/\n/g, " "),
-              itemsText,
+              itemsNamesText, itemsQtyText, itemsPriceText,
               ord.subtotal != null ? ord.subtotal : "", ord.discount != null ? ord.discount : "", ord.shippingFee != null ? ord.shippingFee : "",
               ord.shippingStatus || "", ord.depositAmount != null ? ord.depositAmount : "",
               ord.total != null ? ord.total : "", (ord.remark || "").replace(/"/g, '""'), (ord.depositRemark || "").replace(/"/g, '""'),
