@@ -3277,6 +3277,16 @@
             }
             return true;
           });
+          list.sort(function(a, b) {
+            var ma = String((a && a.id) || "").match(/^ORD(\d+)$/i);
+            var mb = String((b && b.id) || "").match(/^ORD(\d+)$/i);
+            var na = ma ? parseInt(ma[1], 10) : Number.MAX_SAFE_INTEGER;
+            var nb = mb ? parseInt(mb[1], 10) : Number.MAX_SAFE_INTEGER;
+            if (na !== nb) return na - nb; // 由小到大（上到下）
+            var ad = a && a.date ? new Date(a.date).getTime() : 0;
+            var bd = b && b.date ? new Date(b.date).getTime() : 0;
+            return ad - bd;
+          });
           if (list.length === 0) {
             orderTableBody.innerHTML = "<tr><td colspan=\"7\" class=\"py-12 text-center text-slate-500\">" + (orders.length === 0 ? "目前沒有訂單" : "沒有符合條件的訂單") + "</td></tr>";
             return;
