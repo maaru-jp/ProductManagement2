@@ -3516,6 +3516,7 @@
           var lines = parseBlock.split(/\r?\n/);
           var lineReA = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
           var lineReB = /^(?:\d+[、．.]\s*)?(.+?)\s+\$?\s*([\d,]+)\s*[×*x]\s*(\d+)/i;
+          var lineReC = /^(?:\d+[、．.]\s*)?(.+?)\s*[×*x]\s*(\d+)\s+\$?\s*([\d,]+)/i;
           lines.forEach(function(line) {
             var norm = line.replace(/ＮＴ＄/g, "NT$").replace(/＄/g, "$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
             var m = norm.match(lineReA);
@@ -3535,11 +3536,21 @@
               var qtyB = parseInt(m[3], 10);
               var unitPriceB = (priceStr !== "" && !isNaN(parseFloat(priceStr))) ? Math.round(parseFloat(priceStr)) : null;
               if (lineNameB && !isNaN(qtyB) && qtyB > 0 && unitPriceB != null) items.push({ lineName: lineNameB, qty: qtyB, price: unitPriceB });
+              return;
+            }
+            m = norm.match(lineReC);
+            if (m) {
+              var lineNameC = (m[1] || "").trim();
+              var qtyC = parseInt(m[2], 10);
+              var priceStrC = (m[3] || "").replace(/,/g, "");
+              var unitPriceC = (priceStrC !== "" && !isNaN(parseFloat(priceStrC))) ? Math.round(parseFloat(priceStrC)) : null;
+              if (lineNameC && !isNaN(qtyC) && qtyC > 0 && unitPriceC != null) items.push({ lineName: lineNameC, qty: qtyC, price: unitPriceC });
             }
           });
           window.__lastPastedOrderItems = items.length ? items : null;
           var itemLineReA = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
           var itemLineReB = /^(?:\d+[、．.]\s*)?(.+?)\s+\$?\s*([\d,]+)\s*[×*x]\s*(\d+)/i;
+          var itemLineReC = /^(?:\d+[、．.]\s*)?(.+?)\s*[×*x]\s*(\d+)\s+\$?\s*([\d,]+)/i;
           var remarkOnlyLines = t.split(/\r?\n/).filter(function(line) {
             var norm = line.replace(/ＮＴ＄/g, "NT$").replace(/＄/g, "$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
             if (/^以下\s*[：:]?\s*$/.test(norm) || norm === "以下") return false;
@@ -3547,7 +3558,7 @@
             if (/預購款式\s*[：:]?\s*$/.test(norm) || /^🛒?\s*預購款式/.test(norm)) return false;
             if (/數量[：:]\s*共\s*\d+\s*款/.test(norm)) return false;
             if (/(?:商品總計|總金額)[：:]\s*NT\s*\$?\s*[\d,\s]+/i.test(norm)) return false;
-            if (itemLineReA.test(norm) || itemLineReB.test(norm)) return false;
+            if (itemLineReA.test(norm) || itemLineReB.test(norm) || itemLineReC.test(norm)) return false;
             return true;
           });
           var remarkOnly = remarkOnlyLines.join("\n").trim();
