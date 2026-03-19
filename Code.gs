@@ -16,6 +16,8 @@ var CONFIG = {
   // 若有「匯率」或「設定」工作表，可從這裡讀 rate（欄位名：rate 或 匯率）
   rateSheetName: "設定",
   rateColumnName: "匯率",
+  // 後台寫入驗證 token（請改成高強度字串，並與 admin.html 的 ADMIN_WRITE_TOKEN 一致）
+  adminWriteToken: "CHANGE_ME_TO_A_STRONG_TOKEN_2026",
   // 訂單工作表名稱（不存在會自動建立）
   orderSheetName: "訂單"
 };
@@ -54,6 +56,11 @@ function doPost(e) {
     } catch (parseErr) {
       out.error = true;
       out.message = "請求內容不是有效 JSON";
+      return jsonOutput(out);
+    }
+    if (!isAuthorizedPost_(body)) {
+      out.error = true;
+      out.message = "未授權：token 無效";
       return jsonOutput(out);
     }
     var action = (body.action || "").toString().toLowerCase();
@@ -190,6 +197,13 @@ function doPost(e) {
     out.message = err.toString();
     return jsonOutput(out);
   }
+}
+
+function isAuthorizedPost_(body) {
+  var expected = (CONFIG.adminWriteToken || "").toString().trim();
+  if (!expected) return false;
+  var actual = (body && body.token != null) ? String(body.token).trim() : "";
+  return actual === expected;
 }
 
 function getOrderSheet(ss) {

@@ -1172,9 +1172,12 @@
       var API_READ = isLocalHost ? "/api" : API_BASE;
       var API_WRITE = isLocalHost ? "/api-write" : API_BASE;
       var CORS_PROXY_PREFIX = "https://corsproxy.io/?";
+      // 請與 Code.gs 的 CONFIG.adminWriteToken 設成相同字串
+      var ADMIN_WRITE_TOKEN = "CHANGE_ME_TO_A_STRONG_TOKEN_2026";
 
       function fetchWrite(body) {
-        var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+        var payload = Object.assign({}, body || {}, { token: ADMIN_WRITE_TOKEN });
+        var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) };
         return fetch(API_WRITE, opts).catch(function(err) {
           if (isLocalHost) throw err;
           return fetch(CORS_PROXY_PREFIX + encodeURIComponent(API_WRITE), opts);
