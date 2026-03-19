@@ -3354,6 +3354,7 @@
 
         function generateOrderPdf(ord) {
           var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+          var printedAtStr = new Date().toLocaleString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
           var itemsRows = "";
           if (ord.items && Array.isArray(ord.items) && ord.items.length > 0) {
             itemsRows = "<h2 style=\"font-size:14px;margin-top:12px;margin-bottom:6px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
@@ -3410,11 +3411,11 @@
             "table{width:100%;border-collapse:collapse;margin:8px 0;page-break-inside:avoid;} th,td{border:1px solid #e2e8f0;padding:6px;text-align:left;font-size:14px;} th{background:#f1f5f9;} " +
             ".pdf-deposit-box{border:2px solid #64748b;border-radius:6px;padding:8px 10px;margin-top:6px;min-height:1.2em;background:#f8fafc;white-space:pre-wrap;font-size:15px;line-height:1.5;} " +
             ".pdf-two-cols{display:flex;gap:12px;margin-top:6px;flex-wrap:nowrap;} .pdf-two-cols .pdf-col{flex:1;min-width:0;} " +
+            ".pdf-printed-at{position:fixed;right:12mm;bottom:8mm;color:#64748b;font-size:12px;background:#ffffff;padding:2px 6px;border-radius:4px;} " +
             ".total{font-size:16px;font-weight:bold;margin-top:12px;}</style></head><body>" +
             "<div class=\"pdf-header\"><div class=\"pdf-header-left\">" +
             "<div class=\"pdf-title-box\">訂單明細</div>" +
             "<div class=\"row\"><span class=\"label\">訂單編號</span><div class=\"value\">" + escapeHtml(ord.id) + "</div></div>" +
-            "<div class=\"row\"><span class=\"label\">日期</span><div class=\"value\">" + escapeHtml(dateStr) + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">狀態</span><div class=\"value\">" + escapeHtml(ord.status || "待處理") + "</div></div>" +
             "</div><div class=\"pdf-header-right\">" + headerRight + "</div></div>" +
             "<h2>客戶資訊 / 運送方式</h2>" +
@@ -3436,6 +3437,7 @@
             (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(displayRemark) + "</div></div>" : "") +
             "<h2>收訂金歷程記錄</h2>" +
             "<div class=\"pdf-deposit-box\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div>" +
+            "<div class=\"pdf-printed-at\">印單時間：" + escapeHtml(printedAtStr) + "</div>" +
             "</body></html>";
           var w = window.open("", "_blank", "width=640,height=800");
           w.document.write(html);
