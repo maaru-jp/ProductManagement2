@@ -3406,12 +3406,13 @@
             ".pdf-dates-box{border:2px solid #64748b;border-radius:6px;padding:8px 12px;display:inline-block;margin:0 auto;} " +
             ".pdf-dates{font-size:17px;} .pdf-date-row{display:flex;align-items:center;margin:6px 0;} .pdf-date-row:first-child{margin-top:0;} .pdf-date-row:last-child{margin-bottom:0;} .pdf-date-row .label{color:#64748b;font-size:15px;flex:0 0 auto;width:4.5em;} .pdf-date-row .value{font-weight:600;font-size:17px;flex:1;min-width:0;text-align:right;} " +
             "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:5px;margin:0 0 6px 0;} h2{font-size:14px;margin:12px 0 6px 0;} .row{margin:5px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:1px;font-size:15px;} " +
+            ".pdf-title-box{display:block;background:#4b5563;color:#ffffff;border-radius:4px;padding:10px 14px;font-size:22px;font-weight:700;letter-spacing:1px;margin:0 0 10px 0;} " +
             "table{width:100%;border-collapse:collapse;margin:8px 0;page-break-inside:avoid;} th,td{border:1px solid #e2e8f0;padding:6px;text-align:left;font-size:14px;} th{background:#f1f5f9;} " +
             ".pdf-deposit-box{border:2px solid #64748b;border-radius:6px;padding:8px 10px;margin-top:6px;min-height:1.2em;background:#f8fafc;white-space:pre-wrap;font-size:15px;line-height:1.5;} " +
             ".pdf-two-cols{display:flex;gap:12px;margin-top:6px;flex-wrap:nowrap;} .pdf-two-cols .pdf-col{flex:1;min-width:0;} " +
             ".total{font-size:16px;font-weight:bold;margin-top:12px;}</style></head><body>" +
             "<div class=\"pdf-header\"><div class=\"pdf-header-left\">" +
-            "<h1>訂單明細 " + escapeHtml(ord.id) + "</h1>" +
+            "<div class=\"pdf-title-box\">訂單明細</div>" +
             "<div class=\"row\"><span class=\"label\">訂單編號</span><div class=\"value\">" + escapeHtml(ord.id) + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">日期</span><div class=\"value\">" + escapeHtml(dateStr) + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">狀態</span><div class=\"value\">" + escapeHtml(ord.status || "待處理") + "</div></div>" +
