@@ -3356,7 +3356,7 @@
           var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
           var itemsRows = "";
           if (ord.items && Array.isArray(ord.items) && ord.items.length > 0) {
-            itemsRows = "<h2 style=\"font-size:14px;margin-top:20px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
+            itemsRows = "<h2 style=\"font-size:14px;margin-top:12px;margin-bottom:6px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
             for (var i = 0; i < ord.items.length; i++) {
               var it = ord.items[i];
               var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
@@ -3398,17 +3398,17 @@
           headerRight += "<div class=\"pdf-dates-box\"><div class=\"pdf-date-row\"><span class=\"label\">預購日期</span><span class=\"value\">" + escapeHtml(preorderStr || "—") + "</span></div>";
           headerRight += "<div class=\"pdf-date-row\"><span class=\"label\">出貨日期</span><span class=\"value\">" + escapeHtml(shipStr || "—") + "</span></div></div>";
           var html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>訂單 " + escapeHtml(ord.id) + "</title>" +
-            "<style>body{font-family:'Microsoft JhengHei',sans-serif;padding:24px;max-width:600px;margin:0 auto;color:#1e293b;} " +
-            ".pdf-header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:20px;flex-wrap:wrap;} " +
+            "<style>@page{size:A4 portrait;margin:10mm;} *{-webkit-print-color-adjust:exact;print-color-adjust:exact;} body{font-family:'Microsoft JhengHei',sans-serif;padding:10px;max-width:760px;margin:0 auto;color:#1e293b;font-size:15px;line-height:1.45;} " +
+            ".pdf-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:8px;flex-wrap:nowrap;} " +
             ".pdf-header-left{flex:1;min-width:200px;} .pdf-header-right{text-align:center;min-width:240px;} " +
-            ".pdf-logo-wrap{margin-bottom:14px;text-align:center;} .pdf-logo{max-width:320px;max-height:160px;width:100%;object-fit:contain;display:block;margin:0 auto;} " +
-            ".pdf-logo-placeholder,.pdf-logo-fallback{width:320px;height:140px;margin:0 auto;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:#94a3b8;font-size:16px;display:flex;align-items:center;justify-content:center;} " +
-            ".pdf-dates-box{border:2px solid #64748b;border-radius:6px;padding:10px 14px;display:inline-block;margin:0 auto;} " +
-            ".pdf-dates{font-size:17px;} .pdf-date-row{display:flex;align-items:center;margin:10px 0;} .pdf-date-row:first-child{margin-top:0;} .pdf-date-row:last-child{margin-bottom:0;} .pdf-date-row .label{color:#64748b;font-size:15px;flex:0 0 auto;width:4.5em;} .pdf-date-row .value{font-weight:600;font-size:17px;flex:1;min-width:0;text-align:right;} " +
-            "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:8px;margin:0 0 10px 0;} .row{margin:10px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:2px;} " +
-            "table{width:100%;border-collapse:collapse;margin:16px 0;} th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;} th{background:#f1f5f9;} " +
-            ".pdf-deposit-box{border:2px solid #64748b;border-radius:6px;padding:12px 14px;margin-top:8px;min-height:3em;background:#f8fafc;white-space:pre-wrap;font-size:15px;line-height:1.5;} " +
-            ".pdf-two-cols{display:flex;gap:24px;margin-top:12px;flex-wrap:wrap;} .pdf-two-cols .pdf-col{flex:1;min-width:200px;} " +
+            ".pdf-logo-wrap{margin-bottom:8px;text-align:center;} .pdf-logo{max-width:280px;max-height:120px;width:100%;object-fit:contain;display:block;margin:0 auto;} " +
+            ".pdf-logo-placeholder,.pdf-logo-fallback{width:280px;height:110px;margin:0 auto;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:#94a3b8;font-size:14px;display:flex;align-items:center;justify-content:center;} " +
+            ".pdf-dates-box{border:2px solid #64748b;border-radius:6px;padding:8px 12px;display:inline-block;margin:0 auto;} " +
+            ".pdf-dates{font-size:17px;} .pdf-date-row{display:flex;align-items:center;margin:6px 0;} .pdf-date-row:first-child{margin-top:0;} .pdf-date-row:last-child{margin-bottom:0;} .pdf-date-row .label{color:#64748b;font-size:15px;flex:0 0 auto;width:4.5em;} .pdf-date-row .value{font-weight:600;font-size:17px;flex:1;min-width:0;text-align:right;} " +
+            "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:5px;margin:0 0 6px 0;} h2{font-size:14px;margin:12px 0 6px 0;} .row{margin:5px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:1px;font-size:15px;} " +
+            "table{width:100%;border-collapse:collapse;margin:8px 0;page-break-inside:avoid;} th,td{border:1px solid #e2e8f0;padding:6px;text-align:left;font-size:14px;} th{background:#f1f5f9;} " +
+            ".pdf-deposit-box{border:2px solid #64748b;border-radius:6px;padding:8px 10px;margin-top:6px;min-height:1.2em;background:#f8fafc;white-space:pre-wrap;font-size:15px;line-height:1.5;} " +
+            ".pdf-two-cols{display:flex;gap:12px;margin-top:6px;flex-wrap:nowrap;} .pdf-two-cols .pdf-col{flex:1;min-width:0;} " +
             ".total{font-size:16px;font-weight:bold;margin-top:12px;}</style></head><body>" +
             "<div class=\"pdf-header\"><div class=\"pdf-header-left\">" +
             "<h1>訂單明細 " + escapeHtml(ord.id) + "</h1>" +
@@ -3416,7 +3416,7 @@
             "<div class=\"row\"><span class=\"label\">日期</span><div class=\"value\">" + escapeHtml(dateStr) + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">狀態</span><div class=\"value\">" + escapeHtml(ord.status || "待處理") + "</div></div>" +
             "</div><div class=\"pdf-header-right\">" + headerRight + "</div></div>" +
-            "<h2 style=\"font-size:14px;margin-top:20px;\">客戶資訊 / 運送方式</h2>" +
+            "<h2>客戶資訊 / 運送方式</h2>" +
             "<div class=\"pdf-two-cols\">" +
             "<div class=\"pdf-col\"><div class=\"row\"><span class=\"label\">姓名</span><div class=\"value\">" + escapeHtml(ord.customerName || "") + "</div></div></div>" +
             "<div class=\"pdf-col\"><div class=\"row\"><span class=\"label\">方式</span><div class=\"value\">" + escapeHtml(ord.shippingMethod || "") + "</div></div>" +
@@ -3424,7 +3424,7 @@
             "<div class=\"row\"><span class=\"label\">地址</span><div class=\"value\">" + escapeHtml(ord.address || "") + "</div></div></div>" +
             "</div>" +
             itemsRows +
-            "<h2 style=\"font-size:14px;margin-top:20px;\">金額</h2>" +
+            "<h2>金額</h2>" +
             "<table><tr><th>項目</th><th>金額</th></tr>" +
             "<tr><td>商品小計</td><td>NT$ " + (ord.subtotal != null ? ord.subtotal : 0) + "</td></tr>" +
             "<tr><td>折扣</td><td>- NT$ " + (ord.discount != null ? ord.discount : 0) + "</td></tr>" +
@@ -3433,7 +3433,7 @@
             "<tr><td>預購訂金</td><td>NT$ " + (ord.depositAmount != null ? ord.depositAmount : 0) + "</td></tr>" +
             "<tr><td><strong>總計</strong></td><td><strong>NT$ " + (ord.total != null ? ord.total : 0) + "</strong></td></tr></table>" +
             (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(displayRemark) + "</div></div>" : "") +
-            "<h2 style=\"font-size:14px;margin-top:20px;\">收訂金歷程記錄</h2>" +
+            "<h2>收訂金歷程記錄</h2>" +
             "<div class=\"pdf-deposit-box\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div>" +
             "</body></html>";
           var w = window.open("", "_blank", "width=640,height=800");
