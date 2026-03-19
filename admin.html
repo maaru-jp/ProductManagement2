@@ -1209,7 +1209,7 @@
           if (window.location.protocol === "file:") {
             return "目前用 file:// 開啟，請改用 http://localhost 開啟 admin.html";
           }
-          return "無法連線 API，請確認：1) Apps Script 已重新部署 2) API_BASE 正確 3) token 一致";
+            return "載入失敗：網路連線異常";
         }
         return raw;
       }
@@ -2981,6 +2981,7 @@
 
       (function initOrderSection() {
         var ORDER_STORAGE_KEY = "adminOrders";
+        var ORDER_LOCAL_ONLY = true; // 訂單管理改為僅本機（localStorage + CSV）
         var orderModal = document.getElementById("orderModal");
         var orderModalBackdrop = document.getElementById("orderModalBackdrop");
         var orderModalClose = document.getElementById("orderModalClose");
@@ -3006,6 +3007,7 @@
         }
 
         function upsertOrderToSheet(ord) {
+          if (ORDER_LOCAL_ONLY) return Promise.resolve({ localOnly: true, message: "local only" });
           if (!ord || !ord.id) return Promise.resolve(null);
           return fetchWrite({ action: "order_upsert", order: ord })
             .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
@@ -3016,6 +3018,7 @@
         }
 
         function deleteOrderFromSheet(id) {
+          if (ORDER_LOCAL_ONLY) return Promise.resolve({ localOnly: true, message: "local only" });
           var safeId = (id || "").toString().trim();
           if (!safeId) return Promise.resolve(null);
           return fetchWrite({ action: "order_delete", id: safeId })
@@ -3027,6 +3030,10 @@
         }
 
         function loadOrdersFromSheet() {
+          if (ORDER_LOCAL_ONLY) {
+            renderOrders();
+            return Promise.resolve({ localOnly: true, orders: orders });
+          }
           showOrderMessage("載入訂單中...");
           return fetchWrite({ action: "order_list" })
             .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
@@ -3076,6 +3083,7 @@
         }
 
         function syncLocalOrdersToSheet_(sheetOrders, localOrders) {
+          if (ORDER_LOCAL_ONLY) return;
           var sheetSet = new Set((Array.isArray(sheetOrders) ? sheetOrders : []).map(function(o) { return String((o && o.id) || "").trim().toUpperCase(); }).filter(Boolean));
           var pending = (Array.isArray(localOrders) ? localOrders : []).filter(function(o) {
             var id = String((o && o.id) || "").trim().toUpperCase();
@@ -3755,26 +3763,14 @@
         }
 
         if (btnExportOrders) btnExportOrders.addEventListener("click", function() {
-          // 先用本機資料匯出；若可連線再同步一次雲端後匯出最新
-          if (orders.length > 0) {
-            exportOrdersCsvFromCurrentList();
-            loadOrdersFromSheet().then(function() {
-              exportOrdersCsvFromCurrentList();
-            }).catch(function() {
-              // ignore: 本機已匯出
-            });
-            return;
-          }
-          loadOrdersFromSheet()
-            .then(function() { exportOrdersCsvFromCurrentList(); })
-            .catch(function(err) { showOrderMessage("載入失敗，無法匯出：" + (err.message || "網路錯誤"), true); });
+          exportOrdersCsvFromCurrentList();
         });
         if (btnSaveOrders) {
           btnSaveOrders.disabled = false;
           btnSaveOrders.classList.remove("cursor-not-allowed", "bg-slate-100", "text-slate-400");
           btnSaveOrders.classList.add("bg-slate-800", "text-white", "hover:bg-slate-700");
-          btnSaveOrders.textContent = "重新載入（從試算表）";
-          btnSaveOrders.addEventListener("click", function() { loadOrdersFromSheet(); });
+          btnSaveOrders.textContent = "本機資料模式";
+          btnSaveOrders.addEventListener("click", function() { renderOrders(); showOrderMessage("目前為本機資料模式"); });
         }
         if (window.location.protocol === "file:") {
           showOrderMessage("目前為 file:// 模式，系統會自動嘗試直連/代理 API。", false);
@@ -3783,9 +3779,11 @@
         if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders(); } });
         if (orderStatusFilter) orderStatusFilter.addEventListener("change", function() { renderOrders(); });
         renderOrders();
-        loadOrdersFromSheet().catch(function() {
-          // 雲端載入失敗時保留本機資料顯示
-        });
+        if (!ORDER_LOCAL_ONLY) {
+          loadOrdersFromSheet().catch(function() {
+            // 雲端載入失敗時保留本機資料顯示
+          });
+        }
       })();
 
       updateFormRateInput();
