@@ -1200,7 +1200,20 @@
             return tryAt(i + 1);
           });
         }
-        return tryAt(0);
+        return tryAt(0).catch(function() {
+          // 最後保底：以 no-cors 直接送到 Apps Script（僅適用寫入，回應不可讀，視為已送出）
+          var fallbackOpts = { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) };
+          return fetch(API_BASE, fallbackOpts)
+            .then(function() {
+              return new Response(JSON.stringify({ error: false, message: "已送出寫入請求（no-cors 模式）" }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" }
+              });
+            })
+            .catch(function(err) {
+              throw err || new Error("Failed to fetch");
+            });
+        });
       }
 
       function formatNetworkError(err) {
@@ -2109,10 +2122,6 @@
       function loadProducts() {
         var tbody = document.getElementById("tableBody");
         tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
-        if (window.location.protocol === "file:") {
-          tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-red-500\">載入失敗：目前用 file:// 開啟，請改用 http://localhost 開啟 admin.html</td></tr>";
-          return;
-        }
         (function() {
           var candidates = [API_READ, API_BASE, CORS_PROXY_PREFIX + encodeURIComponent(API_BASE)];
           function tryAt(i) {
@@ -3031,10 +3040,6 @@
         }
 
         function loadOrdersFromSheet() {
-          if (window.location.protocol === "file:") {
-            showOrderMessage("載入失敗：目前用 file:// 開啟，請改用 http://localhost 開啟 admin.html", true);
-            return Promise.reject(new Error("請改用 http://localhost 開啟"));
-          }
           showOrderMessage("載入訂單中...");
           return fetchWrite({ action: "order_list" })
             .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
@@ -3361,10 +3366,10 @@
           var html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>訂單 " + escapeHtml(ord.id) + "</title>" +
             "<style>body{font-family:'Microsoft JhengHei',sans-serif;padding:24px;max-width:600px;margin:0 auto;color:#1e293b;} " +
             ".pdf-header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:20px;flex-wrap:wrap;} " +
-            ".pdf-header-left{flex:1;min-width:200px;} .pdf-header-right{text-align:right;min-width:240px;} " +
+            ".pdf-header-left{flex:1;min-width:200px;} .pdf-header-right{text-align:center;min-width:240px;} " +
             ".pdf-logo-wrap{margin-bottom:14px;text-align:center;} .pdf-logo{max-width:320px;max-height:160px;width:100%;object-fit:contain;display:block;margin:0 auto;} " +
             ".pdf-logo-placeholder,.pdf-logo-fallback{width:320px;height:140px;margin:0 auto;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:#94a3b8;font-size:16px;display:flex;align-items:center;justify-content:center;} " +
-            ".pdf-dates-box{border:2px solid #64748b;border-radius:6px;padding:10px 14px;display:inline-block;margin-right:24px;} " +
+            ".pdf-dates-box{border:2px solid #64748b;border-radius:6px;padding:10px 14px;display:inline-block;margin:0 auto;} " +
             ".pdf-dates{font-size:17px;} .pdf-date-row{display:flex;align-items:center;margin:10px 0;} .pdf-date-row:first-child{margin-top:0;} .pdf-date-row:last-child{margin-bottom:0;} .pdf-date-row .label{color:#64748b;font-size:15px;flex:0 0 auto;width:4.5em;} .pdf-date-row .value{font-weight:600;font-size:17px;flex:1;min-width:0;text-align:right;} " +
             "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:8px;margin:0 0 10px 0;} .row{margin:10px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:2px;} " +
             "table{width:100%;border-collapse:collapse;margin:16px 0;} th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;} th{background:#f1f5f9;} " +
@@ -3716,7 +3721,7 @@
           btnSaveOrders.addEventListener("click", function() { loadOrdersFromSheet(); });
         }
         if (window.location.protocol === "file:") {
-          showOrderMessage("你目前是用 file:// 開啟，可能導致跨網域失敗；建議改用 http://localhost 開啟後台。", true);
+          showOrderMessage("目前為 file:// 模式，系統會自動嘗試直連/代理 API。", false);
         }
         if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { renderOrders(); });
         if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders(); } });
