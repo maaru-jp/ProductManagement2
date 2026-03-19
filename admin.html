@@ -1167,7 +1167,11 @@
       // ※ 重要：請換成「您自己的」Google 試算表網頁應用程式 URL，否則後台無法寫入試算表、顧客頁也讀不到資料。
       // 步驟：試算表 → 擴充功能 → Apps Script → 貼上 Code.gs → 部署 → 新增部署 → 網頁應用程式 →
       // 執行身分「我」、誰可以存取「任何人」→ 部署 → 複製「網頁應用程式 URL」貼到下面兩行（READ 與 WRITE 用同一個 URL）。
-      var isLocalHost = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+      var isLocalHost = (
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1" ||
+        window.location.protocol === "file:"
+      );
       var API_BASE = "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
       var API_READ = isLocalHost ? "/api" : API_BASE;
       var API_WRITE = isLocalHost ? "/api-write" : API_BASE;
@@ -1178,10 +1182,36 @@
       function fetchWrite(body) {
         var payload = Object.assign({}, body || {}, { token: ADMIN_WRITE_TOKEN });
         var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) };
-        return fetch(API_WRITE, opts).catch(function(err) {
-          if (isLocalHost) throw err;
-          return fetch(CORS_PROXY_PREFIX + encodeURIComponent(API_WRITE), opts);
-        });
+        var candidates = [];
+        // 1) 先試目前設定（可能是本地代理 /api-write）
+        candidates.push(API_WRITE);
+        // 2) 直打 Apps Script
+        candidates.push(API_BASE);
+        // 3) 走 proxy 的 API_WRITE
+        candidates.push(CORS_PROXY_PREFIX + encodeURIComponent(API_WRITE));
+        // 4) 走 proxy 的 API_BASE
+        candidates.push(CORS_PROXY_PREFIX + encodeURIComponent(API_BASE));
+        function tryAt(i) {
+          if (i >= candidates.length) throw new Error("Failed to fetch");
+          return fetch(candidates[i], opts).then(function(res) {
+            if (!res || !res.ok) return tryAt(i + 1);
+            return res;
+          }).catch(function() {
+            return tryAt(i + 1);
+          });
+        }
+        return tryAt(0);
+      }
+
+      function formatNetworkError(err) {
+        var raw = (err && err.message) ? String(err.message) : "網路錯誤";
+        if (/failed to fetch/i.test(raw)) {
+          if (window.location.protocol === "file:") {
+            return "目前用 file:// 開啟，請改用 http://localhost 開啟 admin.html";
+          }
+          return "無法連線 API，請確認：1) Apps Script 已重新部署 2) API_BASE 正確 3) token 一致";
+        }
+        return raw;
       }
 
       var products = [];
@@ -2079,7 +2109,23 @@
       function loadProducts() {
         var tbody = document.getElementById("tableBody");
         tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
-        fetch(API_READ)
+        if (window.location.protocol === "file:") {
+          tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-red-500\">載入失敗：目前用 file:// 開啟，請改用 http://localhost 開啟 admin.html</td></tr>";
+          return;
+        }
+        (function() {
+          var candidates = [API_READ, API_BASE, CORS_PROXY_PREFIX + encodeURIComponent(API_BASE)];
+          function tryAt(i) {
+            if (i >= candidates.length) return Promise.reject(new Error("Failed to fetch"));
+            return fetch(candidates[i]).then(function(res) {
+              if (!res || !res.ok) return tryAt(i + 1);
+              return res;
+            }).catch(function() {
+              return tryAt(i + 1);
+            });
+          }
+          return tryAt(0);
+        })()
           .then(function(r) {
             if (!r.ok) throw new Error("HTTP " + r.status + "，請確認試算表已部署為「網頁應用程式」且「誰可以存取」選「任何人」");
             return r.json();
@@ -2103,7 +2149,7 @@
             updateFormRateInput();
           })
           .catch(function(err) {
-            tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-red-500\">載入失敗：" + err.message + "</td></tr>";
+            tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-red-500\">載入失敗：" + formatNetworkError(err) + "</td></tr>";
           });
       }
 
@@ -2953,9 +2999,14 @@
         var orderTableBody = document.getElementById("orderTableBody");
 
         var orders = [];
+        try {
+          var saved = localStorage.getItem(ORDER_STORAGE_KEY);
+          if (saved) orders = JSON.parse(saved);
+          if (!Array.isArray(orders)) orders = [];
+        } catch (err) { orders = []; }
 
         function saveOrders() {
-          // 訂單改為以 Google Sheet 為準，不再寫入 localStorage
+          try { localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(orders)); } catch (err) {}
         }
 
         function upsertOrderToSheet(ord) {
@@ -2980,6 +3031,10 @@
         }
 
         function loadOrdersFromSheet() {
+          if (window.location.protocol === "file:") {
+            showOrderMessage("載入失敗：目前用 file:// 開啟，請改用 http://localhost 開啟 admin.html", true);
+            return Promise.reject(new Error("請改用 http://localhost 開啟"));
+          }
           showOrderMessage("載入訂單中...");
           return fetchWrite({ action: "order_list" })
             .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
@@ -2992,7 +3047,7 @@
               return res;
             })
             .catch(function(err) {
-              showOrderMessage("載入失敗：" + (err.message || "網路錯誤"), true);
+              showOrderMessage("載入失敗：" + formatNetworkError(err), true);
               throw err;
             });
         }
@@ -3204,12 +3259,19 @@
 
           orderTableBody.querySelectorAll(".order-status-select").forEach(function(sel) {
             sel.addEventListener("change", function() {
+              var selectEl = this;
               var id = this.getAttribute("data-order-id");
               var ord = orders.find(function(o) { return o.id === id; });
               if (ord) {
                 ord.status = this.value;
-                upsertOrderToSheet(ord).catch(function(err) {
+                saveOrders();
+                selectEl.disabled = true;
+                upsertOrderToSheet(ord).then(function() {
+                  showOrderMessage("訂單狀態已寫入試算表");
+                }).catch(function(err) {
                   showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
+                }).finally(function() {
+                  selectEl.disabled = false;
                 });
               }
             });
@@ -3227,9 +3289,11 @@
               var name = this.getAttribute("data-name") || "此訂單";
               if (!confirm("確定要刪除訂單「" + name + "」嗎？")) return;
               orders = orders.filter(function(o) { return o.id !== id; });
+              saveOrders();
               renderOrders();
-              showOrderMessage("已刪除訂單");
-              deleteOrderFromSheet(id).catch(function(err) {
+              deleteOrderFromSheet(id).then(function() {
+                showOrderMessage("已刪除訂單（試算表已同步）");
+              }).catch(function(err) {
                 showOrderMessage("刪除試算表訂單失敗：" + (err.message || "網路錯誤"), true);
               });
             });
@@ -3471,10 +3535,12 @@
                 var effectiveShipping = shipCouponOn ? 0 : (Number(ord.shippingFee) || 0);
                 ord.total = Math.max(0, Math.ceil((ord.subtotal || 0) - (Number(ord.discount) || 0) + effectiveShipping));
                 window.__lastPastedOrderItems = null;
+                saveOrders();
                 renderOrders();
-                closePasteOrderModal();
-                showOrderMessage("已追加商品至訂單 " + ord.id);
-                upsertOrderToSheet(ord).catch(function(err) {
+                upsertOrderToSheet(ord).then(function() {
+                  closePasteOrderModal();
+                  showOrderMessage("已追加商品至訂單 " + ord.id + "（試算表已同步）");
+                }).catch(function(err) {
                   showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
                 });
               } else {
@@ -3514,6 +3580,8 @@
 
         document.getElementById("orderForm").addEventListener("submit", function(e) {
           e.preventDefault();
+          var submitBtn = this.querySelector("button[type='submit']");
+          if (submitBtn) submitBtn.disabled = true;
           var editId = this.getAttribute("data-edit-id") || "";
           var data = getOrderFromForm();
           if (editId) {
@@ -3537,10 +3605,15 @@
               ord.depositAmount = data.depositAmount != null ? data.depositAmount : 0;
               ord.preorderDate = data.preorderDate;
               ord.shipDate = data.shipDate;
+              saveOrders();
               renderOrders();
-              showOrderMessage("訂單已更新");
-              upsertOrderToSheet(ord).catch(function(err) {
+              upsertOrderToSheet(ord).then(function() {
+                closeOrderModal();
+                showOrderMessage("訂單已更新（試算表已同步）");
+              }).catch(function(err) {
                 showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
+              }).finally(function() {
+                if (submitBtn) submitBtn.disabled = false;
               });
             }
           } else {
@@ -3551,6 +3624,7 @@
             else newId = newId.toUpperCase();
             if (orders.some(function(o) { return (o.id || "").toUpperCase() === newId; })) {
               showOrderMessage("此訂單編號已存在，請改用其他編號或留空自動產生", true);
+              if (submitBtn) submitBtn.disabled = false;
               return;
             }
             var newOrder = {
@@ -3581,22 +3655,33 @@
               window.__lastPastedOrderItems = null;
             }
             orders.unshift(newOrder);
+            saveOrders();
             renderOrders();
-            showOrderMessage("訂單已建立");
-            upsertOrderToSheet(newOrder).catch(function(err) {
+            upsertOrderToSheet(newOrder).then(function() {
+              closeOrderModal();
+              showOrderMessage("訂單已建立（試算表已同步）");
+            }).catch(function(err) {
               showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
+            }).finally(function() {
+              if (submitBtn) submitBtn.disabled = false;
             });
           }
-          closeOrderModal();
         });
 
-        if (btnExportOrders) btnExportOrders.addEventListener("click", function() {
+        function exportOrdersCsvFromCurrentList() {
           if (orders.length === 0) { showOrderMessage("目前沒有訂單可匯出", true); return; }
-          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "運送方式", "門市", "店號", "地址", "小計", "折扣", "運費", "總計", "備註"];
+          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "Line ID", "運送方式", "門市", "店號", "地址", "小計", "折扣", "運費", "運費狀態", "預購訂金", "總計", "備註", "收訂金歷程記錄", "預購日期", "出貨日期"];
           var rows = [headers.join(",")];
           orders.forEach(function(ord) {
             var dateStr = ord.date ? new Date(ord.date).toISOString() : "";
-            var row = [ord.id || "", ord.status || "", dateStr, ord.customerName || "", ord.phone || "", ord.email || "", ord.shippingMethod || "", ord.storeName || "", ord.storeId || "", (ord.address || "").replace(/\n/g, " "), ord.subtotal != null ? ord.subtotal : "", ord.discount != null ? ord.discount : "", ord.shippingFee != null ? ord.shippingFee : "", ord.total != null ? ord.total : "", (ord.remark || "").replace(/"/g, '""')];
+            var row = [
+              ord.id || "", ord.status || "", dateStr, ord.customerName || "", ord.phone || "", ord.email || "", ord.lineId || "",
+              ord.shippingMethod || "", ord.storeName || "", ord.storeId || "", (ord.address || "").replace(/\n/g, " "),
+              ord.subtotal != null ? ord.subtotal : "", ord.discount != null ? ord.discount : "", ord.shippingFee != null ? ord.shippingFee : "",
+              ord.shippingStatus || "", ord.depositAmount != null ? ord.depositAmount : "",
+              ord.total != null ? ord.total : "", (ord.remark || "").replace(/"/g, '""'), (ord.depositRemark || "").replace(/"/g, '""'),
+              ord.preorderDate || "", ord.shipDate || ""
+            ];
             rows.push(row.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(","));
           });
           var blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
@@ -3606,6 +3691,22 @@
           a.click();
           URL.revokeObjectURL(a.href);
           showOrderMessage("已匯出 CSV");
+        }
+
+        if (btnExportOrders) btnExportOrders.addEventListener("click", function() {
+          // 先用本機資料匯出；若可連線再同步一次雲端後匯出最新
+          if (orders.length > 0) {
+            exportOrdersCsvFromCurrentList();
+            loadOrdersFromSheet().then(function() {
+              exportOrdersCsvFromCurrentList();
+            }).catch(function() {
+              // ignore: 本機已匯出
+            });
+            return;
+          }
+          loadOrdersFromSheet()
+            .then(function() { exportOrdersCsvFromCurrentList(); })
+            .catch(function(err) { showOrderMessage("載入失敗，無法匯出：" + (err.message || "網路錯誤"), true); });
         });
         if (btnSaveOrders) {
           btnSaveOrders.disabled = false;
@@ -3614,11 +3715,16 @@
           btnSaveOrders.textContent = "重新載入（從試算表）";
           btnSaveOrders.addEventListener("click", function() { loadOrdersFromSheet(); });
         }
+        if (window.location.protocol === "file:") {
+          showOrderMessage("你目前是用 file:// 開啟，可能導致跨網域失敗；建議改用 http://localhost 開啟後台。", true);
+        }
         if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { renderOrders(); });
         if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders(); } });
         if (orderStatusFilter) orderStatusFilter.addEventListener("change", function() { renderOrders(); });
-        loadOrdersFromSheet();
         renderOrders();
+        loadOrdersFromSheet().catch(function() {
+          // 雲端載入失敗時保留本機資料顯示
+        });
       })();
 
       updateFormRateInput();
