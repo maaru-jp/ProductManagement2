@@ -2981,7 +2981,7 @@
 
       (function initOrderSection() {
         var ORDER_STORAGE_KEY = "adminOrders";
-        var ORDER_LOCAL_ONLY = true; // 訂單管理改為僅本機（localStorage + CSV）
+        var ORDER_LOCAL_ONLY = false; // 訂單管理：本機 + 試算表自動同步
         var orderModal = document.getElementById("orderModal");
         var orderModalBackdrop = document.getElementById("orderModalBackdrop");
         var orderModalClose = document.getElementById("orderModalClose");
@@ -3802,8 +3802,8 @@
           btnSaveOrders.disabled = false;
           btnSaveOrders.classList.remove("cursor-not-allowed", "bg-slate-100", "text-slate-400");
           btnSaveOrders.classList.add("bg-slate-800", "text-white", "hover:bg-slate-700");
-          btnSaveOrders.textContent = "本機資料模式";
-          btnSaveOrders.addEventListener("click", function() { renderOrders(); showOrderMessage("目前為本機資料模式"); });
+          btnSaveOrders.textContent = "重新載入（從試算表）";
+          btnSaveOrders.addEventListener("click", function() { loadOrdersFromSheet(); });
         }
         if (window.location.protocol === "file:") {
           showOrderMessage("目前為 file:// 模式，系統會自動嘗試直連/代理 API。", false);

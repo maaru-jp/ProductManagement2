@@ -207,8 +207,35 @@ function isAuthorizedPost_(body) {
 }
 
 function getOrderSheet(ss) {
-  var name = CONFIG.orderSheetName || "訂單";
+  var name = (CONFIG.orderSheetName || "訂單").toString().trim();
   var sheet = ss.getSheetByName(name);
+  // 允許分頁名稱有前後空白或含「訂單」字樣
+  if (!sheet) {
+    var sheets = ss.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      var s = sheets[i];
+      var n = (s.getName() || "").toString().trim();
+      if (n === name || n.indexOf("訂單") >= 0) {
+        sheet = s;
+        break;
+      }
+    }
+  }
+  // 再保底：找第一列含「訂單編號」的分頁
+  if (!sheet) {
+    var all = ss.getSheets();
+    for (var j = 0; j < all.length; j++) {
+      var cand = all[j];
+      var lastCol = cand.getLastColumn();
+      if (lastCol < 1) continue;
+      var headers = cand.getRange(1, 1, 1, lastCol).getValues()[0];
+      var hasOrderId = headers.some(function(h) { return (h || "").toString().trim() === "訂單編號"; });
+      if (hasOrderId) {
+        sheet = cand;
+        break;
+      }
+    }
+  }
   if (!sheet) sheet = ss.insertSheet(name);
   ensureOrderHeaderRow_(sheet);
   return sheet;
