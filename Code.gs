@@ -365,22 +365,53 @@ function normalizeOrderForSheet_(order) {
   return out;
 }
 
-function findOrderRowById_(sheet, id, headers) {
-  var safeId = (id || "").toString().trim();
-  if (!safeId) return -1;
-  var data = sheet.getDataRange().getValues();
-  if (!data || data.length < 2) return -1;
-  var idCol = -1;
+function getOrderIdColumns_(headers) {
+  var cols = [];
   for (var c = 0; c < headers.length; c++) {
     var h = (headers[c] || "").toString().trim();
-    if (h === "訂單編號") { idCol = c; break; }
+    if (!h) continue;
+    var hl = h.toLowerCase();
+    if (h === "訂單編號" || hl === "id" || hl === "orderid" || h.indexOf("訂單編號") >= 0) cols.push(c);
   }
-  if (idCol < 0) idCol = 0;
+  if (cols.length === 0) cols.push(0);
+  return cols;
+}
+
+function normalizeOrderId_(v) {
+  if (v == null) return "";
+  // 去除前後空白與中間空白，統一大寫，並盡量規範成 ORD+5碼
+  var s = String(v).trim().replace(/\s+/g, "").toUpperCase();
+  var m = s.match(/^ORD(\d+)$/);
+  if (m) {
+    var n = parseInt(m[1], 10);
+    if (!isNaN(n) && n >= 0) return "ORD" + ("00000" + n).slice(-5);
+    return s;
+  }
+  if (/^\d+$/.test(s)) {
+    var n2 = parseInt(s, 10);
+    if (!isNaN(n2) && n2 >= 0) return "ORD" + ("00000" + n2).slice(-5);
+  }
+  return s;
+}
+
+function findOrderRowsById_(sheet, id, headers) {
+  var safeId = normalizeOrderId_(id);
+  if (!safeId) return [];
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+  var idCols = getOrderIdColumns_(headers);
+  var rows = [];
   for (var r = 1; r < data.length; r++) {
-    var v = data[r][idCol];
-    if (v != null && String(v).trim() === safeId) return r + 1; // 1-indexed row
+    for (var i = 0; i < idCols.length; i++) {
+      var col = idCols[i];
+      var v = data[r][col];
+      if (normalizeOrderId_(v) === safeId) {
+        rows.push(r + 1); // 1-indexed row
+        break;
+      }
+    }
   }
-  return -1;
+  return rows;
 }
 
 function buildRowFromOrder_(sheet, order) {
@@ -395,18 +426,33 @@ function buildRowFromOrder_(sheet, order) {
     if (key && norm[key] !== undefined && norm[key] !== null && norm[key] !== "") val = norm[key];
     row.push(val);
   }
+  // 強制回填訂單編號欄，避免表頭別名不一致導致 id 空值
+  var idCols = getOrderIdColumns_(headers);
+  for (var i = 0; i < idCols.length; i++) {
+    row[idCols[i]] = norm.id;
+  }
   return row;
 }
 
 function upsertOrder(sheet, order) {
   ensureOrderHeaderRow_(sheet);
   var headers = getOrderHeaders_(sheet);
-  var id = (order && order.id != null) ? String(order.id).trim() : "";
+  var id = normalizeOrderId_(order && order.id != null ? order.id : "");
   if (!id) return;
+  // 寫入統一為標準格式，避免 ORD1 / ORD00001 造成重複列
+  if (order && order.id != null) order.id = id;
   var row = buildRowFromOrder_(sheet, order);
-  var existingRow = findOrderRowById_(sheet, id, headers);
-  if (existingRow >= 2) {
-    sheet.getRange(existingRow, 1, 1, row.length).setValues([row]);
+  var existingRows = findOrderRowsById_(sheet, id, headers);
+  if (existingRows.length > 0) {
+    var keepRow = existingRows[0];
+    sheet.getRange(keepRow, 1, 1, row.length).setValues([row]);
+    // 若有重複訂單編號，保留第一筆、刪除其餘
+    if (existingRows.length > 1) {
+      var toDelete = existingRows.slice(1).sort(function(a, b) { return b - a; });
+      for (var i = 0; i < toDelete.length; i++) {
+        sheet.deleteRow(toDelete[i]);
+      }
+    }
   } else {
     sheet.appendRow(row);
   }
@@ -415,12 +461,13 @@ function upsertOrder(sheet, order) {
 function deleteOrderById(sheet, id) {
   ensureOrderHeaderRow_(sheet);
   var headers = getOrderHeaders_(sheet);
-  var row = findOrderRowById_(sheet, id, headers);
-  if (row >= 2) {
-    sheet.deleteRow(row);
-    return true;
+  var rows = findOrderRowsById_(sheet, id, headers);
+  if (!rows.length) return false;
+  rows.sort(function(a, b) { return b - a; });
+  for (var i = 0; i < rows.length; i++) {
+    sheet.deleteRow(rows[i]);
   }
-  return false;
+  return true;
 }
 
 function getOrders(sheet) {
