@@ -1328,7 +1328,7 @@
           totalOrders += 1;
           if ((ord.status || "").trim() === "待處理") pendingOrders += 1;
           if ((ord.status || "").trim() === "已確認") {
-            var t = ord.total != null ? Number(ord.total) : 0;
+            var t = orderAmountDue(ord);
             if (isFinite(t)) revenue += t;
             confirmedOrders.push(ord);
             if (ord.items && Array.isArray(ord.items)) {
@@ -1383,7 +1383,7 @@
         ];
         data.confirmedOrders.forEach(function(ord) {
           var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-          rows.push([ord.id || "", dateStr, ord.status || "", ord.customerName || "", (ord.phone || "").replace(/"/g, '""'), ord.total != null ? ord.total : ""].join(","));
+          rows.push([ord.id || "", dateStr, ord.status || "", ord.customerName || "", (ord.phone || "").replace(/"/g, '""'), orderAmountDue(ord) || ""].join(","));
         });
         var csv = "\uFEFF" + rows.join("\r\n");
         var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -3121,6 +3121,41 @@
           setTimeout(function() { orderMessage.classList.add("hidden"); }, 4000);
         }
 
+        function orderEffectiveShippingForOrder(ord) {
+          var fee = ord.shippingFee != null && ord.shippingFee !== "" ? Number(ord.shippingFee) : 38;
+          if (!isFinite(fee)) fee = 38;
+          var st = ord.shippingStatus != null ? String(ord.shippingStatus).trim() : "";
+          if (st && st.indexOf("免運") >= 0) return 0;
+          return fee;
+        }
+
+        function orderHasAmountBreakdown(ord) {
+          return ord.subtotal != null && ord.subtotal !== "" && !isNaN(Number(ord.subtotal));
+        }
+
+        function orderGrossBeforeDeposit(ord) {
+          if (!orderHasAmountBreakdown(ord)) {
+            var t = ord.total != null ? Number(ord.total) : 0;
+            return isFinite(t) && t >= 0 ? Math.ceil(t) : 0;
+          }
+          var sub = Number(ord.subtotal) || 0;
+          var disc = ord.discount != null && ord.discount !== "" ? Number(ord.discount) : 0;
+          if (isNaN(disc)) disc = 0;
+          var ship = orderEffectiveShippingForOrder(ord);
+          return Math.max(0, Math.ceil(sub - disc + ship));
+        }
+
+        function orderAmountDue(ord) {
+          var dep = ord.depositAmount != null && ord.depositAmount !== "" ? Number(ord.depositAmount) : 0;
+          if (isNaN(dep) || dep < 0) dep = 0;
+          if (!orderHasAmountBreakdown(ord)) {
+            var t = ord.total != null ? Number(ord.total) : 0;
+            if (!isFinite(t) || t < 0) t = 0;
+            return Math.max(0, Math.ceil(t));
+          }
+          return Math.max(0, orderGrossBeforeDeposit(ord) - dep);
+        }
+
         function getOrderFromForm() {
           var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
           var shipping = Number(document.getElementById("orderShippingFee").value) || 0;
@@ -3134,7 +3169,11 @@
           if (rateCheck && rateVal >= 0 && rateVal <= 100) discount = Math.ceil(subtotal * (1 - rateVal / 100));
           if (fixedCheck) discount = Math.ceil(fixedVal);
           var effectiveShipping = shipCouponOn ? 0 : shipping;
-          var total = Math.max(0, Math.ceil(subtotal - discount + effectiveShipping));
+          var depEl = document.getElementById("orderDepositAmount");
+          var depositNum = (depEl && depEl.value !== "" && !isNaN(Number(depEl.value))) ? Number(depEl.value) : 0;
+          if (isNaN(depositNum) || depositNum < 0) depositNum = 0;
+          var gross = Math.max(0, Math.ceil(subtotal - discount + effectiveShipping));
+          var total = depositNum > 0 ? Math.max(0, gross - depositNum) : gross;
           return {
             customerName: (document.getElementById("orderCustomerName").value || "").trim(),
             phone: (document.getElementById("orderPhone").value || "").trim(),
@@ -3154,7 +3193,7 @@
             total: total,
             remark: (document.getElementById("orderRemark").value || "").trim(),
             depositRemark: (document.getElementById("orderDepositRemark").value || "").trim(),
-            depositAmount: (function() { var v = document.getElementById("orderDepositAmount"); return v && v.value !== "" && !isNaN(Number(v.value)) ? Number(v.value) : 0; })(),
+            depositAmount: depositNum,
             preorderDate: (document.getElementById("orderPreorderDate").value || "").trim(),
             shipDate: (document.getElementById("orderShipDate").value || "").trim()
           };
@@ -3305,7 +3344,7 @@
               "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(dateStr) + "</td>" +
               "<td class=\"py-3 px-4 text-slate-700\">" + escapeHtml(customer) + "</td>" +
               "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(ord.shippingMethod || "-") + "</td>" +
-              "<td class=\"py-3 px-4 font-medium text-slate-800\">NT$ " + (ord.total != null ? Number(ord.total) : 0) + "</td>" +
+              "<td class=\"py-3 px-4 font-medium text-slate-800\">NT$ " + orderAmountDue(ord) + "</td>" +
               "<td class=\"py-3 px-4\"><button type=\"button\" class=\"order-pdf-btn px-2 py-1 rounded bg-slate-700 text-white text-xs hover:bg-slate-800 mr-1\">產生 PDF</button>" +
               "<button type=\"button\" class=\"order-append-btn px-2 py-1 rounded bg-amber-100 text-amber-800 text-xs hover:bg-amber-200 mr-1\" data-order-id=\"" + escapeHtml(ord.id) + "\">追加</button>" +
               "<button type=\"button\" class=\"order-edit-btn text-rose-600 hover:underline text-xs mr-1\">編輯</button>" +
@@ -3401,6 +3440,20 @@
           }
           var displayRemark = stripItemLinesFromRemark(ord.remark);
           var showRemark = displayRemark !== "";
+          var depNum = ord.depositAmount != null && ord.depositAmount !== "" ? Number(ord.depositAmount) : 0;
+          if (isNaN(depNum) || depNum < 0) depNum = 0;
+          var grossNum = orderGrossBeforeDeposit(ord);
+          var dueNum = orderAmountDue(ord);
+          var pdfAmountCloseRows = "";
+          if (depNum > 0) {
+            if (orderHasAmountBreakdown(ord)) {
+              pdfAmountCloseRows += "<tr><td>合計（扣除預購訂金前）</td><td>NT$ " + grossNum + "</td></tr>";
+            }
+            pdfAmountCloseRows += "<tr><td>預購訂金（已付）</td><td>- NT$ " + depNum + "</td></tr>";
+          } else {
+            pdfAmountCloseRows += "<tr><td>預購訂金</td><td>NT$ 0</td></tr>";
+          }
+          pdfAmountCloseRows += "<tr><td><strong>待結清總金額</strong></td><td><strong>NT$ " + dueNum + "</strong></td></tr></table>";
           var pdfLogoUrl = "";
           try { pdfLogoUrl = (localStorage.getItem("maaru_admin_pdf_logo") || "").trim(); } catch (e) {}
           var preorderStr = (ord.preorderDate != null && String(ord.preorderDate).trim() !== "") ? String(ord.preorderDate).trim() : "";
@@ -3449,8 +3502,7 @@
             "<tr><td>折扣</td><td>- NT$ " + (ord.discount != null ? ord.discount : 0) + "</td></tr>" +
             "<tr><td>運費</td><td>NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "</td></tr>" +
             ((ord.shippingStatus != null && String(ord.shippingStatus).trim() !== "") ? "<tr><td>運費折抵</td><td>- NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "（" + escapeHtml(String(ord.shippingStatus).trim()) + "）</td></tr>" : "") +
-            "<tr><td>預購訂金</td><td>NT$ " + (ord.depositAmount != null ? ord.depositAmount : 0) + "</td></tr>" +
-            "<tr><td><strong>待結清總金額</strong></td><td><strong>NT$ " + (ord.total != null ? ord.total : 0) + "</strong></td></tr></table>" +
+            pdfAmountCloseRows +
             (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(displayRemark) + "</div></div>" : "") +
             "<h2>收訂金歷程記錄</h2>" +
             "<div class=\"pdf-deposit-box\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div>" +
@@ -3607,7 +3659,10 @@
                 ord.subtotal = (Number(ord.subtotal) || 0) + (parsed.subtotal || 0);
                 var shipCouponOn = !!(ord.shippingStatus && String(ord.shippingStatus).indexOf("免運") >= 0);
                 var effectiveShipping = shipCouponOn ? 0 : (Number(ord.shippingFee) || 0);
-                ord.total = Math.max(0, Math.ceil((ord.subtotal || 0) - (Number(ord.discount) || 0) + effectiveShipping));
+                var grossAppend = Math.max(0, Math.ceil((ord.subtotal || 0) - (Number(ord.discount) || 0) + effectiveShipping));
+                var depAppend = ord.depositAmount != null && ord.depositAmount !== "" ? Number(ord.depositAmount) : 0;
+                if (isNaN(depAppend) || depAppend < 0) depAppend = 0;
+                ord.total = depAppend > 0 ? Math.max(0, grossAppend - depAppend) : grossAppend;
                 window.__lastPastedOrderItems = null;
                 saveOrders();
                 renderOrders();
@@ -3780,7 +3835,7 @@
               itemsNamesText, itemsQtyText, itemsPriceText,
               ord.subtotal != null ? ord.subtotal : "", ord.discount != null ? ord.discount : "", ord.shippingFee != null ? ord.shippingFee : "",
               ord.shippingStatus || "", ord.depositAmount != null ? ord.depositAmount : "",
-              ord.total != null ? ord.total : "", (ord.remark || "").replace(/"/g, '""'), (ord.depositRemark || "").replace(/"/g, '""'),
+              orderAmountDue(ord), (ord.remark || "").replace(/"/g, '""'), (ord.depositRemark || "").replace(/"/g, '""'),
               ord.preorderDate || "", ord.shipDate || ""
             ];
             rows.push(row.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(","));
