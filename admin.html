@@ -1042,8 +1042,7 @@
             <select id="orderShippingMethod" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
               <option value="">-- 請選擇運送方式 --</option>
               <option value="宅配">宅配</option>
-              <option value="超商取貨">超商取貨</option>
-              <option value="門市取貨">門市取貨</option>
+              <option value="7-11超商取貨">7-11超商取貨</option>
             </select>
           </div>
           <div class="grid grid-cols-2 gap-4">
@@ -1380,7 +1379,7 @@
           "待處理," + data.pendingOrders,
           "",
           "已確認訂單明細",
-          "訂單編號,日期,狀態,客戶姓名,電話,總計"
+          "訂單編號,日期,狀態,客戶姓名,電話,待結清總金額"
         ];
         data.confirmedOrders.forEach(function(ord) {
           var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
@@ -3451,7 +3450,7 @@
             "<tr><td>運費</td><td>NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "</td></tr>" +
             ((ord.shippingStatus != null && String(ord.shippingStatus).trim() !== "") ? "<tr><td>運費折抵</td><td>- NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "（" + escapeHtml(String(ord.shippingStatus).trim()) + "）</td></tr>" : "") +
             "<tr><td>預購訂金</td><td>NT$ " + (ord.depositAmount != null ? ord.depositAmount : 0) + "</td></tr>" +
-            "<tr><td><strong>總計</strong></td><td><strong>NT$ " + (ord.total != null ? ord.total : 0) + "</strong></td></tr></table>" +
+            "<tr><td><strong>待結清總金額</strong></td><td><strong>NT$ " + (ord.total != null ? ord.total : 0) + "</strong></td></tr></table>" +
             (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(displayRemark) + "</div></div>" : "") +
             "<h2>收訂金歷程記錄</h2>" +
             "<div class=\"pdf-deposit-box\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div>" +
@@ -3754,7 +3753,7 @@
 
         function exportOrdersCsvFromCurrentList() {
           if (orders.length === 0) { showOrderMessage("目前沒有訂單可匯出", true); return; }
-          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "Line ID", "運送方式", "門市", "店號", "地址", "購買商品清單", "數量", "單價", "小計", "折扣", "運費", "運費狀態", "預購訂金", "總計", "備註", "收訂金歷程記錄", "預購日期", "出貨日期"];
+          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "Line ID", "運送方式", "門市", "店號", "地址", "購買商品清單", "數量", "單價", "小計", "折扣", "運費", "運費狀態", "預購訂金", "待結清總金額", "備註", "收訂金歷程記錄", "預購日期", "出貨日期"];
           var rows = [headers.join(",")];
           orders.forEach(function(ord) {
             var dateStr = ord.date ? new Date(ord.date).toISOString() : "";
