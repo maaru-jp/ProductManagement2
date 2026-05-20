@@ -3576,7 +3576,8 @@
           var items = [];
           var lines = parseBlock.split(/\r?\n/);
           var lineReA = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
-          var lineReB = /^(?:\d+[、．.]\s*)?(.+?)\s+\$?\s*([\d,]+)\s*[×*x]\s*(\d+)/i;
+          // 支援「商品名 $199×2」與「商品名$199×2」（價錢前可有可無空白）
+          var lineReB = /^(?:\d+[、．.]\s*)?(.+?)\s*\$?\s*([\d,]+)\s*[×*x]\s*(\d+)/i;
           var lineReC = /^(?:\d+[、．.]\s*)?(.+?)\s*[×*x]\s*(\d+)\s+\$?\s*([\d,]+)/i;
           lines.forEach(function(line) {
             var norm = line.replace(/ＮＴ＄/g, "NT$").replace(/＄/g, "$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
@@ -3610,7 +3611,7 @@
           });
           window.__lastPastedOrderItems = items.length ? items : null;
           var itemLineReA = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
-          var itemLineReB = /^(?:\d+[、．.]\s*)?(.+?)\s+\$?\s*([\d,]+)\s*[×*x]\s*(\d+)/i;
+          var itemLineReB = /^(?:\d+[、．.]\s*)?(.+?)\s*\$?\s*([\d,]+)\s*[×*x]\s*(\d+)/i;
           var itemLineReC = /^(?:\d+[、．.]\s*)?(.+?)\s*[×*x]\s*(\d+)\s+\$?\s*([\d,]+)/i;
           var remarkOnlyLines = t.split(/\r?\n/).filter(function(line) {
             var norm = line.replace(/ＮＴ＄/g, "NT$").replace(/＄/g, "$").replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim();
