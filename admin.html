@@ -3430,6 +3430,8 @@
         function openOrderModal(editOrder) {
           if (orderModal) orderModal.classList.remove("hidden");
           document.getElementById("orderForm").setAttribute("data-edit-id", editOrder ? editOrder.id : "");
+          var submitBtn = document.querySelector("#orderForm button[type='submit']");
+          if (submitBtn) submitBtn.textContent = editOrder ? "儲存訂單" : "建立訂單";
           if (editOrder) {
             document.querySelector("#orderModal h3").textContent = "編輯訂單";
             setFormFromOrder(editOrder);
@@ -3598,7 +3600,7 @@
           orderTableBody.querySelectorAll(".order-pdf-btn").forEach(function(btn) {
             btn.addEventListener("click", function() {
               var id = this.closest("tr").getAttribute("data-order-id");
-              var ord = orders.find(function(o) { return o.id === id; });
+              var ord = orders.find(function(o) { return String(o.id || "").trim() === String(id || "").trim(); });
               if (ord) generateOrderPdf(ord);
             });
           });
@@ -3610,54 +3612,34 @@
           });
         }
 
-        function generateOrderPdf(ord) {
-          var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+        function getOrderItemShipStatus_(it) {
+          var st = it && it.shipStatus != null ? String(it.shipStatus).trim() : "";
+          if (!st) return "待出貨";
+          return st;
+        }
+
+        function buildOrderPdfHtml_(ord, itemsForPdf, shipmentBatch, options) {
+          options = options || {};
           var printedAtStr = new Date().toLocaleString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-          function sanitizeFileName_(s) {
-            return String(s || "").replace(/[\\/:*?\"<>|]/g, "_").replace(/\s+/g, "_").trim();
+          var batchNum = shipmentBatch != null ? shipmentBatch : null;
+          var itemsRows = "";
+          if (itemsForPdf && itemsForPdf.length > 0) {
+            var itemsTitle = batchNum != null
+              ? "本次出貨商品（出貨第 " + escapeHtml(String(batchNum)) + " 次）"
+              : "購買商品";
+            itemsRows = "<h2 style=\"font-size:14px;margin-top:12px;margin-bottom:6px;\">" + itemsTitle + "</h2><table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
+            for (var i = 0; i < itemsForPdf.length; i++) {
+              var it = itemsForPdf[i];
+              var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
+              var qty = (it.qty != null && !isNaN(it.qty)) ? Number(it.qty) : 0;
+              var priceNum = (it.price != null && it.price !== "" && !isNaN(Number(it.price))) ? Number(it.price) : null;
+              var priceCell = priceNum !== null ? "NT$ " + (Number.isInteger(priceNum) ? priceNum : Math.round(priceNum)) : "—";
+              var lineTotal = (priceNum !== null && qty > 0) ? (priceNum * qty) : null;
+              var lineTotalCell = lineTotal !== null ? "NT$ " + (Number.isInteger(lineTotal) ? lineTotal : Math.round(lineTotal)) : "—";
+              itemsRows += "<tr><td>" + escapeHtml(name || "—") + "</td><td>" + escapeHtml(priceCell) + "</td><td>" + escapeHtml(String(qty)) + "</td><td>" + escapeHtml(lineTotalCell) + "</td></tr>";
+            }
+            itemsRows += "</table>";
           }
-
-          var itemsAll = (ord.items && Array.isArray(ord.items)) ? ord.items : [];
-          var itemsToShip = itemsAll.filter(function(it) {
-            var st = it && it.shipStatus != null ? String(it.shipStatus).trim() : "待出貨";
-            if (!st) st = "待出貨";
-            return st === "待出貨";
-          });
-          if (!itemsToShip.length) {
-            showOrderMessage("沒有待出貨品項（待出貨）可產生 PDF", true);
-            return;
-          }
-
-          var maxBatch = 0;
-          itemsAll.forEach(function(it) {
-            var b = it && it.shipBatch != null && !isNaN(Number(it.shipBatch)) ? parseInt(Number(it.shipBatch), 10) : null;
-            if (b != null && isFinite(b) && b > maxBatch) maxBatch = b;
-          });
-          var shipmentBatch = maxBatch + 1;
-          var fileDate = new Date().toISOString().slice(0, 10);
-          var custPart = (ord.customerName && String(ord.customerName).trim() !== "") ? String(ord.customerName).trim() : (ord.lineId || ord.id);
-          var fileNameBase = sanitizeFileName_(ord.id + "_" + custPart + "_出貨" + shipmentBatch + "_" + fileDate);
-
-          var prevShip = itemsToShip.map(function(it) { return { ref: it, shipStatus: it.shipStatus, shipBatch: it.shipBatch }; });
-          // 這批印完後直接標記為已出貨（避免第二次出貨檔名/品項重複）
-          itemsToShip.forEach(function(it) {
-            it.shipStatus = "已出貨";
-            it.shipBatch = shipmentBatch;
-          });
-
-          var itemsRows = "<h2 style=\"font-size:14px;margin-top:12px;margin-bottom:6px;\">本次出貨商品（出貨第 " + escapeHtml(String(shipmentBatch)) + " 次）</h2>" +
-            "<table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
-          for (var i = 0; i < itemsToShip.length; i++) {
-            var it = itemsToShip[i];
-            var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
-            var qty = (it.qty != null && !isNaN(it.qty)) ? Number(it.qty) : 0;
-            var priceNum = (it.price != null && it.price !== "" && !isNaN(Number(it.price))) ? Number(it.price) : null;
-            var priceCell = priceNum !== null ? "NT$ " + (Number.isInteger(priceNum) ? priceNum : Math.round(priceNum)) : "—";
-            var lineTotal = (priceNum !== null && qty > 0) ? (priceNum * qty) : null;
-            var lineTotalCell = lineTotal !== null ? "NT$ " + (Number.isInteger(lineTotal) ? lineTotal : Math.round(lineTotal)) : "—";
-            itemsRows += "<tr><td>" + escapeHtml(name || "—") + "</td><td>" + escapeHtml(priceCell) + "</td><td>" + escapeHtml(String(qty)) + "</td><td>" + escapeHtml(lineTotalCell) + "</td></tr>";
-          }
-          itemsRows += "</table>";
           function stripItemLinesFromRemark(remarkStr) {
             if (remarkStr == null || String(remarkStr).trim() === "") return "";
             var lines = String(remarkStr).split(/\r?\n/);
@@ -3700,6 +3682,10 @@
           headerRight += "</div>";
           headerRight += "<div class=\"pdf-dates-box\"><div class=\"pdf-date-row\"><span class=\"label\">預購日期</span><span class=\"value\">" + escapeHtml(preorderStr || "—") + "</span></div>";
           headerRight += "<div class=\"pdf-date-row\"><span class=\"label\">出貨日期</span><span class=\"value\">" + escapeHtml(shipStr || "—") + "</span></div></div>";
+          var fileNameBase = options.fileNameBase || String(ord.id || "order");
+          var batchRowHtml = batchNum != null
+            ? "<div class=\"row\"><span class=\"label\">出貨批次</span><div class=\"value\">出貨第 " + escapeHtml(String(batchNum)) + " 次</div></div>"
+            : "";
           var html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>" + escapeHtml(fileNameBase) + "</title>" +
             "<style>@page{size:A4 portrait;margin:10mm;} *{-webkit-print-color-adjust:exact;print-color-adjust:exact;} body{font-family:'Microsoft JhengHei',sans-serif;padding:10px;max-width:760px;margin:0 auto;color:#1e293b;font-size:15px;line-height:1.45;} " +
             ".pdf-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:8px;flex-wrap:nowrap;} " +
@@ -3719,7 +3705,7 @@
             "<div class=\"pdf-title-box\">訂單明細</div>" +
             "<div class=\"row\"><span class=\"label\">訂單編號</span><div class=\"value\">" + escapeHtml(ord.id) + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">狀態</span><div class=\"value\">" + escapeHtml(ord.status || "待處理") + "</div></div>" +
-            "<div class=\"row\"><span class=\"label\">出貨批次</span><div class=\"value\">出貨第 " + escapeHtml(String(shipmentBatch)) + " 次</div></div>" +
+            batchRowHtml +
             "</div><div class=\"pdf-header-right\">" + headerRight + "</div></div>" +
             "<h2>客戶資訊 / 運送方式</h2>" +
             "<div class=\"pdf-two-cols\">" +
@@ -3741,17 +3727,90 @@
             "<div class=\"pdf-deposit-box\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div>" +
             "<div class=\"pdf-printed-at\">印單時間：" + escapeHtml(printedAtStr) + "</div>" +
             "</body></html>";
-          var w = window.open("", "_blank", "width=640,height=800");
-          w.document.write(html);
-          w.document.close();
-          w.focus();
-          setTimeout(function() { w.print(); }, 300);
+          return { html: html, fileNameBase: fileNameBase };
+        }
 
-          // 同步保存：只在寫入試算表成功後更新本機，避免出錯時 UI/試算表不一致
+        function sanitizePdfFileName_(s) {
+          return String(s || "").replace(/[\\/:*?\"<>|]/g, "_").replace(/\s+/g, "_").trim();
+        }
+
+        function buildOrderPdfFileName_(ord, shipmentBatch) {
+          var fileDate = new Date().toISOString().slice(0, 10);
+          var custPart = (ord.customerName && String(ord.customerName).trim() !== "") ? String(ord.customerName).trim() : (ord.lineId || ord.id);
+          if (shipmentBatch != null) {
+            return sanitizePdfFileName_(ord.id + "_" + custPart + "_出貨" + shipmentBatch + "_" + fileDate);
+          }
+          return sanitizePdfFileName_(ord.id + "_" + custPart + "_" + fileDate);
+        }
+
+        function openOrderPdfPrintWindow_(html) {
+          var w = window.open("", "_blank", "width=640,height=800");
+          if (!w) return false;
+          try {
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
+            w.focus();
+            setTimeout(function() { w.print(); }, 300);
+            return true;
+          } catch (err) {
+            try { w.close(); } catch (e2) {}
+            throw err;
+          }
+        }
+
+        function generateOrderPdf(ord) {
+          if (!ord) return;
+          var itemsAll = normalizeOrderItems_(ord.items || []);
+          var hasItemList = itemsAll.length > 0;
+          var itemsToShip = hasItemList ? itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "待出貨"; }) : [];
+
+          if (hasItemList && !itemsToShip.length) {
+            var pendingCount = itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "待到貨"; }).length;
+            var shippedCount = itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "已出貨"; }).length;
+            alert("沒有「待出貨」品項可產生 PDF。\n\n待到貨：" + pendingCount + " 筆\n已出貨：" + shippedCount + " 筆\n\n請先把要出的品項設為「待出貨」，並按「儲存訂單」後再試。");
+            showOrderMessage("沒有待出貨品項。請先儲存訂單後再產生 PDF。", true);
+            return;
+          }
+
+          var maxBatch = 0;
+          itemsAll.forEach(function(it) {
+            var b = it && it.shipBatch != null && !isNaN(Number(it.shipBatch)) ? parseInt(Number(it.shipBatch), 10) : null;
+            if (b != null && isFinite(b) && b > maxBatch) maxBatch = b;
+          });
+          var shipmentBatch = hasItemList ? (maxBatch + 1) : null;
+          var itemsForPdf = hasItemList ? itemsToShip : itemsAll;
+          var fileNameBase = buildOrderPdfFileName_(ord, shipmentBatch);
+          var built = buildOrderPdfHtml_(ord, itemsForPdf, shipmentBatch, { fileNameBase: fileNameBase });
+
+          try {
+            var opened = openOrderPdfPrintWindow_(built.html);
+            if (!opened) {
+              alert("無法開啟列印視窗。請在瀏覽器允許此網站的「彈出視窗」後，再按一次「產生 PDF」。");
+              showOrderMessage("請允許彈出視窗後再產生 PDF", true);
+              return;
+            }
+          } catch (err) {
+            alert("產生 PDF 失敗：" + (err && err.message ? err.message : "未知錯誤"));
+            showOrderMessage("產生 PDF 失敗", true);
+            return;
+          }
+
+          if (!hasItemList) {
+            showOrderMessage("已開啟 PDF 列印視窗（此訂單尚無品項明細，僅印出訂單資訊）");
+            return;
+          }
+
+          var prevShip = itemsToShip.map(function(it) { return { ref: it, shipStatus: it.shipStatus, shipBatch: it.shipBatch }; });
+          itemsToShip.forEach(function(it) {
+            it.shipStatus = "已出貨";
+            it.shipBatch = shipmentBatch;
+          });
+          saveOrders();
+
           upsertOrderToSheet(ord).then(function() {
-            saveOrders();
             renderOrders();
-            showOrderMessage("已產生 PDF 並標記出貨批次（試算表已同步）");
+            showOrderMessage("已產生 PDF（出貨第 " + shipmentBatch + " 次），品項已標記為已出貨");
           }).catch(function(err) {
             prevShip.forEach(function(x) {
               if (x && x.ref) {
@@ -3761,7 +3820,7 @@
             });
             saveOrders();
             renderOrders();
-            showOrderMessage("寫入試算表失敗：" + (err && err.message ? err.message : "網路錯誤"), true);
+            showOrderMessage("PDF 已開啟，但寫入試算表失敗：" + (err && err.message ? err.message : "網路錯誤"), true);
           });
         }
 
@@ -3994,11 +4053,11 @@
               ord.depositAmount = data.depositAmount != null ? data.depositAmount : 0;
               ord.preorderDate = data.preorderDate;
               ord.shipDate = data.shipDate;
-              ord.items = Array.isArray(orderItemsState) ? orderItemsState.slice() : [];
+              ord.items = normalizeOrderItems_(orderItemsState).filter(function(it) { return String(it.lineName || "").trim() !== ""; });
               saveOrders();
               renderOrders();
               closeOrderModal();
-              showOrderMessage("訂單已更新");
+              showOrderMessage("訂單已更新（含 " + ord.items.length + " 筆品項）");
               upsertOrderToSheet(ord).then(function() {
                 showOrderMessage("訂單已更新（試算表已同步）");
               }).catch(function(err) {
@@ -4041,7 +4100,7 @@
               preorderDate: data.preorderDate,
               shipDate: data.shipDate
             };
-            newOrder.items = Array.isArray(orderItemsState) && orderItemsState.length ? orderItemsState.slice() : [];
+            newOrder.items = normalizeOrderItems_(orderItemsState).filter(function(it) { return String(it.lineName || "").trim() !== ""; });
             window.__lastPastedOrderItems = null;
             orders.unshift(newOrder);
             saveOrders();
