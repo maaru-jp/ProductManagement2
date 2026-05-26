@@ -1114,6 +1114,34 @@
             <label class="block text-xs font-medium text-slate-500 mb-1">備註 (可編輯)</label>
             <textarea id="orderRemark" rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="選填"></textarea>
           </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">購買商品（可標記出貨）</label>
+            <div class="rounded-lg border border-slate-200 bg-white p-3">
+              <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+                <p class="text-xs text-slate-500">
+                  設定每個品項的出貨狀態；點「產生 PDF」時只會包含「待出貨」品項（並自動標記為「已出貨」）。
+                </p>
+                <button type="button" id="btnOrderItemsAdd" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-xs hover:bg-slate-50">+ 新增品項</button>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                  <thead class="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th class="py-2 px-2 text-left font-medium text-slate-600 whitespace-nowrap">商品名稱／規格</th>
+                      <th class="py-2 px-2 text-left font-medium text-slate-600 whitespace-nowrap">單價</th>
+                      <th class="py-2 px-2 text-left font-medium text-slate-600 whitespace-nowrap">數量</th>
+                      <th class="py-2 px-2 text-left font-medium text-slate-600 whitespace-nowrap">金額</th>
+                      <th class="py-2 px-2 text-left font-medium text-slate-600 whitespace-nowrap">出貨狀態</th>
+                      <th class="py-2 px-2 text-left font-medium text-slate-600 whitespace-nowrap">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="orderItemsTableBody">
+                    <tr><td colspan="6" class="py-4 px-2 text-center text-slate-500">尚無品項</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-medium text-slate-500 mb-1">預購日期</label>
@@ -2993,6 +3021,8 @@
         var orderStatusFilter = document.getElementById("orderStatusFilter");
         var orderMessage = document.getElementById("orderMessage");
         var orderTableBody = document.getElementById("orderTableBody");
+        var orderItemsTableBody = document.getElementById("orderItemsTableBody");
+        var btnOrderItemsAdd = document.getElementById("btnOrderItemsAdd");
 
         var orders = [];
         try {
@@ -3156,6 +3186,176 @@
           return Math.max(0, orderGrossBeforeDeposit(ord) - dep);
         }
 
+        var orderItemsState = [];
+
+        function normalizeOrderItem_(it) {
+          var o = it || {};
+          var qty = (o.qty != null && o.qty !== "" && !isNaN(Number(o.qty))) ? Math.max(0, parseInt(o.qty, 10)) : 0;
+          var price = (o.price == null || o.price === "" || isNaN(Number(o.price))) ? null : Number(o.price);
+          if (price != null && !isFinite(price)) price = null;
+          var shipStatus = (o.shipStatus != null && String(o.shipStatus).trim() !== "") ? String(o.shipStatus).trim() : "待出貨";
+          var shipBatch = (o.shipBatch != null && o.shipBatch !== "" && !isNaN(Number(o.shipBatch))) ? parseInt(o.shipBatch, 10) : null;
+          if (shipStatus === "已出貨" && shipBatch == null) shipBatch = 1; // 避免未帶 batch 導致檔名難區分
+          return {
+            lineName: (o.lineName != null ? String(o.lineName) : "").trim(),
+            qty: qty,
+            price: price,
+            shipStatus: shipStatus,
+            shipBatch: shipBatch
+          };
+        }
+
+        function normalizeOrderItems_(items) {
+          if (!items || !Array.isArray(items)) return [];
+          return items.map(function(it) { return normalizeOrderItem_(it); });
+        }
+
+        function escapeHtmlAttr(s) {
+          var out = escapeHtml(s);
+          return out.replace(/"/g, "&quot;");
+        }
+
+        function renderOrderItemsEditor_(items) {
+          orderItemsState = normalizeOrderItems_(items);
+          if (!orderItemsTableBody) return;
+
+          if (!orderItemsState.length) {
+            orderItemsTableBody.innerHTML = "<tr><td colspan=\"6\" class=\"py-4 px-2 text-center text-slate-500\">尚無品項</td></tr>";
+            return;
+          }
+
+          orderItemsTableBody.innerHTML = orderItemsState.map(function(it, idx) {
+            var lineTotal = (it.price != null && !isNaN(Number(it.price)) && it.qty > 0) ? (Number(it.price) * Number(it.qty)) : null;
+            var lineTotalText = (lineTotal != null) ? "NT$ " + (Number.isInteger(lineTotal) ? lineTotal : Math.round(lineTotal)) : "—";
+            return "<tr data-item-index=\"" + idx + "\">" +
+              "<td class=\"py-2 px-2\">" +
+                "<input type=\"text\" class=\"order-item-name-input w-full rounded-lg border border-slate-300 px-2 py-1 text-xs\" value=\"" + escapeHtmlAttr(it.lineName) + "\" />" +
+              "</td>" +
+              "<td class=\"py-2 px-2\">" +
+                "<input type=\"number\" step=\"1\" min=\"0\" class=\"order-item-price-input w-full rounded-lg border border-slate-300 px-2 py-1 text-xs\" value=\"" + (it.price != null ? escapeHtmlAttr(String(it.price)) : "") + "\" placeholder=\"—\" />" +
+              "</td>" +
+              "<td class=\"py-2 px-2\">" +
+                "<input type=\"number\" step=\"1\" min=\"0\" class=\"order-item-qty-input w-full rounded-lg border border-slate-300 px-2 py-1 text-xs\" value=\"" + escapeHtmlAttr(String(it.qty)) + "\" />" +
+              "</td>" +
+              "<td class=\"py-2 px-2\"><span class=\"order-item-line-amount\">" + lineTotalText + "</span></td>" +
+              "<td class=\"py-2 px-2\">" +
+                "<select class=\"order-item-ship-status w-full rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white\">" +
+                  "<option value=\"待到貨\"" + (it.shipStatus === "待到貨" ? " selected" : "") + ">待到貨</option>" +
+                  "<option value=\"待出貨\"" + (it.shipStatus === "待出貨" ? " selected" : "") + ">待出貨</option>" +
+                  "<option value=\"已出貨\"" + (it.shipStatus === "已出貨" ? " selected" : "") + ">已出貨</option>" +
+                "</select>" +
+              "</td>" +
+              "<td class=\"py-2 px-2\">" +
+                "<input type=\"hidden\" class=\"order-item-ship-batch\" value=\"" + (it.shipBatch != null ? escapeHtmlAttr(String(it.shipBatch)) : "") + "\" />" +
+                "<button type=\"button\" class=\"order-item-delete-btn px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100 text-xs\">刪除</button>" +
+              "</td>" +
+            "</tr>";
+          }).join("");
+        }
+
+        function recalcOrderSubtotalFromItems_() {
+          if (!document.getElementById("orderSubtotal")) return;
+          var subtotalSum = 0;
+          for (var i = 0; i < orderItemsState.length; i++) {
+            var it = orderItemsState[i];
+            if (it.qty > 0 && it.price != null && !isNaN(Number(it.price))) {
+              subtotalSum += Number(it.price) * Number(it.qty);
+            }
+          }
+          if (!isFinite(subtotalSum)) subtotalSum = 0;
+          subtotalSum = Math.max(0, Math.ceil(subtotalSum));
+          document.getElementById("orderSubtotal").value = String(subtotalSum);
+          updateOrderTotal();
+        }
+
+        function syncOrderItemsStateFromEditor_() {
+          if (!orderItemsTableBody) return;
+          var rows = Array.from(orderItemsTableBody.querySelectorAll("tr[data-item-index]"));
+          var next = [];
+          for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            var idx = parseInt(row.getAttribute("data-item-index"), 10);
+            var nameEl = row.querySelector(".order-item-name-input");
+            var qtyEl = row.querySelector(".order-item-qty-input");
+            var priceEl = row.querySelector(".order-item-price-input");
+            var statusEl = row.querySelector(".order-item-ship-status");
+            var batchEl = row.querySelector(".order-item-ship-batch");
+            var it = orderItemsState[idx] || {};
+            next.push({
+              lineName: nameEl ? String(nameEl.value || "").trim() : (it.lineName || ""),
+              qty: qtyEl ? parseInt(String(qtyEl.value || "0"), 10) : (it.qty || 0),
+              price: priceEl ? (String(priceEl.value || "").trim() === "" ? null : Number(priceEl.value)) : it.price,
+              shipStatus: statusEl ? String(statusEl.value || "").trim() : (it.shipStatus || "待出貨"),
+              shipBatch: batchEl ? (String(batchEl.value || "").trim() === "" ? null : parseInt(String(batchEl.value || ""), 10)) : it.shipBatch
+            });
+          }
+          orderItemsState = normalizeOrderItems_(next);
+        }
+
+        if (btnOrderItemsAdd) {
+          btnOrderItemsAdd.addEventListener("click", function() {
+            orderItemsState = Array.isArray(orderItemsState) ? orderItemsState : [];
+            orderItemsState.push({ lineName: "", qty: 1, price: 0, shipStatus: "待出貨", shipBatch: null });
+            renderOrderItemsEditor_(orderItemsState);
+            recalcOrderSubtotalFromItems_();
+          });
+        }
+
+        if (orderItemsTableBody) {
+          orderItemsTableBody.addEventListener("input", function(e) {
+            var t = e.target;
+            if (!t) return;
+            if (t.classList.contains("order-item-qty-input") || t.classList.contains("order-item-price-input") || t.classList.contains("order-item-name-input")) {
+              var row = t.closest("tr[data-item-index]");
+              if (row) {
+                var qtyEl = row.querySelector(".order-item-qty-input");
+                var priceEl = row.querySelector(".order-item-price-input");
+                var amountEl = row.querySelector(".order-item-line-amount");
+                var qtyNum = qtyEl ? parseInt(String(qtyEl.value || "0"), 10) : 0;
+                if (!isFinite(qtyNum) || qtyNum < 0) qtyNum = 0;
+                var priceRaw = priceEl ? String(priceEl.value || "").trim() : "";
+                var priceNum = priceRaw === "" ? null : Number(priceRaw);
+                if (priceNum != null && !isFinite(priceNum)) priceNum = null;
+                if (amountEl) {
+                  if (priceNum != null && qtyNum > 0) {
+                    var lineTotal = priceNum * qtyNum;
+                    amountEl.textContent = "NT$ " + (Number.isInteger(lineTotal) ? lineTotal : Math.round(lineTotal));
+                  } else {
+                    amountEl.textContent = "—";
+                  }
+                }
+              }
+              syncOrderItemsStateFromEditor_();
+              if (t.classList.contains("order-item-qty-input") || t.classList.contains("order-item-price-input")) {
+                recalcOrderSubtotalFromItems_();
+              }
+              return;
+            }
+          });
+          orderItemsTableBody.addEventListener("change", function(e) {
+            var t = e.target;
+            if (!t) return;
+            if (t.classList.contains("order-item-ship-status")) {
+              syncOrderItemsStateFromEditor_();
+              return;
+            }
+          });
+          orderItemsTableBody.addEventListener("click", function(e) {
+            var t = e.target;
+            if (!t) return;
+            if (t.classList.contains("order-item-delete-btn")) {
+              var row = t.closest("tr[data-item-index]");
+              if (!row) return;
+              var idx = parseInt(row.getAttribute("data-item-index"), 10);
+              if (!isFinite(idx) || idx < 0) return;
+              if (!confirm("確定刪除此品項？")) return;
+              orderItemsState = orderItemsState.filter(function(it, i) { return i !== idx; });
+              renderOrderItemsEditor_(orderItemsState);
+              recalcOrderSubtotalFromItems_();
+            }
+          });
+        }
+
         function getOrderFromForm() {
           var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
           var shipping = Number(document.getElementById("orderShippingFee").value) || 0;
@@ -3223,6 +3423,7 @@
           if (depEl) depEl.value = o.depositAmount != null && o.depositAmount !== "" ? String(o.depositAmount) : "0";
           document.getElementById("orderPreorderDate").value = o.preorderDate || "";
           document.getElementById("orderShipDate").value = o.shipDate || "";
+          renderOrderItemsEditor_(o.items || []);
           updateOrderTotal();
         }
 
@@ -3258,6 +3459,7 @@
             if (depEl) depEl.value = "0";
             document.getElementById("orderPreorderDate").value = "";
             document.getElementById("orderShipDate").value = "";
+            renderOrderItemsEditor_(window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) ? window.__lastPastedOrderItems : []);
             updateOrderTotal();
           }
         }
@@ -3411,21 +3613,51 @@
         function generateOrderPdf(ord) {
           var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
           var printedAtStr = new Date().toLocaleString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-          var itemsRows = "";
-          if (ord.items && Array.isArray(ord.items) && ord.items.length > 0) {
-            itemsRows = "<h2 style=\"font-size:14px;margin-top:12px;margin-bottom:6px;\">購買商品</h2><table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
-            for (var i = 0; i < ord.items.length; i++) {
-              var it = ord.items[i];
-              var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
-              var qty = (it.qty != null && !isNaN(it.qty)) ? Number(it.qty) : 0;
-              var priceNum = (it.price != null && it.price !== "" && !isNaN(Number(it.price))) ? Number(it.price) : null;
-              var priceCell = priceNum !== null ? "NT$ " + (Number.isInteger(priceNum) ? priceNum : Math.round(priceNum)) : "—";
-              var lineTotal = (priceNum !== null && qty > 0) ? (priceNum * qty) : null;
-              var lineTotalCell = lineTotal !== null ? "NT$ " + (Number.isInteger(lineTotal) ? lineTotal : Math.round(lineTotal)) : "—";
-              itemsRows += "<tr><td>" + escapeHtml(name || "—") + "</td><td>" + escapeHtml(priceCell) + "</td><td>" + escapeHtml(String(qty)) + "</td><td>" + escapeHtml(lineTotalCell) + "</td></tr>";
-            }
-            itemsRows += "</table>";
+          function sanitizeFileName_(s) {
+            return String(s || "").replace(/[\\/:*?\"<>|]/g, "_").replace(/\s+/g, "_").trim();
           }
+
+          var itemsAll = (ord.items && Array.isArray(ord.items)) ? ord.items : [];
+          var itemsToShip = itemsAll.filter(function(it) {
+            var st = it && it.shipStatus != null ? String(it.shipStatus).trim() : "待出貨";
+            if (!st) st = "待出貨";
+            return st === "待出貨";
+          });
+          if (!itemsToShip.length) {
+            showOrderMessage("沒有待出貨品項（待出貨）可產生 PDF", true);
+            return;
+          }
+
+          var maxBatch = 0;
+          itemsAll.forEach(function(it) {
+            var b = it && it.shipBatch != null && !isNaN(Number(it.shipBatch)) ? parseInt(Number(it.shipBatch), 10) : null;
+            if (b != null && isFinite(b) && b > maxBatch) maxBatch = b;
+          });
+          var shipmentBatch = maxBatch + 1;
+          var fileDate = new Date().toISOString().slice(0, 10);
+          var custPart = (ord.customerName && String(ord.customerName).trim() !== "") ? String(ord.customerName).trim() : (ord.lineId || ord.id);
+          var fileNameBase = sanitizeFileName_(ord.id + "_" + custPart + "_出貨" + shipmentBatch + "_" + fileDate);
+
+          var prevShip = itemsToShip.map(function(it) { return { ref: it, shipStatus: it.shipStatus, shipBatch: it.shipBatch }; });
+          // 這批印完後直接標記為已出貨（避免第二次出貨檔名/品項重複）
+          itemsToShip.forEach(function(it) {
+            it.shipStatus = "已出貨";
+            it.shipBatch = shipmentBatch;
+          });
+
+          var itemsRows = "<h2 style=\"font-size:14px;margin-top:12px;margin-bottom:6px;\">本次出貨商品（出貨第 " + escapeHtml(String(shipmentBatch)) + " 次）</h2>" +
+            "<table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
+          for (var i = 0; i < itemsToShip.length; i++) {
+            var it = itemsToShip[i];
+            var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
+            var qty = (it.qty != null && !isNaN(it.qty)) ? Number(it.qty) : 0;
+            var priceNum = (it.price != null && it.price !== "" && !isNaN(Number(it.price))) ? Number(it.price) : null;
+            var priceCell = priceNum !== null ? "NT$ " + (Number.isInteger(priceNum) ? priceNum : Math.round(priceNum)) : "—";
+            var lineTotal = (priceNum !== null && qty > 0) ? (priceNum * qty) : null;
+            var lineTotalCell = lineTotal !== null ? "NT$ " + (Number.isInteger(lineTotal) ? lineTotal : Math.round(lineTotal)) : "—";
+            itemsRows += "<tr><td>" + escapeHtml(name || "—") + "</td><td>" + escapeHtml(priceCell) + "</td><td>" + escapeHtml(String(qty)) + "</td><td>" + escapeHtml(lineTotalCell) + "</td></tr>";
+          }
+          itemsRows += "</table>";
           function stripItemLinesFromRemark(remarkStr) {
             if (remarkStr == null || String(remarkStr).trim() === "") return "";
             var lines = String(remarkStr).split(/\r?\n/);
@@ -3468,7 +3700,7 @@
           headerRight += "</div>";
           headerRight += "<div class=\"pdf-dates-box\"><div class=\"pdf-date-row\"><span class=\"label\">預購日期</span><span class=\"value\">" + escapeHtml(preorderStr || "—") + "</span></div>";
           headerRight += "<div class=\"pdf-date-row\"><span class=\"label\">出貨日期</span><span class=\"value\">" + escapeHtml(shipStr || "—") + "</span></div></div>";
-          var html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>訂單 " + escapeHtml(ord.id) + "</title>" +
+          var html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>" + escapeHtml(fileNameBase) + "</title>" +
             "<style>@page{size:A4 portrait;margin:10mm;} *{-webkit-print-color-adjust:exact;print-color-adjust:exact;} body{font-family:'Microsoft JhengHei',sans-serif;padding:10px;max-width:760px;margin:0 auto;color:#1e293b;font-size:15px;line-height:1.45;} " +
             ".pdf-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:8px;flex-wrap:nowrap;} " +
             ".pdf-header-left{flex:1;min-width:200px;} .pdf-header-right{text-align:center;min-width:240px;} " +
@@ -3487,6 +3719,7 @@
             "<div class=\"pdf-title-box\">訂單明細</div>" +
             "<div class=\"row\"><span class=\"label\">訂單編號</span><div class=\"value\">" + escapeHtml(ord.id) + "</div></div>" +
             "<div class=\"row\"><span class=\"label\">狀態</span><div class=\"value\">" + escapeHtml(ord.status || "待處理") + "</div></div>" +
+            "<div class=\"row\"><span class=\"label\">出貨批次</span><div class=\"value\">出貨第 " + escapeHtml(String(shipmentBatch)) + " 次</div></div>" +
             "</div><div class=\"pdf-header-right\">" + headerRight + "</div></div>" +
             "<h2>客戶資訊 / 運送方式</h2>" +
             "<div class=\"pdf-two-cols\">" +
@@ -3513,6 +3746,23 @@
           w.document.close();
           w.focus();
           setTimeout(function() { w.print(); }, 300);
+
+          // 同步保存：只在寫入試算表成功後更新本機，避免出錯時 UI/試算表不一致
+          upsertOrderToSheet(ord).then(function() {
+            saveOrders();
+            renderOrders();
+            showOrderMessage("已產生 PDF 並標記出貨批次（試算表已同步）");
+          }).catch(function(err) {
+            prevShip.forEach(function(x) {
+              if (x && x.ref) {
+                x.ref.shipStatus = x.shipStatus;
+                x.ref.shipBatch = x.shipBatch;
+              }
+            });
+            saveOrders();
+            renderOrders();
+            showOrderMessage("寫入試算表失敗：" + (err && err.message ? err.message : "網路錯誤"), true);
+          });
         }
 
         if (btnAddOrder) btnAddOrder.addEventListener("click", function() { window.__lastPastedOrderItems = null; openOrderModal(null); });
@@ -3588,7 +3838,7 @@
               var amountStr = (m[3] || "").replace(/,/g, "").replace(/\s/g, "");
               var lineTotal = (amountStr !== "" && !isNaN(parseFloat(amountStr))) ? parseFloat(amountStr) : null;
               var unitPrice = (lineTotal != null && qty > 0) ? Math.round(lineTotal / qty) : null;
-              if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty, price: unitPrice });
+              if (lineName && !isNaN(qty) && qty > 0) items.push({ lineName: lineName, qty: qty, price: unitPrice, shipStatus: "待出貨", shipBatch: null });
               return;
             }
             m = norm.match(lineReB);
@@ -3597,7 +3847,7 @@
               var priceStr = (m[2] || "").replace(/,/g, "");
               var qtyB = parseInt(m[3], 10);
               var unitPriceB = (priceStr !== "" && !isNaN(parseFloat(priceStr))) ? Math.round(parseFloat(priceStr)) : null;
-              if (lineNameB && !isNaN(qtyB) && qtyB > 0 && unitPriceB != null) items.push({ lineName: lineNameB, qty: qtyB, price: unitPriceB });
+              if (lineNameB && !isNaN(qtyB) && qtyB > 0 && unitPriceB != null) items.push({ lineName: lineNameB, qty: qtyB, price: unitPriceB, shipStatus: "待出貨", shipBatch: null });
               return;
             }
             m = norm.match(lineReC);
@@ -3606,7 +3856,7 @@
               var qtyC = parseInt(m[2], 10);
               var priceStrC = (m[3] || "").replace(/,/g, "");
               var unitPriceC = (priceStrC !== "" && !isNaN(parseFloat(priceStrC))) ? Math.round(parseFloat(priceStrC)) : null;
-              if (lineNameC && !isNaN(qtyC) && qtyC > 0 && unitPriceC != null) items.push({ lineName: lineNameC, qty: qtyC, price: unitPriceC });
+              if (lineNameC && !isNaN(qtyC) && qtyC > 0 && unitPriceC != null) items.push({ lineName: lineNameC, qty: qtyC, price: unitPriceC, shipStatus: "待出貨", shipBatch: null });
             }
           });
           window.__lastPastedOrderItems = items.length ? items : null;
@@ -3722,6 +3972,7 @@
           if (submitBtn) submitBtn.disabled = true;
           var editId = this.getAttribute("data-edit-id") || "";
           var data = getOrderFromForm();
+          syncOrderItemsStateFromEditor_();
           if (editId) {
             var ord = orders.find(function(o) { return o.id === editId; });
             if (ord) {
@@ -3743,6 +3994,7 @@
               ord.depositAmount = data.depositAmount != null ? data.depositAmount : 0;
               ord.preorderDate = data.preorderDate;
               ord.shipDate = data.shipDate;
+              ord.items = Array.isArray(orderItemsState) ? orderItemsState.slice() : [];
               saveOrders();
               renderOrders();
               closeOrderModal();
@@ -3789,10 +4041,8 @@
               preorderDate: data.preorderDate,
               shipDate: data.shipDate
             };
-            if (window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) && window.__lastPastedOrderItems.length) {
-              newOrder.items = window.__lastPastedOrderItems.slice();
-              window.__lastPastedOrderItems = null;
-            }
+            newOrder.items = Array.isArray(orderItemsState) && orderItemsState.length ? orderItemsState.slice() : [];
+            window.__lastPastedOrderItems = null;
             orders.unshift(newOrder);
             saveOrders();
             renderOrders();
