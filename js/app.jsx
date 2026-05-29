@@ -1079,13 +1079,25 @@ function ShopSidebar({ products, activeCategory, activeSubcategory, newTodayActi
   );
 }
 
-function StockTag({ value, size = "sm" }) {
+function StockTag({ value, size = "sm", overlay = false }) {
   if (!value || !String(value).trim()) return null;
   const v = String(value).trim();
-  const base = size === "md" ? "text-xs px-2 py-0.5" : "text-[11px] px-1.5 py-0.5";
+  const isStock = v === "現貨";
+  const isPreorder = v === "預購";
+  const variant = isStock ? "instock" : isPreorder ? "preorder" : "default";
+  const label = isStock ? "現貨" : isPreorder ? "預購" : v;
+
   return (
-    <span className={"inline-block rounded font-medium text-neutral-600 bg-neutral-100 " + base}>
-      {v}
+    <span
+      className={[
+        "stock-tag",
+        size === "md" ? "stock-tag--md" : "stock-tag--sm",
+        "stock-tag--" + variant,
+        overlay ? "stock-tag--overlay" : "",
+      ].join(" ")}
+    >
+      <span className="stock-tag__dot" aria-hidden="true" />
+      {label}
     </span>
   );
 }
@@ -1142,15 +1154,22 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
             ) : null}
           </div>
         ) : null}
+
+        {(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購) ? (
+          <div className="absolute bottom-2 left-2 z-[1]">
+            <StockTag
+              value={String(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購 || "").trim()}
+              size="sm"
+              overlay
+            />
+          </div>
+        ) : null}
       </div>
       <div className="pt-2.5 space-y-1">
         <h2 className="text-sm text-neutral-800 line-clamp-2 leading-snug">
           {product.name}
         </h2>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購) ? (
-            <StockTag value={String(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購 || "").trim()} size="sm" />
-          ) : null}
           {twd ? (
             <p className="text-sm font-medium text-neutral-900">{twd}</p>
           ) : (
@@ -1621,9 +1640,12 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
             ) : null}
 
             {(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況) ? (
-              <p className="pt-0.5">
-                <StockTag value={String(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況 || "").trim()} size="sm" />
-              </p>
+              <div className="pt-0.5">
+                <StockTag
+                  value={String(mainProduct.stockType || selectedItem?.stockType || mainProduct.raw?.貨況 || selectedItem?.raw?.貨況 || "").trim()}
+                  size="md"
+                />
+              </div>
             ) : null}
 
             {(selectedItem?.price != null || selectedItem?.sellingPrice != null) ? (
