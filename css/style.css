@@ -1,7 +1,48 @@
-/* Minimal, omoselect-like clean vibe */
+/* Wearism-inspired shop theme */
 html,
 body {
-  background: #f8fafc;
+  background: #ffffff;
+  color: #0a0a0a;
+}
+
+.font-shop {
+  font-family: "DM Sans", "Noto Sans TC", system-ui, sans-serif;
+}
+
+.shop-header-search:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
+}
+
+.shop-promo-banner {
+  background: linear-gradient(135deg, #ff4d8d 0%, #ff6ba8 50%, #ff85b8 100%);
+}
+
+.shop-sidebar-item-active {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.shop-filter-chip {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 9999px;
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #111827;
+  white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.shop-filter-chip:hover {
+  border-color: #111827;
+}
+
+.shop-filter-chip-active {
+  border-color: #111827;
+  background: #111827;
+  color: #fff;
 }
 
 /* 選單橫向捲動時隱藏捲軸 */
