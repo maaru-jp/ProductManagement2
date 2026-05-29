@@ -1242,6 +1242,7 @@
       }
 
       var products = [];
+      var productsLoadSeq = 0;
       var globalRate = (function() {
         var v = localStorage.getItem("maaru_admin_rate");
         if (v === null || v === "") return null;
@@ -2133,27 +2134,76 @@
         }, 4000);
       }
 
-      function loadProducts() {
-        var tbody = document.getElementById("tableBody");
-        tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
-        (function() {
-          var candidates = [API_READ, API_BASE, CORS_PROXY_PREFIX + encodeURIComponent(API_BASE)];
-          function tryAt(i) {
-            if (i >= candidates.length) return Promise.reject(new Error("Failed to fetch"));
-            return fetch(candidates[i]).then(function(res) {
-              if (!res || !res.ok) return tryAt(i + 1);
-              return res;
-            }).catch(function() {
-              return tryAt(i + 1);
-            });
+      function productByRowIndex(rowIndex) {
+        var r = parseInt(rowIndex, 10);
+        if (isNaN(r) || r < 2) return undefined;
+        return products.find(function(p) { return p._rowIndex === r; });
+      }
+
+      function withCacheBust(url) {
+        var sep = url.indexOf("?") >= 0 ? "&" : "?";
+        return url + sep + "_t=" + Date.now();
+      }
+
+      function fetchProductsData() {
+        var candidates = [
+          withCacheBust(API_READ),
+          withCacheBust(API_BASE),
+          withCacheBust(CORS_PROXY_PREFIX + encodeURIComponent(API_BASE))
+        ];
+        function tryAt(i) {
+          if (i >= candidates.length) return Promise.reject(new Error("Failed to fetch"));
+          return fetch(candidates[i], { cache: "no-store" }).then(function(res) {
+            if (!res || !res.ok) return tryAt(i + 1);
+            return res;
+          }).catch(function() {
+            return tryAt(i + 1);
+          });
+        }
+        return tryAt(0).then(function(r) {
+          if (!r.ok) throw new Error("HTTP " + r.status + "，請確認試算表已部署為「網頁應用程式」且「誰可以存取」選「任何人」");
+          return r.json();
+        });
+      }
+
+      function normalizeProductsFromApi(raw) {
+        return (raw || []).map(function(p) {
+          var q = typeof p === "object" && p !== null ? Object.assign({}, p) : {};
+          if (q._rowIndex != null && q._rowIndex !== "") {
+            var ri = parseInt(q._rowIndex, 10);
+            if (!isNaN(ri) && ri >= 2) q._rowIndex = ri;
+            else delete q._rowIndex;
           }
-          return tryAt(0);
-        })()
-          .then(function(r) {
-            if (!r.ok) throw new Error("HTTP " + r.status + "，請確認試算表已部署為「網頁應用程式」且「誰可以存取」選「任何人」");
-            return r.json();
-          })
+          return q;
+        }).filter(function(p) {
+          return p._rowIndex != null && p._rowIndex >= 2;
+        });
+      }
+
+      function applyProductPatchLocal(rowIndex, product) {
+        var r = parseInt(rowIndex, 10);
+        if (isNaN(r) || r < 2 || !product) return;
+        var idx = products.findIndex(function(p) { return p._rowIndex === r; });
+        var patch = Object.assign({}, product, { _rowIndex: r });
+        if (idx >= 0) {
+          products[idx] = Object.assign({}, products[idx], patch);
+        } else {
+          products.push(patch);
+        }
+        products.sort(function(a, b) { return (a._rowIndex || 0) - (b._rowIndex || 0); });
+        renderTable();
+      }
+
+      function loadProducts(opts) {
+        opts = opts || {};
+        var tbody = document.getElementById("tableBody");
+        var seq = ++productsLoadSeq;
+        if (!opts.silent) {
+          tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-slate-500\">載入中...</td></tr>";
+        }
+        return fetchProductsData()
           .then(function(data) {
+            if (seq !== productsLoadSeq) return;
             if (globalRate == null && data.rate != null && data.rate !== "" && Number(data.rate) > 0) {
               globalRate = Number(data.rate);
               try { localStorage.setItem("maaru_admin_rate", String(globalRate)); } catch (e) {}
@@ -2161,17 +2211,14 @@
               if (rateInp) rateInp.value = globalRate;
             }
             var raw = data.products || (Array.isArray(data) ? data : []);
-            products = raw.map(function(p, i) {
-              var q = typeof p === "object" && p !== null ? Object.assign({}, p) : {};
-              if (q._rowIndex == null || q._rowIndex < 2) q._rowIndex = i + 2;
-              return q;
-            });
+            products = normalizeProductsFromApi(raw);
             pendingStatusChanges = {};
             renderTable();
             updateRateHint();
             updateFormRateInput();
           })
           .catch(function(err) {
+            if (seq !== productsLoadSeq) return;
             tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-red-500\">載入失敗：" + formatNetworkError(err) + "</td></tr>";
           });
       }
@@ -2191,12 +2238,6 @@
       if (list.length === 0) {
         tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
         return;
-      }
-      function productByRowIndex(rowIndex) {
-        var r = parseInt(rowIndex, 10);
-        if (isNaN(r) || r < 2) return undefined;
-        var byRow = products.find(function(p) { return p._rowIndex === r; });
-        return byRow != null ? byRow : products[r - 2];
       }
       function fmtDate(v) {
         if (v == null || v === "") return "";
@@ -2246,9 +2287,12 @@
           btn.addEventListener("click", function() {
             var rowIndex = parseInt(this.getAttribute("data-row"), 10);
             var p = productByRowIndex(rowIndex);
-            if (!p) return;
+            if (!p) {
+              showMessage("找不到該列商品（列號 " + rowIndex + "），請重新整理後再試", true);
+              return;
+            }
             openModal(true);
-            document.getElementById("editRowIndex").value = rowIndex;
+            document.getElementById("editRowIndex").value = String(rowIndex);
             document.getElementById("modalTitle").textContent = "編輯商品";
             setFormValues({
               name: p.name || p.商品名稱,
@@ -2348,6 +2392,7 @@
                 if (res && res.error) throw new Error(res.message || "更新失敗");
                 p.status = next;
                 p.狀態 = next;
+                applyProductPatchLocal(rowIndex, product);
                 try {
                   var hidden = JSON.parse(localStorage.getItem("maaru_admin_hidden_product_names") || "[]");
                   if (!Array.isArray(hidden)) hidden = [];
@@ -2358,7 +2403,7 @@
                 } catch (e) {}
                 try { localStorage.setItem("maaru_products_updated", String(Date.now())); } catch (e2) {}
                 showMessage(next === "上架" ? "已設為上架，試算表已更新。" : "已設為下架，試算表已更新。");
-                renderTable();
+                loadProducts({ silent: true });
               })
               .catch(function(err) {
                 showMessage("儲存失敗：" + (err.message || "網路錯誤"), true);
@@ -2489,9 +2534,34 @@
         syncVariantToHidden();
       }
 
+      function resetProductFormFields() {
+        var form = document.getElementById("productForm");
+        if (!form) return;
+        form.querySelectorAll("input:not([type=\"hidden\"]), select, textarea").forEach(function(el) {
+          if (el.id === "productFormRateInput") return;
+          if (el.type === "checkbox" || el.type === "radio") el.checked = false;
+          else el.value = "";
+        });
+        var statusInput = document.getElementById("statusInput");
+        if (statusInput) statusInput.value = "上架";
+        var customerDisplayInp = document.getElementById("customerDisplayPriceValue");
+        if (customerDisplayInp) customerDisplayInp.value = "";
+        var profitInp = document.getElementById("profitValue");
+        if (profitInp) profitInp.value = "";
+        var marginSel = document.getElementById("marginPercentSelect");
+        if (marginSel) marginSel.value = "";
+        renderVariantList("", "", "");
+        updateSubcategoryOptions("");
+        var preview = document.getElementById("productImagePreview");
+        var previewPh = document.getElementById("productImagePreviewPlaceholder");
+        if (preview) { preview.src = ""; preview.classList.add("hidden"); }
+        if (previewPh) previewPh.classList.remove("hidden");
+      }
+
       function setFormValues(obj, opts) {
         var form = document.getElementById("productForm");
         var fromEdit = opts && opts.fromEdit === true;
+        if (fromEdit) resetProductFormFields();
         updateSubcategoryOptions(obj && obj.category ? obj.category : "");
         Object.keys(obj || {}).forEach(function(key) {
           if (key === "hot" || key === "recommended" || key === "isNew" || key === "isNewListing" || key === "variant") return;
@@ -2776,13 +2846,13 @@
       function openModal(isEdit) {
         document.getElementById("modal").classList.remove("hidden");
         document.getElementById("modalTitle").textContent = isEdit ? "編輯商品" : "新增商品";
-        document.getElementById("editRowIndex").value = "";
         updateRateHint();
         updateFormRateInput();
-        var marginSel = document.getElementById("marginPercentSelect");
-        if (marginSel) marginSel.value = "";
         if (!isEdit) {
-          setFormValues({});
+          document.getElementById("editRowIndex").value = "";
+          var marginSel = document.getElementById("marginPercentSelect");
+          if (marginSel) marginSel.value = "";
+          resetProductFormFields();
           var statusInput = document.getElementById("statusInput");
           if (statusInput) statusInput.value = "上架";
           updateSuggestedPriceDisplay();
@@ -2877,20 +2947,14 @@
         btnClearForm.addEventListener("click", function() {
           document.getElementById("editRowIndex").value = "";
           document.getElementById("modalTitle").textContent = "新增商品";
-          var form = document.getElementById("productForm");
-          if (form) {
-            var inputs = form.querySelectorAll("input, select, textarea");
-            inputs.forEach(function(el) {
-              if (el.type === "checkbox" || el.type === "radio") el.checked = false;
-              else el.value = "";
-            });
-          }
-          renderVariantList("", "", "");
-          updateSubcategoryOptions("");
+          resetProductFormFields();
           var statusInput = document.getElementById("statusInput");
           if (statusInput) statusInput.value = "上架";
+          updateSuggestedPriceDisplay();
+          updateProfitAnalysis();
           updateProfitDisplay();
           updateMainImagePreview();
+          updateRateHint();
         });
       }
 
@@ -2946,6 +3010,10 @@
             showMessage((res && res.message) ? res.message : "已儲存");
             if (body.rowIndex != null) delete pendingStatusChanges[body.rowIndex];
             try { localStorage.setItem("maaru_products_updated", String(Date.now())); } catch (e) {}
+            var savedRowIndex = body.rowIndex != null ? body.rowIndex : (res && res.rowIndex != null ? res.rowIndex : null);
+            if (savedRowIndex != null) {
+              applyProductPatchLocal(savedRowIndex, product);
+            }
             var savedName = (product && product.name) ? String(product.name).trim() : "";
             if (savedName) {
               try {
@@ -2957,7 +3025,7 @@
               } catch (e) {}
             }
             closeModal();
-            loadProducts();
+            loadProducts({ silent: true });
           })
           .catch(function(err) {
             showMessage("儲存失敗：" + (err && err.message ? err.message : "網路錯誤").replace(/^Failed to fetch$/i, "無法連線，請確認 API 網址與網路。"), true);
