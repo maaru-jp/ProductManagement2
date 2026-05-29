@@ -1,3 +1,6 @@
+const SHOP_BRAND_NAME = "MAARU 日本萌GO";
+const SHOP_BRAND_TAGLINE = "日本周邊 · 藥妝代購";
+
 function getHashPath() {
   const raw = window.location.hash || "#/";
   const hash = raw.startsWith("#") ? raw.slice(1) : raw;
@@ -922,17 +925,17 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword,
             type="button"
             onClick={onLogoClick}
             className="shop-logo-btn flex items-center gap-3 min-w-0 focus:outline-none text-left"
-            aria-label="回首頁"
+            aria-label={SHOP_BRAND_NAME + " 回首頁"}
           >
             <div className="shop-logo-glass shrink-0">
-              <img src="./品牌logo_tondiv.jpg" alt="Maaru" className="shop-logo-img" loading="lazy" />
+              <img src="./品牌logo_tondiv.jpg" alt={SHOP_BRAND_NAME} className="shop-logo-img" loading="lazy" />
             </div>
-            <div className="hidden sm:block min-w-0">
-              <span className="block text-base font-semibold tracking-tight text-neutral-900 leading-tight">
-                Maaru
+            <div className="min-w-0">
+              <span id="shopBrandName" className="block text-xs sm:text-base font-semibold tracking-tight text-neutral-900 leading-tight whitespace-nowrap">
+                {SHOP_BRAND_NAME}
               </span>
-              <span className="block text-[11px] text-neutral-500 leading-tight mt-0.5">
-                日本周邊 · 藥妝代購
+              <span className="hidden sm:block text-[11px] text-neutral-500 leading-tight mt-0.5">
+                {SHOP_BRAND_TAGLINE}
               </span>
             </div>
           </button>
