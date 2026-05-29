@@ -3618,6 +3618,61 @@
           return st;
         }
 
+        function calcOrderItemLineTotal_(it) {
+          var qty = (it && it.qty != null && !isNaN(it.qty)) ? Number(it.qty) : 0;
+          var price = (it && it.price != null && it.price !== "" && !isNaN(Number(it.price))) ? Number(it.price) : null;
+          if (qty <= 0 || price == null || !isFinite(price)) return 0;
+          return Math.ceil(price * qty);
+        }
+
+        function sumOrderItemsSubtotal_(items) {
+          if (!items || !Array.isArray(items)) return 0;
+          var sum = 0;
+          for (var i = 0; i < items.length; i++) sum += calcOrderItemLineTotal_(items[i]);
+          return Math.max(0, Math.ceil(sum));
+        }
+
+        /** 依本次出貨品項比例，計算 PDF 顯示用金額（折扣／運費／訂金按小計比例分攤） */
+        function calcBatchPdfAmounts_(ord, itemsForPdf, shipmentBatch) {
+          var batchSubtotal = sumOrderItemsSubtotal_(itemsForPdf);
+          var orderSubtotal = Number(ord && ord.subtotal) || 0;
+          if (!isFinite(orderSubtotal) || orderSubtotal < 0) orderSubtotal = 0;
+
+          var orderDiscount = ord && ord.discount != null && ord.discount !== "" ? Number(ord.discount) : 0;
+          if (isNaN(orderDiscount) || orderDiscount < 0) orderDiscount = 0;
+
+          var orderShippingFee = ord && ord.shippingFee != null && ord.shippingFee !== "" ? Number(ord.shippingFee) : 38;
+          if (!isFinite(orderShippingFee) || orderShippingFee < 0) orderShippingFee = 38;
+
+          var orderShippingEffective = orderEffectiveShippingForOrder(ord);
+          var orderDeposit = ord && ord.depositAmount != null && ord.depositAmount !== "" ? Number(ord.depositAmount) : 0;
+          if (isNaN(orderDeposit) || orderDeposit < 0) orderDeposit = 0;
+
+          var ratio = orderSubtotal > 0 ? (batchSubtotal / orderSubtotal) : (batchSubtotal > 0 ? 1 : 0);
+          if (ratio > 1) ratio = 1;
+          if (ratio < 0) ratio = 0;
+
+          var batchDiscount = Math.ceil(orderDiscount * ratio);
+          var batchShipping = Math.ceil(orderShippingEffective * ratio);
+          var batchDeposit = Math.ceil(orderDeposit * ratio);
+          var batchGross = Math.max(0, Math.ceil(batchSubtotal - batchDiscount + batchShipping));
+          var batchDue = Math.max(0, batchGross - batchDeposit);
+
+          return {
+            isBatch: shipmentBatch != null,
+            batchNum: shipmentBatch,
+            batchSubtotal: batchSubtotal,
+            batchDiscount: batchDiscount,
+            batchShippingFee: orderShippingFee,
+            batchShippingEffective: batchShipping,
+            batchShippingStatus: ord && ord.shippingStatus != null ? String(ord.shippingStatus).trim() : "",
+            batchDeposit: batchDeposit,
+            batchGross: batchGross,
+            batchDue: batchDue,
+            ratio: ratio
+          };
+        }
+
         function buildOrderPdfHtml_(ord, itemsForPdf, shipmentBatch, options) {
           options = options || {};
           var printedAtStr = new Date().toLocaleString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -3654,20 +3709,39 @@
           }
           var displayRemark = stripItemLinesFromRemark(ord.remark);
           var showRemark = displayRemark !== "";
-          var depNum = ord.depositAmount != null && ord.depositAmount !== "" ? Number(ord.depositAmount) : 0;
-          if (isNaN(depNum) || depNum < 0) depNum = 0;
-          var grossNum = orderGrossBeforeDeposit(ord);
-          var dueNum = orderAmountDue(ord);
+
+          var useBatchAmounts = batchNum != null && itemsForPdf && itemsForPdf.length > 0;
+          var amt = useBatchAmounts
+            ? calcBatchPdfAmounts_(ord, itemsForPdf, batchNum)
+            : null;
+
+          var pdfSubtotal = useBatchAmounts ? amt.batchSubtotal : (ord.subtotal != null ? ord.subtotal : 0);
+          var pdfDiscount = useBatchAmounts ? amt.batchDiscount : (ord.discount != null ? ord.discount : 0);
+          var pdfShippingFee = useBatchAmounts ? amt.batchShippingFee : (ord.shippingFee != null ? ord.shippingFee : 38);
+          var pdfShippingEffective = useBatchAmounts ? amt.batchShippingEffective : orderEffectiveShippingForOrder(ord);
+          var pdfShippingStatus = useBatchAmounts ? amt.batchShippingStatus : (ord.shippingStatus != null ? String(ord.shippingStatus).trim() : "");
+          var pdfDeposit = useBatchAmounts ? amt.batchDeposit : (ord.depositAmount != null && ord.depositAmount !== "" ? Number(ord.depositAmount) : 0);
+          if (isNaN(pdfDeposit) || pdfDeposit < 0) pdfDeposit = 0;
+          var pdfGross = useBatchAmounts ? amt.batchGross : orderGrossBeforeDeposit(ord);
+          var pdfDue = useBatchAmounts ? amt.batchDue : orderAmountDue(ord);
+
+          var amountSectionTitle = useBatchAmounts ? "本次出貨金額" : "金額";
+          var subtotalLabel = useBatchAmounts ? "本次出貨商品小計" : "商品小計";
+          var dueLabel = useBatchAmounts ? "本次待結清金額" : "待結清總金額";
+          var ratioNote = useBatchAmounts && amt.ratio < 1
+            ? "<p style=\"font-size:12px;color:#64748b;margin:4px 0 0 0;\">折扣、運費、預購訂金依本次出貨小計占訂單比例分攤（約 " + Math.round(amt.ratio * 100) + "%）。</p>"
+            : "";
+
           var pdfAmountCloseRows = "";
-          if (depNum > 0) {
-            if (orderHasAmountBreakdown(ord)) {
-              pdfAmountCloseRows += "<tr><td>合計（扣除預購訂金前）</td><td>NT$ " + grossNum + "</td></tr>";
+          if (pdfDeposit > 0) {
+            if (orderHasAmountBreakdown(ord) || useBatchAmounts) {
+              pdfAmountCloseRows += "<tr><td>" + (useBatchAmounts ? "本次合計（扣除預購訂金前）" : "合計（扣除預購訂金前）") + "</td><td>NT$ " + pdfGross + "</td></tr>";
             }
-            pdfAmountCloseRows += "<tr><td>預購訂金（已付）</td><td>- NT$ " + depNum + "</td></tr>";
+            pdfAmountCloseRows += "<tr><td>預購訂金（已付" + (useBatchAmounts ? "／本次分攤" : "") + "）</td><td>- NT$ " + pdfDeposit + "</td></tr>";
           } else {
             pdfAmountCloseRows += "<tr><td>預購訂金</td><td>NT$ 0</td></tr>";
           }
-          pdfAmountCloseRows += "<tr><td><strong>待結清總金額</strong></td><td><strong>NT$ " + dueNum + "</strong></td></tr></table>";
+          pdfAmountCloseRows += "<tr><td><strong>" + dueLabel + "</strong></td><td><strong>NT$ " + pdfDue + "</strong></td></tr></table>";
           var pdfLogoUrl = "";
           try { pdfLogoUrl = (localStorage.getItem("maaru_admin_pdf_logo") || "").trim(); } catch (e) {}
           var preorderStr = (ord.preorderDate != null && String(ord.preorderDate).trim() !== "") ? String(ord.preorderDate).trim() : "";
@@ -3715,13 +3789,14 @@
             "<div class=\"row\"><span class=\"label\">地址</span><div class=\"value\">" + escapeHtml(ord.address || "") + "</div></div></div>" +
             "</div>" +
             itemsRows +
-            "<h2>金額</h2>" +
+            "<h2>" + amountSectionTitle + "</h2>" +
             "<table><tr><th>項目</th><th>金額</th></tr>" +
-            "<tr><td>商品小計</td><td>NT$ " + (ord.subtotal != null ? ord.subtotal : 0) + "</td></tr>" +
-            "<tr><td>折扣</td><td>- NT$ " + (ord.discount != null ? ord.discount : 0) + "</td></tr>" +
-            "<tr><td>運費</td><td>NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "</td></tr>" +
-            ((ord.shippingStatus != null && String(ord.shippingStatus).trim() !== "") ? "<tr><td>運費折抵</td><td>- NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "（" + escapeHtml(String(ord.shippingStatus).trim()) + "）</td></tr>" : "") +
+            "<tr><td>" + subtotalLabel + "</td><td>NT$ " + pdfSubtotal + "</td></tr>" +
+            "<tr><td>折扣" + (useBatchAmounts ? "（本次分攤）" : "") + "</td><td>- NT$ " + pdfDiscount + "</td></tr>" +
+            "<tr><td>運費" + (useBatchAmounts ? "（本次分攤）" : "") + "</td><td>NT$ " + pdfShippingEffective + "</td></tr>" +
+            ((pdfShippingStatus !== "") ? "<tr><td>運費折抵</td><td>- NT$ " + pdfShippingFee + "（" + escapeHtml(pdfShippingStatus) + "）</td></tr>" : "") +
             pdfAmountCloseRows +
+            ratioNote +
             (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(displayRemark) + "</div></div>" : "") +
             "<h2>收訂金歷程記錄</h2>" +
             "<div class=\"pdf-deposit-box\">" + (ord.depositRemark != null && String(ord.depositRemark).trim() !== "" ? escapeHtml(ord.depositRemark).replace(/\n/g, "<br>") : "—") + "</div>" +
