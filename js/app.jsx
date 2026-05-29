@@ -907,13 +907,13 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
 
 function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword, onSearchChange }) {
   return (
-    <header className="sticky top-0 z-20 bg-white border-b border-neutral-200">
+    <header className="shop-header sticky top-0 z-20 border-b border-neutral-200/80">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-3.5 flex items-center gap-4 sm:gap-6">
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={onOpenMenu}
-            className="lg:hidden inline-flex items-center justify-center w-9 h-9 rounded-md hover:bg-neutral-100 transition-colors"
+            className="lg:hidden inline-flex items-center justify-center w-9 h-9 rounded-md hover:bg-neutral-100/80 transition-colors"
             aria-label="開啟分類選單"
           >
             <svg className="w-5 h-5 text-neutral-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -921,11 +921,11 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword,
           <button
             type="button"
             onClick={onLogoClick}
-            className="flex items-center gap-2.5 min-w-0 focus:outline-none text-left"
+            className="shop-logo-btn flex items-center gap-3 min-w-0 focus:outline-none text-left"
             aria-label="回首頁"
           >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-md overflow-hidden bg-neutral-100 shrink-0 border border-neutral-200">
-              <img src="./品牌logo_tondiv.jpg" alt="Maaru" className="w-full h-full object-contain" loading="lazy" />
+            <div className="shop-logo-glass shrink-0">
+              <img src="./品牌logo_tondiv.jpg" alt="Maaru" className="shop-logo-img" loading="lazy" />
             </div>
             <div className="hidden sm:block min-w-0">
               <span className="block text-base font-semibold tracking-tight text-neutral-900 leading-tight">
@@ -1119,7 +1119,7 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
           <img
             src={imgSrc}
             alt={product.name}
-            className="w-full h-full object-contain p-2 group-hover:opacity-95 transition-opacity duration-200"
+            className="product-card-image w-full h-full object-contain p-2"
             loading="lazy"
           />
         ) : (
