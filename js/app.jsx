@@ -905,62 +905,200 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
   );
 }
 
-function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick }) {
+function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword, onSearchChange }) {
   return (
-    <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200">
-      <div className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-[1fr_auto_1fr] items-center">
-        <div className="flex justify-start items-center gap-2">
+    <header className="sticky top-0 z-20 bg-white border-b border-gray-100">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 sm:gap-6">
+        <div className="flex items-center gap-2 min-w-0">
           <button
             type="button"
             onClick={onOpenMenu}
-            className="inline-flex items-center justify-center w-11 h-11 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors focus:outline-none focus:ring-0"
+            className="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-full hover:bg-gray-50 transition-colors"
             aria-label="開啟分類選單"
           >
-            <span className="text-lg leading-none">☰</span>
+            <svg className="w-5 h-5 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <button
+            type="button"
+            onClick={onLogoClick}
+            className="flex items-center gap-2 min-w-0 focus:outline-none"
+            aria-label="回首頁"
+          >
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-gray-900 shrink-0">
+              <img src="./品牌logo_tondiv.jpg" alt="Maaru" className="w-full h-full object-contain" loading="lazy" />
+            </div>
+            <span className="hidden sm:block text-xl sm:text-2xl font-extrabold tracking-tight text-gray-900 lowercase">
+              maaru
+            </span>
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={onLogoClick}
-          className="flex items-center space-x-2 sm:space-x-3 justify-center rounded-2xl px-2 py-1.5 sm:px-3 sm:py-2 transition-all duration-300 focus:outline-none focus:ring-0 hover:bg-white/60 hover:backdrop-blur-md hover:shadow-lg hover:shadow-slate-300/40 hover:border hover:border-white/70 active:scale-[0.98]"
-          aria-label="回首頁並重新整理"
-        >
-          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden bg-slate-900 flex items-center justify-center shrink-0 ring-2 ring-transparent hover:ring-white/50 transition-shadow duration-300">
-            <img
-              src="./品牌logo_tondiv.jpg"
-              alt="Maaru 品牌 Logo"
-              className="w-full h-full object-contain"
-              loading="lazy"
+        <div className="flex justify-center min-w-0">
+          <div className="w-full max-w-md flex items-center rounded-full bg-gray-100 px-4 py-2.5 gap-2">
+            <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input
+              type="search"
+              value={searchKeyword || ""}
+              onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
+              placeholder="搜尋商品名稱或規格"
+              className="shop-header-search flex-1 min-w-0 bg-transparent text-sm text-gray-900 placeholder:text-gray-400 border-0 focus:ring-0 p-0"
             />
           </div>
-          <div className="flex flex-col leading-tight text-left">
-            <span className="text-sm sm:text-base font-semibold tracking-[0.2em] uppercase text-slate-900">
-              Maaru
-            </span>
-            <span className="text-xs sm:text-sm text-slate-500 tracking-[0.15em] uppercase">
-              Select Shop
-            </span>
-          </div>
-        </button>
+        </div>
 
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-1 sm:gap-2">
           <button
             type="button"
             onClick={onOpenCart}
-            className="relative inline-flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full border border-slate-200 bg-white hover:border-slate-900 transition-colors focus:outline-none focus:ring-0"
+            className="relative inline-flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-full hover:bg-gray-50 transition-colors"
             aria-label="開啟購物車"
           >
-            <span className="text-base sm:text-lg">🛒</span>
-            {cartCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-slate-900 text-white text-[10px] leading-5 text-center flex items-center justify-center">
+            <svg className="w-5 h-5 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+            {cartCount > 0 ? (
+              <span className="absolute top-0.5 right-0.5 min-w-[1.1rem] h-[1.1rem] px-0.5 rounded-full bg-gray-900 text-white text-[10px] leading-[1.1rem] text-center font-semibold">
                 {cartCount > 99 ? "99+" : cartCount}
               </span>
-            )}
+            ) : null}
           </button>
+          <span className="hidden sm:inline-flex items-center justify-center w-10 h-10 rounded-full text-xs font-semibold text-gray-600 border border-gray-200">
+            TW
+          </span>
         </div>
       </div>
     </header>
+  );
+}
+
+function PromoBanner({ onDismiss, visible }) {
+  if (!visible) return null;
+  return (
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3">
+      <div className="shop-promo-banner relative overflow-hidden rounded-2xl sm:rounded-3xl px-5 sm:px-8 py-4 sm:py-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-30 pointer-events-none hidden sm:block text-6xl" aria-hidden="true">
+          ✨🛍️
+        </div>
+        <div className="relative z-10 min-w-0 flex-1">
+          <p className="text-base sm:text-lg font-extrabold text-gray-900 tracking-tight uppercase leading-snug">
+            日本代購預購開跑 · 滿額享優惠
+          </p>
+          <p className="text-xs sm:text-sm font-medium text-gray-900/80 mt-1">
+            加入購物車後複製登記清單，回傳官方 LINE 即可完成登記
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="relative z-10 shrink-0 px-5 py-2 rounded-full bg-gray-900 text-white text-sm font-bold hover:bg-gray-800 transition-colors"
+        >
+          OK
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function getCategoryThumb(products, categoryValue) {
+  if (!categoryValue || !products) return null;
+  const p = products.find((x) => (x?.category || x?.分類 || "").toString().trim() === categoryValue);
+  if (!p) return null;
+  return p.image || (p.variantImages && p.variantImages[0]) || null;
+}
+
+function ShopSidebar({ products, activeCategory, activeSubcategory, newTodayActive, onNavigate }) {
+  const [expandedKey, setExpandedKey] = React.useState(activeCategory || null);
+
+  React.useEffect(() => {
+    if (activeCategory) setExpandedKey(activeCategory);
+  }, [activeCategory]);
+
+  function navClass(isActive) {
+    return [
+      "flex items-center gap-3 w-full py-2.5 px-3 rounded-xl text-left text-sm font-semibold transition-colors",
+      isActive ? "shop-sidebar-item-active" : "text-gray-900 hover:bg-gray-50",
+    ].join(" ");
+  }
+
+  return (
+    <aside className="hidden lg:block w-56 xl:w-64 shrink-0 pr-6 pt-2 pb-8" aria-label="商品分類">
+      <nav className="space-y-1 sticky top-28">
+        <button
+          type="button"
+          onClick={() => onNavigate("/?newToday=1")}
+          className={navClass(!!newTodayActive)}
+        >
+          <span className="text-base" aria-hidden="true">⚡</span>
+          <span className="uppercase tracking-wide">NEW IN</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("/")}
+          className={navClass(!newTodayActive && activeCategory === "ALL" && !activeSubcategory)}
+        >
+          <span className="w-10 h-10 rounded-lg bg-gray-100 shrink-0 flex items-center justify-center text-xs text-gray-400">ALL</span>
+          <span className="uppercase tracking-wide">全部商品</span>
+        </button>
+        {CATEGORY_MENU.map((item) => {
+          const isActive = activeCategory === item.value && !newTodayActive;
+          const isExpanded = expandedKey === item.value;
+          const thumb = getCategoryThumb(products, item.value);
+          const hasChildren = item.children && item.children.length > 0;
+
+          if (hasChildren) {
+            return (
+              <div key={item.value}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpandedKey(isExpanded ? null : item.value);
+                    onNavigate("/?category=" + encodeURIComponent(item.value));
+                  }}
+                  className={navClass(isActive && !activeSubcategory)}
+                >
+                  {thumb ? (
+                    <img src={thumb} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 bg-gray-100" loading="lazy" />
+                  ) : (
+                    <span className="w-10 h-10 rounded-lg bg-gray-100 shrink-0" />
+                  )}
+                  <span className="flex-1 uppercase tracking-wide text-left">{item.label}</span>
+                </button>
+                {isExpanded ? (
+                  <div className="ml-4 pl-3 border-l border-gray-100 space-y-0.5 mt-1 mb-2">
+                    {item.children.map((sub) => (
+                      <button
+                        key={sub.value}
+                        type="button"
+                        onClick={() => onNavigate("/?category=" + encodeURIComponent(item.value) + "&subcategory=" + encodeURIComponent(sub.value))}
+                        className={[
+                          "block w-full text-left py-1.5 px-2 rounded-lg text-xs font-medium",
+                          activeSubcategory === sub.value ? "text-purple-700 bg-purple-50" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
+                        ].join(" ")}
+                      >
+                        {sub.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          }
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onNavigate("/?category=" + encodeURIComponent(item.value))}
+              className={navClass(isActive)}
+            >
+              {thumb ? (
+                <img src={thumb} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 bg-gray-100" loading="lazy" />
+              ) : (
+                <span className="w-10 h-10 rounded-lg bg-gray-100 shrink-0" />
+              )}
+              <span className="uppercase tracking-wide">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
   );
 }
 
@@ -982,74 +1120,71 @@ function StockTag({ value, size = "sm" }) {
   );
 }
 
-function ProductCard({ product, rate }) {
+function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
   const twd = getDisplayPrice(product, rate);
-
   const encodedName = encodeURIComponent(product.name);
+  const productKey = product.id || product.name;
+  const isWishlisted = wishlist && wishlist.has(productKey);
+  const imgSrc = product.image || (product.variantImages && product.variantImages[0]) || "";
 
   return (
     <Link
       to={`/product/${encodedName}`}
-      className="product-card group block bg-white rounded-2xl overflow-hidden border border-slate-200 hover:border-slate-900 transition-colors duration-200"
+      className="product-card group block"
     >
-      <div className="scan-target relative aspect-square bg-slate-100 overflow-hidden">
-        {(product.image || (product.variantImages && product.variantImages[0])) ? (
+      <div className="scan-target relative aspect-[3/4] bg-gray-50 overflow-hidden rounded-2xl sm:rounded-3xl">
+        {imgSrc ? (
           <img
-            src={product.image || (product.variantImages && product.variantImages[0]) || ""}
+            src={imgSrc}
             alt={product.name}
-            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+            className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500 ease-out"
             loading="lazy"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+          <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 bg-gray-100">
             No Image
           </div>
         )}
 
-        {(product.isHot || product.isRecommended || product.isNew || product.isNewListing || product.character) ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (onToggleWishlist) onToggleWishlist(productKey);
+          }}
+          className={[
+            "absolute bottom-3 left-3 w-9 h-9 rounded-full flex items-center justify-center shadow-sm transition-colors",
+            isWishlisted ? "bg-white text-rose-500" : "bg-white/90 text-gray-700 hover:bg-white",
+          ].join(" ")}
+          aria-label={isWishlisted ? "取消收藏" : "加入收藏"}
+        >
+          <svg className="w-4 h-4" fill={isWishlisted ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+        </button>
+
+        {(product.isHot || product.isNewListing) ? (
           <div className="absolute top-3 left-3 flex flex-wrap gap-1">
             {product.isHot ? (
-              <span className="text-[11px] px-2 py-1 rounded-full bg-rose-600 text-white shadow-sm">
-                熱銷
-              </span>
-            ) : null}
-            {product.isRecommended ? (
-              <span className="text-[11px] px-2 py-1 rounded-full bg-indigo-600 text-white shadow-sm">
-                推薦
-              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-900 text-white font-bold uppercase tracking-wide">Hot</span>
             ) : null}
             {product.isNewListing ? (
-              <span className="text-[11px] px-2 py-1 rounded-full bg-amber-500 text-white shadow-sm">
-                新上架
-              </span>
-            ) : null}
-            {product.isNew ? (
-              <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-600 text-white shadow-sm">
-                新品
-              </span>
-            ) : null}
-            {product.character ? (
-              <span className="text-[11px] px-2 py-1 rounded-full bg-slate-600 text-white shadow-sm">
-                {product.character}
-              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-600 text-white font-bold uppercase tracking-wide">New</span>
             ) : null}
           </div>
         ) : null}
       </div>
-      <div className="p-4 space-y-1">
-        <h2 className="text-sm font-medium text-slate-900 line-clamp-2">
+      <div className="pt-3 px-0.5 space-y-1">
+        <h2 className="text-sm font-bold text-gray-900 line-clamp-2 leading-snug">
           {product.name}
         </h2>
-        {(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購) ? (
-          <p className="pt-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購) ? (
             <StockTag value={String(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購 || "").trim()} size="sm" />
-          </p>
-        ) : null}
-        <div className="pt-1">
+          ) : null}
           {twd ? (
-            <p className="text-sm text-slate-900">{twd}</p>
+            <p className="text-sm font-bold text-gray-900">{twd}</p>
           ) : (
-            <p className="text-sm text-slate-500">價格請洽詢</p>
+            <p className="text-sm text-gray-500">價格請洽詢</p>
           )}
         </div>
       </div>
@@ -1066,7 +1201,7 @@ function parseSearchParams(searchString) {
   }
 }
 
-function HomePage({ products, rate, loading, error, search: routeSearch, searchKeyword = "", onSearchChange, onNavigateHome }) {
+function HomePage({ products, rate, loading, error, search: routeSearch, searchKeyword = "", onSearchChange, onNavigateHome, wishlist, onToggleWishlist }) {
   const CATEGORY_KEY = "maarushop_home_category_v1";
   const SORT_KEY = "maarushop_home_sort_v1";
   const params = React.useMemo(() => parseSearchParams(routeSearch || ""), [routeSearch]);
@@ -1221,62 +1356,77 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
     return arr;
   }, [filteredProducts, sortMode, getSortPrice]);
 
+  const [stockTypeFilter, setStockTypeFilter] = React.useState("ALL");
+
+  const pageTitle = React.useMemo(() => {
+    if (newTodayFromUrl) return "NEW IN";
+    if (subcategoryFromUrl) return subcategoryFromUrl;
+    if (selectedCategory !== "ALL") return selectedCategory;
+    if (characterFromUrl) return characterFromUrl;
+    if ((searchKeyword || "").trim()) return "搜尋結果";
+    return "全部商品";
+  }, [newTodayFromUrl, subcategoryFromUrl, selectedCategory, characterFromUrl, searchKeyword]);
+
+  const filteredByStockType = React.useMemo(() => {
+    if (stockTypeFilter === "ALL") return uniqueProducts;
+    return uniqueProducts.filter((p) => {
+      const st = String(p.stockType || p.raw?.貨況 || p.raw?.現貨預購 || "").trim();
+      return st === stockTypeFilter;
+    });
+  }, [uniqueProducts, stockTypeFilter]);
+
   return (
-    <main className="max-w-6xl mx-auto px-4 py-8">
-      {!loading && !error && (
-        <div className="mb-6 space-y-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end">
-            <div className="sm:text-right">
-              <label className="block mb-1 text-xs font-semibold text-slate-800 tracking-[0.25em] uppercase">
-                Sort
-              </label>
-              <div className="inline-flex rounded-full border border-slate-200 bg-white p-0.5 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setSortMode("none")}
-                  className={[
-                    "px-3 py-1 rounded-full",
-                    sortMode === "none"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-700 hover:bg-slate-100",
-                  ].join(" ")}
-                >
-                  預設
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSortMode("price_asc")}
-                  className={[
-                    "px-3 py-1 rounded-full",
-                    sortMode === "price_asc"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-700 hover:bg-slate-100",
-                  ].join(" ")}
-                >
-                  價格 低→高
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSortMode("price_desc")}
-                  className={[
-                    "px-3 py-1 rounded-full",
-                    sortMode === "price_desc"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-700 hover:bg-slate-100",
-                  ].join(" ")}
-                >
-                  價格 高→低
-                </button>
-              </div>
-            </div>
+    <div className="flex-1 min-w-0 pb-12">
+      <div className="mb-6">
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 uppercase tracking-tight mb-4">
+          {pageTitle}
+        </h1>
+
+        {!loading && !error && (
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 -mx-1 px-1">
+            <button
+              type="button"
+              onClick={() => setSortMode("none")}
+              className={"shop-filter-chip shrink-0 " + (sortMode === "none" ? "shop-filter-chip-active" : "")}
+            >
+              Sort
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortMode(sortMode === "price_asc" ? "price_desc" : "price_asc")}
+              className={"shop-filter-chip shrink-0 " + (sortMode !== "none" ? "shop-filter-chip-active" : "")}
+            >
+              {sortMode === "price_desc" ? "價格 高→低" : sortMode === "price_asc" ? "價格 低→高" : "Price"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setStockTypeFilter("ALL")}
+              className={"shop-filter-chip shrink-0 " + (stockTypeFilter === "ALL" ? "shop-filter-chip-active" : "")}
+            >
+              全部貨況
+            </button>
+            <button
+              type="button"
+              onClick={() => setStockTypeFilter("現貨")}
+              className={"shop-filter-chip shrink-0 " + (stockTypeFilter === "現貨" ? "shop-filter-chip-active" : "")}
+            >
+              現貨
+            </button>
+            <button
+              type="button"
+              onClick={() => setStockTypeFilter("預購")}
+              className={"shop-filter-chip shrink-0 " + (stockTypeFilter === "預購" ? "shop-filter-chip-active" : "")}
+            >
+              預購
+            </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {loading && (
         <div className="flex justify-center py-16">
-          <div className="flex flex-col items-center space-y-3 text-slate-500 text-sm">
-            <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-900 rounded-full animate-spin" />
+          <div className="flex flex-col items-center space-y-3 text-gray-500 text-sm">
+            <div className="w-6 h-6 border-2 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
             <span>載入商品中...</span>
           </div>
         </div>
@@ -1292,31 +1442,31 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
         </div>
       )}
 
-      {!loading && !error && newTodayFromUrl && uniqueProducts.length > 0 && (
-        <p className="mb-4 text-sm font-medium text-slate-700">
-          今日上架商品
-        </p>
-      )}
-
-      {!loading && !error && uniqueProducts.length === 0 && (
-        <div className="text-center text-sm text-slate-500 space-y-1">
+      {!loading && !error && filteredByStockType.length === 0 && (
+        <div className="text-center text-sm text-gray-500 space-y-1 py-16">
           <p>目前沒有可顯示的商品。</p>
           {newTodayFromUrl ? (
             <p className="text-xs">尚無「今日上架」商品，請在試算表勾選「新上架」欄位並儲存。</p>
           ) : characterFromUrl ? (
             <p className="text-xs">
-              篩選角色「{characterFromUrl}」：依商品「規格」顯示，試算表「規格」欄需包含該名稱（如 酷洛米,大耳狗 即含酷洛米）。
+              篩選角色「{characterFromUrl}」：依商品「規格」顯示，試算表「規格」欄需包含該名稱。
             </p>
           ) : null}
         </div>
       )}
 
-      <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-        {uniqueProducts.map((p) => (
-          <ProductCard key={p.id || p.name} product={p} rate={rate} />
+      <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-3 gap-y-8 sm:gap-x-4 sm:gap-y-10">
+        {filteredByStockType.map((p) => (
+          <ProductCard
+            key={p.id || p.name}
+            product={p}
+            rate={rate}
+            wishlist={wishlist}
+            onToggleWishlist={onToggleWishlist}
+          />
         ))}
       </section>
-    </main>
+    </div>
   );
 }
 
@@ -2035,6 +2185,53 @@ function App() {
 
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [sidebarSearch, setSidebarSearch] = React.useState("");
+
+  const WISHLIST_KEY = "maarushop_wishlist_v1";
+  const [wishlist, setWishlist] = React.useState(() => {
+    try {
+      const raw = localStorage.getItem(WISHLIST_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(WISHLIST_KEY, JSON.stringify([...wishlist]));
+    } catch {
+      // ignore
+    }
+  }, [wishlist]);
+
+  function toggleWishlist(productKey) {
+    setWishlist((prev) => {
+      const next = new Set(prev);
+      if (next.has(productKey)) next.delete(productKey);
+      else next.add(productKey);
+      return next;
+    });
+  }
+
+  const PROMO_KEY = "maarushop_promo_dismissed_v1";
+  const [promoVisible, setPromoVisible] = React.useState(() => {
+    try {
+      return localStorage.getItem(PROMO_KEY) !== "1";
+    } catch {
+      return true;
+    }
+  });
+
+  function dismissPromo() {
+    setPromoVisible(false);
+    try {
+      localStorage.setItem(PROMO_KEY, "1");
+    } catch {
+      // ignore
+    }
+  }
+
   const handleMenuNavigate = (path) => {
     let full = path;
     const q = sidebarSearch.trim();
@@ -2062,6 +2259,8 @@ function App() {
         searchKeyword={sidebarSearch}
         onSearchChange={setSidebarSearch}
         onNavigateHome={navigateTo}
+        wishlist={wishlist}
+        onToggleWishlist={toggleWishlist}
       />
     );
   } else if (route.name === "product") {
@@ -2078,7 +2277,7 @@ function App() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-white">
       <Navbar
         cartCount={cartCount}
         onOpenCart={() => setCartOpen(true)}
@@ -2087,7 +2286,10 @@ function App() {
           window.location.hash = "#/";
           window.location.reload();
         }}
+        searchKeyword={sidebarSearch}
+        onSearchChange={setSidebarSearch}
       />
+      <PromoBanner visible={promoVisible} onDismiss={dismissPromo} />
       <CategorySidebar
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
@@ -2097,7 +2299,20 @@ function App() {
         selectedCharacter={homeParams.character || ""}
         characterImages={characterImages}
       />
-      {page}
+      {route.name === "home" ? (
+        <div className="flex-1 w-full max-w-[1400px] mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex gap-0 lg:gap-2">
+          <ShopSidebar
+            products={products}
+            activeCategory={homeParams.category || "ALL"}
+            activeSubcategory={homeParams.subcategory || ""}
+            newTodayActive={homeParams.newToday === "1" || homeParams.newToday === "true"}
+            onNavigate={handleMenuNavigate}
+          />
+          {page}
+        </div>
+      ) : (
+        page
+      )}
       <CartDrawer
         open={cartOpen}
         onClose={() => setCartOpen(false)}
