@@ -1325,12 +1325,10 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
     return result;
   }, [products, selectedCategory, subcategoryFromUrl, characterFromUrl, searchKeyword, newTodayFromUrl, productVariantMatchesCharacter]);
 
-  // 取得用於排序的數字價格（與顧客頁顯示一致：優先台幣售價，否則日幣）
+  // 取得用於排序的數字價格（與顧客頁顯示一致：優先顧客顯示售價 → 台幣售價 → 日幣×匯率）
   const getSortPrice = React.useCallback((p) => {
-    const twd = toNumberOrNull(p?.sellingPrice ?? p?.售價 ?? p?.台幣售價);
-    if (twd != null) return twd;
-    return toNumberOrNull(p?.price ?? p?.日幣價格 ?? p?.價格 ?? p?.售價JPY);
-  }, []);
+    return getUnitTWD(p, rate);
+  }, [rate]);
 
   const uniqueProducts = React.useMemo(() => {
     const base = getUniqueProductsByName(filteredProducts);
@@ -1343,7 +1341,9 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
       if (pa == null && pb == null) return 0;
       if (pa == null) return 1;
       if (pb == null) return -1;
-      return sortMode === "price_asc" ? pa - pb : pb - pa;
+      // price_desc：高→低；price_asc：低→高
+      if (sortMode === "price_desc") return pb - pa;
+      return pa - pb;
     });
     return arr;
   }, [filteredProducts, sortMode, getSortPrice]);
@@ -1385,7 +1385,11 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
             </button>
             <button
               type="button"
-              onClick={() => setSortMode(sortMode === "price_asc" ? "price_desc" : "price_asc")}
+              onClick={() => {
+                if (sortMode === "none") setSortMode("price_desc");
+                else if (sortMode === "price_desc") setSortMode("price_asc");
+                else setSortMode("price_desc");
+              }}
               className={"shop-filter-chip shrink-0 " + (sortMode !== "none" ? "shop-filter-chip-active" : "")}
             >
               {sortMode === "price_desc" ? "價格高→低" : sortMode === "price_asc" ? "價格低→高" : "依價格"}
