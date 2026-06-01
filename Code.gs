@@ -538,6 +538,32 @@ function getSpreadsheetInfo(ss) {
   return { sheetName: sheetName, rowCount: rowCount };
 }
 
+/** 只加總純數字的規格庫存 token，避免「2025年03月」被 parseInt 誤判為 2025 */
+function sumVariantStockStrict_(str) {
+  if (str === undefined || str === null || String(str).trim() === "") return null;
+  var parts = String(str).trim().split(/[,，、\s]+/);
+  var total = 0;
+  var found = false;
+  for (var i = 0; i < parts.length; i++) {
+    var t = parts[i].trim();
+    if (/^\d+$/.test(t)) {
+      total += parseInt(t, 10);
+      found = true;
+    }
+  }
+  return found ? total : null;
+}
+
+/** 試算表 Date 以腳本時區輸出 yyyy-MM-dd，避免 UTC 差一天 */
+function formatSheetDateLocal_(d) {
+  var tz = Session.getScriptTimeZone();
+  return Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+}
+
+function isSheetDate_(val) {
+  return val instanceof Date && !isNaN(val.getTime());
+}
+
 /**
  * 更新既有列：保留試算表原有欄位，只覆寫 product 物件中有帶的 key（避免未對應欄位被清空）。
  */
@@ -579,11 +605,8 @@ function mergeRowFromProduct_(sheet, rowNum, product) {
     var total = 0;
     var variantStockStr = hasKey("variantStock") && product.variantStock !== undefined && product.variantStock !== null ? String(product.variantStock).trim() : "";
     if (variantStockStr !== "") {
-      var parts = variantStockStr.split(/[,，、\s]+/);
-      for (var p = 0; p < parts.length; p++) {
-        var num = parseInt(parts[p], 10);
-        if (!isNaN(num)) total += num;
-      }
+      var strictSum = sumVariantStockStrict_(variantStockStr);
+      if (strictSum !== null) total = strictSum;
     } else if (hasKey("stock")) {
       var stockVal = product.stock !== undefined && product.stock !== null && product.stock !== "" ? product.stock : null;
       if (stockVal !== null) {
@@ -635,11 +658,8 @@ function buildRowFromProduct(sheet, product) {
     var total = 0;
     var variantStockStr = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
     if (variantStockStr !== "") {
-      var parts = variantStockStr.split(/[,，、\s]+/);
-      for (var p = 0; p < parts.length; p++) {
-        var num = parseInt(parts[p], 10);
-        if (!isNaN(num)) total += num;
-      }
+      var strictSum2 = sumVariantStockStrict_(variantStockStr);
+      if (strictSum2 !== null) total = strictSum2;
     } else {
       var stockVal = product.stock !== undefined && product.stock !== null && product.stock !== "" ? product.stock : (product.Stock !== undefined && product.Stock !== null && product.Stock !== "" ? product.Stock : null);
       if (stockVal !== null) {
@@ -747,6 +767,8 @@ function getProducts(ss) {
       var val = row[c];
       if (key === "status") {
         obj.status = (val !== "" && val !== null && val !== undefined && String(val).trim() === "下架") ? "下架" : "上架";
+      } else if (isSheetDate_(val)) {
+        obj[key] = formatSheetDateLocal_(val);
       } else if (val !== "" && val !== null && val !== undefined) {
         obj[key] = val;
       }

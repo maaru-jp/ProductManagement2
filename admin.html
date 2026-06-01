@@ -2226,6 +2226,33 @@
         return url + sep + "_t=" + Date.now();
       }
 
+      /** 本地日期 yyyy-MM-dd（避免 toISOString UTC 差一天） */
+      function fmtDateLocal(v) {
+        if (v == null || v === "") return "";
+        if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+        try {
+          var d = v instanceof Date ? v : new Date(v);
+          if (isNaN(d.getTime())) return "";
+          var y = d.getFullYear();
+          var mo = ("0" + (d.getMonth() + 1)).slice(-2);
+          var day = ("0" + d.getDate()).slice(-2);
+          return y + "-" + mo + "-" + day;
+        } catch (e) { return ""; }
+      }
+
+      /** 只加總純數字規格庫存，避免子分類「2025年03月」被誤算成 2025 */
+      function sumVariantStockStrict(str) {
+        if (!str || String(str).trim() === "") return null;
+        var parts = String(str).trim().split(/[,，、\s]+/);
+        var sum = 0;
+        var found = false;
+        for (var i = 0; i < parts.length; i++) {
+          var t = parts[i].trim();
+          if (/^\d+$/.test(t)) { sum += parseInt(t, 10); found = true; }
+        }
+        return found ? sum : null;
+      }
+
       function fetchProductsData() {
         var candidates = [
           withCacheBust(API_READ),
@@ -2381,21 +2408,14 @@
         tbody.innerHTML = "<tr><td colspan=\"10\" class=\"py-8 text-center text-slate-500\">尚無商品</td></tr>";
         return;
       }
-      function fmtDate(v) {
-        if (v == null || v === "") return "";
-        if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
-        try { var d = new Date(v); return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10); } catch (e) { return ""; }
-      }
       function yesNo(v) { return (v === "Y" || v === "1" || v === true) ? "Y" : ""; }
       function stockDisplay(p) {
+        var v = (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : "");
+        var fromVariants = sumVariantStockStrict(v);
+        if (fromVariants != null) return fromVariants;
         var s = p.stock != null && p.stock !== "" ? p.stock : p.庫存 != null && p.庫存 !== "" ? p.庫存 : null;
         if (s !== null && s !== undefined && s !== "") return Number(s);
-        var v = (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : "");
-        if (!v || String(v).trim() === "") return "";
-        var parts = String(v).trim().split(/[,，、\s]+/);
-        var sum = 0;
-        for (var i = 0; i < parts.length; i++) { var n = parseInt(parts[i], 10); if (!isNaN(n)) sum += n; }
-        return sum;
+        return "";
       }
       tbody.innerHTML = list.map(function(p, idx) {
         var rowNum = (p._rowIndex != null && p._rowIndex >= 2) ? p._rowIndex : (products.indexOf(p) >= 0 ? products.indexOf(p) + 2 : idx + 2);
@@ -2405,7 +2425,7 @@
         var profit = (p.profit !== undefined && p.profit !== null && p.profit !== "") ? p.profit : (p.利潤 !== undefined && p.利潤 !== null && p.利潤 !== "") ? p.利潤 : "";
         var stock = stockDisplay(p);
         var img = (p.image || p.圖片 || p.商品主圖 || p.主圖 || (p.raw && (p.raw.商品主圖 || p.raw.主圖 || p.raw.image || p.raw.圖片)) || "").toString().trim();
-        var publishedAt = fmtDate(p.publishedAt || p.上架日期);
+        var publishedAt = fmtDateLocal(p.publishedAt || p.上架日期);
         var statusRaw = (p.status != null ? p.status : p.狀態 != null ? p.狀態 : "上架");
         var status = String(statusRaw).trim();
         var isListed = status !== "下架";
@@ -2454,7 +2474,7 @@
               variantStock: (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : ""),
               description: p.description || p.描述,
               introduction: p.introduction || p.商品介紹,
-              publishedAt: p.publishedAt || p.上架日期 || "",
+              publishedAt: fmtDateLocal(p.publishedAt || p.上架日期 || ""),
               hot: p.hot || p.熱銷 || "",
               recommended: p.recommended || p.推薦 || "",
               isNew: p.isNew || p.新品 || "",
@@ -2621,7 +2641,11 @@
         if (!container) return;
         var parts = (variantStr || "").split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
         var urlParts = (variantImagesStr != null && variantImagesStr !== undefined ? String(variantImagesStr) : "").split(/[,，、\n]/).map(function(s) { return s.trim(); });
-        var stockParts = (variantStockStr != null && variantStockStr !== undefined ? String(variantStockStr) : "").split(/[,，、\s]/).map(function(s) { var n = parseInt(s, 10); return isNaN(n) ? "" : Math.max(0, n); });
+        var stockParts = (variantStockStr != null && variantStockStr !== undefined ? String(variantStockStr) : "").split(/[,，、\s]/).map(function(s) {
+          var t = s.trim();
+          if (!/^\d+$/.test(t)) return "";
+          return Math.max(0, parseInt(t, 10));
+        });
         if (parts.length === 0) parts = [""];
         container.innerHTML = parts.map(function(val, i) {
           var url = urlParts[i] != null ? urlParts[i] : "";
@@ -2687,7 +2711,10 @@
         Object.keys(obj || {}).forEach(function(key) {
           if (key === "hot" || key === "recommended" || key === "isNew" || key === "isNewListing" || key === "variant") return;
           var input = form.querySelector("[name=" + key + "]");
-          if (input) input.value = obj[key] != null ? obj[key] : "";
+          if (input) {
+            if (key === "publishedAt") input.value = fmtDateLocal(obj[key] != null ? obj[key] : "");
+            else input.value = obj[key] != null ? obj[key] : "";
+          }
         });
         ["hot", "recommended", "isNew", "isNewListing"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
