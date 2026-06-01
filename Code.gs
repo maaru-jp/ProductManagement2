@@ -157,7 +157,6 @@ function doPost(e) {
         out.message = "缺少 product 資料";
         return jsonOutput(out);
       }
-      var row = buildRowFromProduct(sheet, product);
       if (action === "update") {
         var rowIndexUpdate = body.rowIndex;
         if (rowIndexUpdate == null || rowIndexUpdate === "") {
@@ -177,15 +176,19 @@ function doPost(e) {
           out.message = "列號超出試算表範圍（最大列 " + maxRowUpdate + "）";
           return jsonOutput(out);
         }
-        var numCols = row.length;
+        var merged = mergeRowFromProduct_(sheet, rowNumUpdate, product);
+        var numCols = merged.length;
         if (numCols > 0) {
-          sheet.getRange(rowNumUpdate, 1, 1, numCols).setValues([row]);
+          sheet.getRange(rowNumUpdate, 1, 1, numCols).setValues([merged]);
         }
         out.message = "已更新第 " + rowNumUpdate + " 列";
+        out.rowIndex = rowNumUpdate;
         return jsonOutput(out);
       }
+      var row = buildRowFromProduct(sheet, product);
       sheet.appendRow(row);
       out.message = "已新增一列";
+      out.rowIndex = sheet.getLastRow();
       return jsonOutput(out);
     }
     out.error = true;
@@ -536,6 +539,64 @@ function getSpreadsheetInfo(ss) {
 }
 
 /**
+ * 更新既有列：保留試算表原有欄位，只覆寫 product 物件中有帶的 key（避免未對應欄位被清空）。
+ */
+function mergeRowFromProduct_(sheet, rowNum, product) {
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var headers = headerRow.map(function(h) { return (h || "").toString().trim(); });
+  var keyMap = buildKeyMap(headers);
+  var existingRow = sheet.getRange(rowNum, 1, 1, lastCol).getValues()[0];
+  var row = existingRow.slice();
+  var hasKey = function(k) {
+    return product && Object.prototype.hasOwnProperty.call(product, k);
+  };
+
+  for (var c = 0; c < headers.length; c++) {
+    var key = keyMap[c];
+    if (!key || !hasKey(key)) continue;
+    var val = product[key];
+    row[c] = (val !== undefined && val !== null) ? val : "";
+  }
+
+  var stockCol = -1;
+  var variantCol = -1;
+  var statusCol = -1;
+  for (var i = 0; i < headers.length; i++) {
+    var km = keyMap[i];
+    if (km && (km === "stock" || String(km).toLowerCase() === "stock")) stockCol = i;
+    if (km === "variantStock") variantCol = i;
+    if (km === "status") statusCol = i;
+  }
+  if (statusCol >= 0 && hasKey("status")) {
+    var statusVal = (product.status !== undefined && product.status !== null && String(product.status).trim() !== "") ? String(product.status).trim() : "上架";
+    row[statusCol] = (statusVal === "下架") ? "下架" : "上架";
+  }
+  if (variantCol >= 0 && hasKey("variantStock")) {
+    row[variantCol] = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
+  }
+  if (stockCol >= 0 && (hasKey("stock") || hasKey("variantStock"))) {
+    var total = 0;
+    var variantStockStr = hasKey("variantStock") && product.variantStock !== undefined && product.variantStock !== null ? String(product.variantStock).trim() : "";
+    if (variantStockStr !== "") {
+      var parts = variantStockStr.split(/[,，、\s]+/);
+      for (var p = 0; p < parts.length; p++) {
+        var num = parseInt(parts[p], 10);
+        if (!isNaN(num)) total += num;
+      }
+    } else if (hasKey("stock")) {
+      var stockVal = product.stock !== undefined && product.stock !== null && product.stock !== "" ? product.stock : null;
+      if (stockVal !== null) {
+        var n = Number(stockVal);
+        if (isFinite(n)) total = n;
+      }
+    }
+    row[stockCol] = total;
+  }
+  return row;
+}
+
+/**
  * 依工作表第一列標題，將 product 物件轉成與欄位對應的一列陣列；並補上庫存、規格庫存。
  */
 function buildRowFromProduct(sheet, product) {
@@ -547,7 +608,7 @@ function buildRowFromProduct(sheet, product) {
   for (var c = 0; c < headers.length; c++) {
     var key = keyMap[c];
     var val = "";
-    if (key && product[key] !== undefined && product[key] !== null && product[key] !== "") {
+    if (key && product[key] !== undefined && product[key] !== null) {
       val = product[key];
     }
     row.push(val);
