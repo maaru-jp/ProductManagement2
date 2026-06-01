@@ -2240,17 +2240,75 @@
         } catch (e) { return ""; }
       }
 
-      /** 只加總純數字規格庫存，避免子分類「2025年03月」被誤算成 2025 */
-      function sumVariantStockStrict(str) {
-        if (!str || String(str).trim() === "") return null;
+      /** 只保留純數字 token，過濾日期（2026-03-07）、子分類（2025年03月）等誤寫 */
+      function sanitizeVariantStockString(str) {
+        if (!str || String(str).trim() === "") return "";
         var parts = String(str).trim().split(/[,，、\s]+/);
-        var sum = 0;
-        var found = false;
+        var nums = [];
         for (var i = 0; i < parts.length; i++) {
           var t = parts[i].trim();
-          if (/^\d+$/.test(t)) { sum += parseInt(t, 10); found = true; }
+          if (/^\d+$/.test(t)) nums.push(t);
         }
-        return found ? sum : null;
+        return nums.join(", ");
+      }
+
+      /** 只加總純數字規格庫存，避免子分類「2025年03月」被誤算成 2025 */
+      function sumVariantStockStrict(str) {
+        var clean = sanitizeVariantStockString(str);
+        if (!clean) return null;
+        var parts = clean.split(/[,，、\s]+/);
+        var sum = 0;
+        for (var i = 0; i < parts.length; i++) sum += parseInt(parts[i], 10);
+        return sum;
+      }
+
+      /** 讀取／儲存前正規化庫存欄位 */
+      function normalizeProductRecord(p) {
+        if (!p || typeof p !== "object") return p;
+        var rawStock = p.stock;
+        if ((rawStock === undefined || rawStock === null || rawStock === "") && p.Stock !== undefined && p.Stock !== null && p.Stock !== "") {
+          rawStock = p.Stock;
+        }
+        if ((rawStock === undefined || rawStock === null || rawStock === "") && p.庫存 !== undefined && p.庫存 !== null && p.庫存 !== "") {
+          rawStock = p.庫存;
+        }
+        var vsRaw = p.variantStock != null ? p.variantStock : (p.規格庫存 != null ? p.規格庫存 : "");
+        var cleanVs = sanitizeVariantStockString(vsRaw);
+        if (cleanVs) {
+          p.variantStock = cleanVs;
+          p.規格庫存 = cleanVs;
+          var sum = sumVariantStockStrict(cleanVs);
+          if (sum != null) {
+            p.stock = sum;
+            p.Stock = sum;
+            p.庫存 = sum;
+          }
+        } else if (rawStock !== undefined && rawStock !== null && rawStock !== "") {
+          var n = Number(rawStock);
+          if (Number.isFinite(n)) {
+            p.stock = n;
+            p.Stock = n;
+            p.庫存 = n;
+          }
+        }
+        return p;
+      }
+
+      function finalizeStockForSave(product) {
+        if (!product) return product;
+        product.variantStock = sanitizeVariantStockString(product.variantStock || "");
+        var sum = sumVariantStockStrict(product.variantStock);
+        if (sum != null) {
+          product.stock = sum;
+          product.Stock = sum;
+          product.庫存 = sum;
+        } else if (product.stock !== "" && product.stock != null && product.stock !== undefined) {
+          var n = Number(product.stock);
+          product.stock = Number.isFinite(n) ? n : 0;
+          product.Stock = product.stock;
+          product.庫存 = product.stock;
+        }
+        return product;
       }
 
       function fetchProductsData() {
@@ -2284,7 +2342,7 @@
           } else {
             q._rowIndex = i + 2;
           }
-          return q;
+          return normalizeProductRecord(q);
         }).filter(function(p) {
           return (p.name || p.商品名稱 || "").toString().trim() !== "";
         });
@@ -2303,7 +2361,7 @@
           rate: p.rate != null && p.rate !== "" ? p.rate : (p.匯率 != null ? p.匯率 : ""),
           profit: p.profit != null && p.profit !== "" ? p.profit : (p.利潤 != null ? p.利潤 : ""),
           cost: p.cost != null && p.cost !== "" ? p.cost : (p.成本 != null ? p.成本 : ""),
-          stock: p.stock != null && p.stock !== "" ? p.stock : (p.庫存 != null ? p.庫存 : ""),
+          stock: p.stock != null && p.stock !== "" ? p.stock : (p.Stock != null && p.Stock !== "" ? p.Stock : (p.庫存 != null ? p.庫存 : "")),
           status: (p.status || p.狀態 || "上架").toString().trim() || "上架",
           stockType: p.stockType || p.貨況 || p.現貨預購 || "",
           image: p.image || p.圖片 || p.商品主圖 || p.主圖 || "",
@@ -2331,14 +2389,20 @@
         if (patch.image) { patch.圖片 = patch.image; patch.商品主圖 = patch.image; }
         if (patch.status) patch.狀態 = patch.status;
         if (patch.stockType) { patch.貨況 = patch.stockType; patch.現貨預購 = patch.stockType; }
-        return patch;
+        return normalizeProductRecord(patch);
       }
 
       function buildSaveProduct(rowIndexNum, formProduct) {
-        if (!rowIndexNum || isNaN(rowIndexNum) || rowIndexNum < 2) return formProduct;
+        if (!rowIndexNum || isNaN(rowIndexNum) || rowIndexNum < 2) return finalizeStockForSave(formProduct);
         var existing = productByRowIndex(rowIndexNum);
-        if (!existing) return formProduct;
-        return Object.assign({}, productToSavePayload(existing), formProduct);
+        if (!existing) return finalizeStockForSave(formProduct);
+        var base = productToSavePayload(existing);
+        delete base.stock;
+        delete base.Stock;
+        delete base.庫存;
+        delete base.variantStock;
+        delete base.規格庫存;
+        return finalizeStockForSave(Object.assign({}, base, formProduct));
       }
 
       function scheduleProductsReload(delayMs) {
@@ -2413,7 +2477,7 @@
         var v = (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : "");
         var fromVariants = sumVariantStockStrict(v);
         if (fromVariants != null) return fromVariants;
-        var s = p.stock != null && p.stock !== "" ? p.stock : p.庫存 != null && p.庫存 !== "" ? p.庫存 : null;
+        var s = p.stock != null && p.stock !== "" ? p.stock : (p.Stock != null && p.Stock !== "" ? p.Stock : (p.庫存 != null && p.庫存 !== "" ? p.庫存 : null));
         if (s !== null && s !== undefined && s !== "") return Number(s);
         return "";
       }
@@ -2641,7 +2705,7 @@
         if (!container) return;
         var parts = (variantStr || "").split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
         var urlParts = (variantImagesStr != null && variantImagesStr !== undefined ? String(variantImagesStr) : "").split(/[,，、\n]/).map(function(s) { return s.trim(); });
-        var stockParts = (variantStockStr != null && variantStockStr !== undefined ? String(variantStockStr) : "").split(/[,，、\s]/).map(function(s) {
+        var stockParts = sanitizeVariantStockString(variantStockStr != null && variantStockStr !== undefined ? String(variantStockStr) : "").split(/[,，、\s]/).map(function(s) {
           var t = s.trim();
           if (!/^\d+$/.test(t)) return "";
           return Math.max(0, parseInt(t, 10));
@@ -2723,10 +2787,10 @@
         renderVariantList(
           obj && obj.variant != null ? obj.variant : "",
           obj && obj.variantImages != null ? obj.variantImages : "",
-          obj && obj.variantStock != null ? obj.variantStock : ""
+          sanitizeVariantStockString(obj && obj.variantStock != null ? obj.variantStock : "")
         );
-        var mainStockVal = obj && (obj.stock !== undefined && obj.stock !== null && obj.stock !== "" ? obj.stock : obj.庫存);
-        var hasVariantStock = obj && obj.variantStock != null && String(obj.variantStock).trim() !== "";
+        var mainStockVal = obj && (obj.stock !== undefined && obj.stock !== null && obj.stock !== "" ? obj.stock : (obj.Stock !== undefined && obj.Stock !== null && obj.Stock !== "" ? obj.Stock : obj.庫存));
+        var hasVariantStock = obj && sanitizeVariantStockString(obj.variantStock || "") !== "";
         if (mainStockVal !== undefined && mainStockVal !== null && mainStockVal !== "" && !hasVariantStock) {
           var stockInp = form.querySelector("input[name=\"stock\"]");
           if (stockInp) stockInp.value = Number(mainStockVal) === mainStockVal ? mainStockVal : parseInt(mainStockVal, 10);
@@ -3132,9 +3196,10 @@
         syncVariantToHidden();
         var formProduct = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
-        if (hiddenStock) formProduct.variantStock = String(hiddenStock.value != null ? hiddenStock.value : "").trim();
+        if (hiddenStock) formProduct.variantStock = sanitizeVariantStockString(String(hiddenStock.value != null ? hiddenStock.value : "").trim());
         var stockInp = document.querySelector("#productForm input[name=\"stock\"]");
         if (stockInp) formProduct.stock = stockInp.value === "" ? "" : (Number(stockInp.value) || 0);
+        finalizeStockForSave(formProduct);
         if (!formProduct.name || !String(formProduct.name).trim()) {
           showMessage("請輸入商品名稱", true);
           return;
@@ -3147,7 +3212,7 @@
         var rowIndexInput = document.getElementById("editRowIndex").value;
         var rowIndexNum = parseInt(rowIndexInput, 10);
         var action = (rowIndexInput && !isNaN(rowIndexNum) && rowIndexNum >= 2) ? "update" : "append";
-        var product = action === "update" ? buildSaveProduct(rowIndexNum, formProduct) : formProduct;
+        var product = action === "update" ? buildSaveProduct(rowIndexNum, formProduct) : finalizeStockForSave(formProduct);
         var body = { action: action, product: product };
         if (action === "update") body.rowIndex = rowIndexNum;
         var submitBtn = document.querySelector("#productForm button[type=\"submit\"]");

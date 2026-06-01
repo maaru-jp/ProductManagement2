@@ -538,20 +538,67 @@ function getSpreadsheetInfo(ss) {
   return { sheetName: sheetName, rowCount: rowCount };
 }
 
-/** 只加總純數字的規格庫存 token，避免「2025年03月」被 parseInt 誤判為 2025 */
-function sumVariantStockStrict_(str) {
-  if (str === undefined || str === null || String(str).trim() === "") return null;
+/** 統一欄位 key（Stock → stock） */
+function canonicalFieldKey_(key) {
+  if (!key) return key;
+  if (String(key).toLowerCase() === "stock") return "stock";
+  return key;
+}
+
+/** 只保留純數字 token，過濾日期（2026-03-07）、子分類（2025年03月）等誤寫 */
+function sanitizeVariantStockString_(str) {
+  if (str === undefined || str === null || String(str).trim() === "") return "";
   var parts = String(str).trim().split(/[,，、\s]+/);
-  var total = 0;
-  var found = false;
+  var nums = [];
   for (var i = 0; i < parts.length; i++) {
     var t = parts[i].trim();
-    if (/^\d+$/.test(t)) {
-      total += parseInt(t, 10);
-      found = true;
+    if (/^\d+$/.test(t)) nums.push(t);
+  }
+  return nums.join(", ");
+}
+
+/** 只加總純數字的規格庫存 token，避免「2025年03月」被 parseInt 誤判為 2025 */
+function sumVariantStockStrict_(str) {
+  var clean = sanitizeVariantStockString_(str);
+  if (clean === "") return null;
+  var parts = clean.split(/[,，、\s]+/);
+  var total = 0;
+  for (var i = 0; i < parts.length; i++) {
+    total += parseInt(parts[i], 10);
+  }
+  return total;
+}
+
+/** 讀取後正規化庫存：合併 Stock/stock/庫存，清除規格庫存中的日期雜訊 */
+function normalizeProductStockFields_(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+  var rawStock = obj.stock;
+  if ((rawStock === undefined || rawStock === null || rawStock === "") && obj.Stock !== undefined && obj.Stock !== null && obj.Stock !== "") {
+    rawStock = obj.Stock;
+  }
+  if ((rawStock === undefined || rawStock === null || rawStock === "") && obj.庫存 !== undefined && obj.庫存 !== null && obj.庫存 !== "") {
+    rawStock = obj.庫存;
+  }
+  var vsRaw = obj.variantStock != null ? obj.variantStock : (obj.規格庫存 != null ? obj.規格庫存 : "");
+  var cleanVs = sanitizeVariantStockString_(vsRaw);
+  if (cleanVs) {
+    obj.variantStock = cleanVs;
+    obj.規格庫存 = cleanVs;
+    var sum = sumVariantStockStrict_(cleanVs);
+    if (sum !== null) {
+      obj.stock = sum;
+      obj.Stock = sum;
+      obj.庫存 = sum;
+    }
+  } else if (rawStock !== undefined && rawStock !== null && rawStock !== "") {
+    var n = Number(rawStock);
+    if (isFinite(n)) {
+      obj.stock = n;
+      obj.Stock = n;
+      obj.庫存 = n;
     }
   }
-  return found ? total : null;
+  return obj;
 }
 
 /** 試算表 Date 以腳本時區輸出 yyyy-MM-dd，避免 UTC 差一天 */
@@ -585,12 +632,12 @@ function mergeRowFromProduct_(sheet, rowNum, product) {
     row[c] = (val !== undefined && val !== null) ? val : "";
   }
 
-  var stockCol = -1;
+  var stockCols = [];
   var variantCol = -1;
   var statusCol = -1;
   for (var i = 0; i < headers.length; i++) {
     var km = keyMap[i];
-    if (km && (km === "stock" || String(km).toLowerCase() === "stock")) stockCol = i;
+    if (km && String(km).toLowerCase() === "stock") stockCols.push(i);
     if (km === "variantStock") variantCol = i;
     if (km === "status") statusCol = i;
   }
@@ -598,23 +645,29 @@ function mergeRowFromProduct_(sheet, rowNum, product) {
     var statusVal = (product.status !== undefined && product.status !== null && String(product.status).trim() !== "") ? String(product.status).trim() : "上架";
     row[statusCol] = (statusVal === "下架") ? "下架" : "上架";
   }
+  var cleanVariantStock = hasKey("variantStock")
+    ? sanitizeVariantStockString_(product.variantStock)
+    : "";
   if (variantCol >= 0 && hasKey("variantStock")) {
-    row[variantCol] = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
+    row[variantCol] = cleanVariantStock;
   }
-  if (stockCol >= 0 && (hasKey("stock") || hasKey("variantStock"))) {
+  if (stockCols.length > 0 && (hasKey("stock") || hasKey("variantStock"))) {
     var total = 0;
-    var variantStockStr = hasKey("variantStock") && product.variantStock !== undefined && product.variantStock !== null ? String(product.variantStock).trim() : "";
-    if (variantStockStr !== "") {
-      var strictSum = sumVariantStockStrict_(variantStockStr);
+    if (cleanVariantStock !== "") {
+      var strictSum = sumVariantStockStrict_(cleanVariantStock);
       if (strictSum !== null) total = strictSum;
     } else if (hasKey("stock")) {
-      var stockVal = product.stock !== undefined && product.stock !== null && product.stock !== "" ? product.stock : null;
+      var stockVal = product.stock !== undefined && product.stock !== null && product.stock !== ""
+        ? product.stock
+        : (product.Stock !== undefined && product.Stock !== null && product.Stock !== "" ? product.Stock : null);
       if (stockVal !== null) {
         var n = Number(stockVal);
         if (isFinite(n)) total = n;
       }
     }
-    row[stockCol] = total;
+    for (var sc = 0; sc < stockCols.length; sc++) {
+      row[stockCols[sc]] = total;
+    }
   }
   return row;
 }
@@ -637,12 +690,12 @@ function buildRowFromProduct(sheet, product) {
     row.push(val);
   }
   // 與 getProducts 一致：用 keyMap 找欄位，試算表標題用中文或英文都能正確寫入（key 可能為 stock 或 Stock）
-  var stockCol = -1;
+  var stockCols = [];
   var variantCol = -1;
   var statusCol = -1;
   for (var i = 0; i < headers.length; i++) {
     var key = keyMap[i];
-    if (key && (key === "stock" || key.toLowerCase() === "stock")) stockCol = i;
+    if (key && String(key).toLowerCase() === "stock") stockCols.push(i);
     if (key === "variantStock") variantCol = i;
     if (key === "status") statusCol = i;
   }
@@ -650,24 +703,27 @@ function buildRowFromProduct(sheet, product) {
     var statusVal = (product.status !== undefined && product.status !== null && String(product.status).trim() !== "") ? String(product.status).trim() : "上架";
     row[statusCol] = (statusVal === "下架") ? "下架" : "上架";
   }
+  var cleanVariantStock2 = sanitizeVariantStockString_(product.variantStock);
   if (variantCol >= 0) {
-    row[variantCol] = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
+    row[variantCol] = cleanVariantStock2;
   }
-  if (stockCol >= 0) {
-    // 庫存總和：有規格庫存時為各規格數量加總，否則用表單的庫存欄位
-    var total = 0;
-    var variantStockStr = (product.variantStock !== undefined && product.variantStock !== null) ? String(product.variantStock).trim() : "";
-    if (variantStockStr !== "") {
-      var strictSum2 = sumVariantStockStrict_(variantStockStr);
-      if (strictSum2 !== null) total = strictSum2;
+  if (stockCols.length > 0) {
+    var total2 = 0;
+    if (cleanVariantStock2 !== "") {
+      var strictSum2 = sumVariantStockStrict_(cleanVariantStock2);
+      if (strictSum2 !== null) total2 = strictSum2;
     } else {
-      var stockVal = product.stock !== undefined && product.stock !== null && product.stock !== "" ? product.stock : (product.Stock !== undefined && product.Stock !== null && product.Stock !== "" ? product.Stock : null);
-      if (stockVal !== null) {
-        var n = Number(stockVal);
-        if (isFinite(n)) total = n;
+      var stockVal2 = product.stock !== undefined && product.stock !== null && product.stock !== ""
+        ? product.stock
+        : (product.Stock !== undefined && product.Stock !== null && product.Stock !== "" ? product.Stock : null);
+      if (stockVal2 !== null) {
+        var n2 = Number(stockVal2);
+        if (isFinite(n2)) total2 = n2;
       }
     }
-    row[stockCol] = total;
+    for (var sc2 = 0; sc2 < stockCols.length; sc2++) {
+      row[stockCols[sc2]] = total2;
+    }
   }
   return row;
 }
@@ -775,6 +831,7 @@ function getProducts(ss) {
     }
     if (obj.name || obj["商品名稱"] || obj.title || obj["品名"]) {
       obj._rowIndex = r + 1;
+      normalizeProductStockFields_(obj);
       list.push(obj);
     }
   }
@@ -820,7 +877,7 @@ function buildKeyMap(headers) {
       var group = aliases[a];
       for (var g = 0; g < group.length; g++) {
         if (h === group[g] || h.toLowerCase() === group[g].toLowerCase()) {
-          map[c] = group[group.length - 1];
+          map[c] = canonicalFieldKey_(group[group.length - 1]);
           break;
         }
       }
@@ -833,6 +890,8 @@ function buildKeyMap(headers) {
     if (h.indexOf("成本") >= 0) map[c] = "cost";
     else if (h.indexOf("利潤") >= 0) map[c] = "profit";
     else if (h.indexOf("狀態") >= 0) map[c] = "status";
+    else if (h.indexOf("規格") >= 0 && h.indexOf("庫存") >= 0) map[c] = "variantStock";
+    else if (h.indexOf("庫存") >= 0) map[c] = "stock";
   }
   return map;
 }
