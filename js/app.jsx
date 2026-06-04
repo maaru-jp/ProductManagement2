@@ -64,6 +64,129 @@ function toNumberOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** 只保留純數字 token，過濾日期（2026-03-07）等非庫存文字 */
+function sanitizeVariantStockString(raw) {
+  if (raw == null || String(raw).trim() === "") return "";
+  const parts = String(raw).trim().split(/[,，、\s]+/);
+  return parts.map((s) => s.trim()).filter((s) => /^\d+$/.test(s)).join(", ");
+}
+
+/** 從試算表 raw 列正規化庫存（與後台 Code.gs 邏輯一致） */
+function normalizeStockFromRaw(row) {
+  if (!row || typeof row !== "object") {
+    return { variantStock: [], stock: null };
+  }
+  const rawVs = row.variantStock ?? row.規格庫存 ?? row["規格庫存"] ?? "";
+  const cleanVs = sanitizeVariantStockString(rawVs);
+  let variantStock = parseVariantStockStrict(cleanVs);
+  let mainStockNum =
+    toNumberOrNull(row.stock) ??
+    toNumberOrNull(row.Stock) ??
+    toNumberOrNull(row.庫存) ??
+    toNumberOrNull(row["庫存"]) ??
+    toNumberOrNull(row["庫存數量"]);
+  if (mainStockNum == null) {
+    for (const k of Object.keys(row)) {
+      if ((/^stock$/i.test(k) || (k.includes("庫存") && !k.includes("規格"))) && row[k] !== "" && row[k] != null) {
+        const n = toNumberOrNull(row[k]);
+        if (n != null) {
+          mainStockNum = n;
+          break;
+        }
+      }
+    }
+  }
+  if (variantStock.length === 0 && mainStockNum !== null && mainStockNum !== undefined) {
+    variantStock = [Math.max(0, mainStockNum)];
+  }
+  const stock =
+    variantStock.length > 0
+      ? variantStock.reduce((a, b) => a + b, 0)
+      : mainStockNum;
+  return { variantStock, stock };
+}
+
+/** 依規格名稱取得該規格的庫存數量 */
+function getVariantStockQty(product, variantPart) {
+  if (!product) return null;
+  const variantStr =
+    product.variant ??
+    product.raw?.variant ??
+    product.raw?.規格 ??
+    "";
+  const parts = splitVariantString(
+    Array.isArray(variantStr) ? variantStr.join(",") : String(variantStr || "")
+  );
+  const stocks = Array.isArray(product.variantStock)
+    ? product.variantStock.map((n) => Math.max(0, Number(n) || 0))
+    : parseVariantStockStrict(
+        product.variantStock ??
+          product.raw?.variantStock ??
+          product.raw?.規格庫存 ??
+          ""
+      );
+  if (variantPart && parts.length > 1) {
+    const idx = parts.findIndex((p) => p === variantPart || p.trim() === String(variantPart).trim());
+    if (idx >= 0 && stocks[idx] != null) return stocks[idx];
+  }
+  if (stocks.length === 1) return stocks[0];
+  if (stocks.length > 1) {
+    if (variantPart) {
+      const idx = parts.indexOf(variantPart);
+      if (idx >= 0 && stocks[idx] != null) return stocks[idx];
+    }
+    return stocks.reduce((a, b) => a + b, 0);
+  }
+  return getProductStockNumber(product);
+}
+
+function findProductForCartItem(products, item) {
+  if (!item || !Array.isArray(products)) return null;
+  const key = item.key || [item.name, item.variant || "", item.price ?? ""].join("||");
+  let p = products.find(
+    (x) => (x.sku || [x.name, x.variant || "", x.price ?? ""].join("||")) === key
+  );
+  if (p) return p;
+  const variant = (item.variant || "").trim();
+  p = products.find((x) => {
+    if ((x.name || "") !== (item.name || "")) return false;
+    if (!variant) return true;
+    const parts = splitVariantString(x.variant ?? x.raw?.variant ?? x.raw?.規格 ?? "");
+    return parts.includes(variant) || String(x.variant || "").trim() === variant;
+  });
+  if (p) return p;
+  return products.find((x) => (x.name || "") === (item.name || "")) || null;
+}
+
+function resolveMaxStockForCartItem(item, products) {
+  const p = findProductForCartItem(products, item);
+  if (!p) return item.maxStock != null ? item.maxStock : null;
+  return getVariantStockQty(p, item.variant || "");
+}
+
+function buildProductsFetchUrl(baseUrl, bust) {
+  const sep = baseUrl.indexOf("?") >= 0 ? "&" : "?";
+  return baseUrl + sep + "_t=" + bust + "&_r=" + Math.random().toString(36).slice(2, 11);
+}
+
+function productsStockFingerprint(list) {
+  return (list || [])
+    .map((p) => {
+      const vs = Array.isArray(p.variantStock) ? p.variantStock.join("+") : String(p.variantStock ?? "");
+      return [p.name, p.variant, p.stock, vs, p.status].join("|");
+    })
+    .join(";;");
+}
+
+/** 只解析純數字的規格庫存 token，避免「2025年03月」被誤算 */
+function parseVariantStockStrict(raw) {
+  if (raw == null || String(raw).trim() === "") return [];
+  const parts = Array.isArray(raw)
+    ? raw.map((x) => String(x).trim())
+    : String(raw).trim().split(/[,，、\s]+/).map((s) => s.trim());
+  return parts.filter((s) => /^\d+$/.test(s)).map((s) => Math.max(0, parseInt(s, 10)));
+}
+
 /** 從商品或 raw 取得單一庫存數字（含 0），沒資料回傳 null；供顧客頁穩定顯示庫存用 */
 function getProductStockNumber(p) {
   if (!p || typeof p !== "object") return null;
@@ -72,9 +195,12 @@ function getProductStockNumber(p) {
     const n = typeof val === "number" ? val : parseInt(String(val).trim(), 10);
     return Number.isFinite(n) ? Math.max(0, n) : null;
   };
+  const rawVariantStock = p.variantStock ?? p.規格庫存 ?? p["規格庫存"] ?? p.raw?.variantStock ?? p.raw?.規格庫存 ?? p.raw?.["規格庫存"];
+  const variantNums = parseVariantStockStrict(rawVariantStock);
+  if (variantNums.length > 0) return variantNums.reduce((a, b) => a + b, 0);
   const direct =
-    tryVal(p.stock) ?? tryVal(p.庫存) ?? tryVal(p["庫存"]) ?? tryVal(p["庫存數量"]) ?? tryVal(p.Stock) ??
-    tryVal(p.raw?.stock) ?? tryVal(p.raw?.庫存) ?? tryVal(p.raw?.["庫存"]) ?? tryVal(p.raw?.["庫存數量"]) ?? tryVal(p.raw?.Stock);
+    tryVal(p.stock) ?? tryVal(p.Stock) ?? tryVal(p.庫存) ?? tryVal(p["庫存"]) ?? tryVal(p["庫存數量"]) ??
+    tryVal(p.raw?.stock) ?? tryVal(p.raw?.Stock) ?? tryVal(p.raw?.庫存) ?? tryVal(p.raw?.["庫存"]) ?? tryVal(p.raw?.["庫存數量"]) ?? tryVal(p.raw?.Stock);
   if (direct != null) return direct;
   const scan = (obj) => {
     if (!obj || typeof obj !== "object") return null;
@@ -203,26 +329,9 @@ function normalizeItem(row, index) {
     row.Image ??
     ""
   ).toString().trim();
-  const rawVariantStock = row.variantStock ?? row.規格庫存 ?? row["規格庫存"] ?? "";
-  let variantStock = Array.isArray(rawVariantStock)
-    ? rawVariantStock.map((x) => Math.max(0, toNumberOrNull(x) ?? 0))
-    : typeof rawVariantStock === "string"
-      ? rawVariantStock.split(/[,，、\s]+/).map((s) => Math.max(0, toNumberOrNull(s.trim()) ?? 0))
-      : [];
-  let mainStockNum = toNumberOrNull(row.stock ?? row.庫存 ?? row["庫存"] ?? row["庫存數量"] ?? row.Stock);
-  if (mainStockNum == null && row && typeof row === "object") {
-    for (const k of Object.keys(row)) {
-      if ((/^stock$/i.test(k) || (k.includes("庫存") && !k.includes("規格"))) && row[k] !== "" && row[k] != null) {
-        const n = toNumberOrNull(row[k]);
-        if (n != null) { mainStockNum = n; break; }
-      }
-    }
-  }
-  // 後台只填「庫存」、未填「規格庫存」時，用主庫存作為唯一數量（含 0），顧客頁才能顯示
-  if (variantStock.length === 0 && mainStockNum !== null && mainStockNum !== undefined) {
-    variantStock = [Math.max(0, mainStockNum)];
-  }
-  const stock = variantStock.length > 0 ? variantStock[0] : mainStockNum;
+  const stockNorm = normalizeStockFromRaw(row);
+  let variantStock = stockNorm.variantStock;
+  const stock = stockNorm.stock;
   const rawVariantImages =
     row.variantImages ?? row.規格圖片 ?? row["規格圖片"] ?? "";
   const variantImages = Array.isArray(rawVariantImages)
@@ -300,38 +409,79 @@ function useProducts() {
   const [characterImages, setCharacterImages] = React.useState({});
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
+  const [lastSyncedAt, setLastSyncedAt] = React.useState(null);
 
   const fetchDataRef = React.useRef(null);
+  const prevServerTimeRef = React.useRef(null);
+  const prevNonceRef = React.useRef(null);
+  const staleRetryRef = React.useRef(0);
+  const productsFingerprintRef = React.useRef("");
 
   React.useEffect(() => {
     let cancelled = false;
 
-    async function fetchData(silent = false) {
+    async function applyProductsPayload(data, silent) {
+      const apiRate = toNumberOrNull(data?.rate);
+      setRate(apiRate);
+      setCharacterImages(data?.characterImages && typeof data.characterImages === "object" ? data.characterImages : {});
+      const rows = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.products)
+        ? data.products
+        : Array.isArray(data?.data)
+        ? data.data
+        : [];
+      const normalized = rows
+        .map((row, idx) => normalizeItem(row, idx))
+        .filter((x) => x && x.name);
+      const onlyListed = normalized.filter((x) => {
+        const s = (x.status ?? x.狀態 ?? "").toString().trim();
+        return s !== "下架";
+      });
+      let finalList = onlyListed;
+      try {
+        const hiddenRaw = localStorage.getItem("maaru_admin_hidden_product_names");
+        const hiddenNames = hiddenRaw ? JSON.parse(hiddenRaw) : [];
+        const hiddenSet = new Set(Array.isArray(hiddenNames) ? hiddenNames.map((n) => String(n).trim()).filter(Boolean) : []);
+        if (hiddenSet.size > 0) {
+          finalList = onlyListed.filter((x) => !hiddenSet.has((x.name || "").trim()));
+        }
+      } catch {
+        finalList = onlyListed;
+      }
+      const fp = productsStockFingerprint(finalList);
+      if (fp !== productsFingerprintRef.current || !silent) {
+        productsFingerprintRef.current = fp;
+        setProducts(finalList.map((p) => ({ ...p })));
+      }
+      setLastSyncedAt(Date.now());
+    }
+
+    async function fetchData(silent = false, allowProxy = !silent) {
       if (!silent) {
         setLoading(true);
         setError(null);
       }
       let lastError = null;
-      const t = Date.now();
-      const sep = API_URL.indexOf("?") >= 0 ? "&" : "?";
-      const apiUrlWithBust = API_URL + sep + "_t=" + t;
-      const urlsToTry = isLocalDev
-        ? [API_URL_LOCAL + (API_URL_LOCAL.indexOf("?") >= 0 ? "&" : "?") + "_t=" + t, apiUrlWithBust, CORS_PROXY_PREFIX + encodeURIComponent(apiUrlWithBust)]
-        : [apiUrlWithBust, CORS_PROXY_PREFIX + encodeURIComponent(apiUrlWithBust)];
+      const bust = Date.now();
+      const directUrl = buildProductsFetchUrl(isLocalDev ? API_URL_LOCAL : API_URL, bust);
+      const urlsToTry = [];
+      if (isLocalDev) urlsToTry.push(buildProductsFetchUrl(API_URL_LOCAL, bust + 1));
+      urlsToTry.push(directUrl);
+      if (allowProxy) {
+        urlsToTry.push(CORS_PROXY_PREFIX + encodeURIComponent(directUrl));
+      }
+
       for (const url of urlsToTry) {
         if (cancelled) break;
         try {
-          // 不要加自訂 header，否則會觸發 CORS preflight；URL 已帶 _t 讓 Google／proxy 不回傳快取
           const res = await fetch(url, { cache: "no-store" });
           if (!res.ok) throw new Error("HTTP " + res.status);
           const text = await res.text();
           const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
-          if (
-            text.trimStart().startsWith("<") ||
-            contentType.includes("text/html")
-          ) {
+          if (text.trimStart().startsWith("<") || contentType.includes("text/html")) {
             throw new Error(
-              "API 回傳了 HTML 而非 JSON，請確認：1) 試算表已部署為「網頁應用程式」且「誰可以存取」選「任何人」；2) 前端的 API_URL 是否為正確的「網頁應用程式 URL」；3) 首次開啟部署連結時是否已在瀏覽器授權。"
+              "API 回傳了 HTML 而非 JSON，請確認試算表已部署為「網頁應用程式」且「誰可以存取」選「任何人」。"
             );
           }
           let data;
@@ -340,95 +490,94 @@ function useProducts() {
           } catch (parseErr) {
             throw new Error("API 回傳的內容不是有效的 JSON：" + (text.slice(0, 80) + (text.length > 80 ? "…" : "")));
           }
-          if (!cancelled) {
-            console.log("Raw API data:", data);
-            const apiRate = toNumberOrNull(data?.rate);
-            setRate(apiRate);
-            setCharacterImages(data?.characterImages && typeof data.characterImages === "object" ? data.characterImages : {});
-            const rows = Array.isArray(data)
-              ? data
-              : Array.isArray(data?.products)
-              ? data.products
-              : Array.isArray(data?.data)
-              ? data.data
-              : [];
-            const normalized = rows
-              .map((row, idx) => normalizeItem(row, idx))
-              .filter((x) => x && x.name);
-            const onlyListed = normalized.filter((x) => {
-              const s = (x.status ?? x.狀態 ?? "").toString().trim();
-              return s !== "下架";
-            });
-            try {
-              const hiddenRaw = localStorage.getItem("maaru_admin_hidden_product_names");
-              const hiddenNames = hiddenRaw ? JSON.parse(hiddenRaw) : [];
-              const hiddenSet = new Set(Array.isArray(hiddenNames) ? hiddenNames.map((n) => String(n).trim()).filter(Boolean) : []);
-              if (hiddenSet.size > 0) {
-                setProducts(onlyListed.filter((x) => !hiddenSet.has((x.name || "").trim())));
-              } else {
-                setProducts(onlyListed);
-              }
-            } catch {
-              setProducts(onlyListed);
+
+          const serverTime = data?.serverTime;
+          const nonce = data?.nonce;
+          const looksCached =
+            silent &&
+            serverTime != null &&
+            nonce != null &&
+            productsFingerprintRef.current &&
+            prevServerTimeRef.current === serverTime &&
+            prevNonceRef.current === nonce;
+
+          if (looksCached) {
+            if (staleRetryRef.current < 3 && fetchDataRef.current) {
+              staleRetryRef.current += 1;
+              setTimeout(() => fetchDataRef.current(true, false), 600 + staleRetryRef.current * 400);
             }
+            lastError = null;
+            break;
+          }
+
+          staleRetryRef.current = 0;
+          if (serverTime != null) prevServerTimeRef.current = serverTime;
+          if (nonce != null) prevNonceRef.current = nonce;
+
+          if (!cancelled) {
+            await applyProductsPayload(data, silent);
           }
           lastError = null;
           break;
         } catch (err) {
           lastError = err;
-          console.warn("Fetch attempt failed:", url === API_URL_LOCAL ? "local /api" : url === API_URL ? "direct" : "via proxy", err);
+          console.warn("Fetch attempt failed:", url, err);
         }
       }
+
       if (!cancelled) {
         if (lastError) {
-          const msg =
-            lastError?.message || "無法載入商品資料";
+          const msg = lastError?.message || "無法載入商品資料";
           const hint =
-            window.location.hostname.includes("github.io") ||
-            window.location.hostname === "localhost"
-              ? " 若在 GitHub 上仍無法載入，請在 Google 試算表「擴充功能」→「Apps Script」的 doGet 回傳時加上 CORS 標頭（見專案說明）。"
+            window.location.hostname.includes("github.io") || window.location.hostname === "localhost"
+              ? " 若在 GitHub 上仍無法載入，請確認 Apps Script 已重新部署。"
               : "";
-          setError(msg + hint);
+          if (!silent) setError(msg + hint);
         }
         setLoading(false);
       }
     }
 
     fetchDataRef.current = fetchData;
-    fetchData();
+    fetchData(false, true);
 
-    // 切回分頁時重新取得，顧客頁馬上依試算表新狀態顯示
     const onVisible = () => {
-      if (document.visibilityState === "visible" && fetchDataRef.current) fetchDataRef.current(true);
+      if (document.visibilityState === "visible" && fetchDataRef.current) fetchDataRef.current(true, false);
     };
     document.addEventListener("visibilitychange", onVisible);
 
-    // 後台在同站另一分頁變更時，localStorage 會觸發此事件：隱藏名單、商品/庫存更新後顧客頁立即重抓
     const onStorage = (e) => {
       if (!fetchDataRef.current) return;
-      if (e.key === "maaru_admin_hidden_product_names" || e.key === "maaru_products_updated") fetchDataRef.current(true);
+      if (e.key === "maaru_admin_hidden_product_names" || e.key === "maaru_products_updated") {
+        fetchDataRef.current(true, false);
+      }
     };
     window.addEventListener("storage", onStorage);
 
-    // 每 5 秒輪詢一次（帶快取破壞參數），後台編輯庫存/上架下架後顧客頁會較快顯示最新
+    const onFocus = () => {
+      if (fetchDataRef.current) fetchDataRef.current(true, false);
+    };
+    window.addEventListener("focus", onFocus);
+
     const interval = setInterval(() => {
-      if (fetchDataRef.current) fetchDataRef.current(true);
-    }, 5000);
+      if (fetchDataRef.current) fetchDataRef.current(true, false);
+    }, 3000);
 
     return () => {
       cancelled = true;
       fetchDataRef.current = null;
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
       clearInterval(interval);
     };
   }, []);
 
   const refetch = React.useCallback(function refetchProducts() {
-    if (fetchDataRef.current) fetchDataRef.current(true);
+    if (fetchDataRef.current) fetchDataRef.current(true, false);
   }, []);
 
-  return { products, rate, characterImages, loading, error, refetch };
+  return { products, rate, characterImages, loading, error, refetch, lastSyncedAt };
 }
 
 function getUniqueProductsByName(products) {
@@ -908,6 +1057,172 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
   );
 }
 
+const CAROUSEL_STORAGE_KEY = "maaru_shop_carousel_v1";
+
+function parseCarouselConfig(raw) {
+  if (!raw || typeof raw !== "object" || raw.enabled === false) return null;
+  const images = (Array.isArray(raw.images) ? raw.images : [])
+    .map((item) => {
+      if (typeof item === "string") {
+        const s = item.trim();
+        return s ? { url: s, link: "" } : null;
+      }
+      if (item && typeof item === "object") {
+        const url = String(item.url || "").trim();
+        if (!url) return null;
+        return { url, link: String(item.link || "").trim() };
+      }
+      return null;
+    })
+    .filter(Boolean);
+  if (!images.length) return null;
+  const sec = Number(raw.intervalSec);
+  const intervalMs = Math.max(2000, Math.min(30000, (Number.isFinite(sec) && sec > 0 ? sec : 5) * 1000));
+  return { slides: images, intervalMs };
+}
+
+function readCarouselConfig() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CAROUSEL_STORAGE_KEY) || "null");
+    return parseCarouselConfig(raw);
+  } catch {
+    return null;
+  }
+}
+
+function useHomeCarousel() {
+  const [config, setConfig] = React.useState(() => readCarouselConfig());
+
+  React.useEffect(() => {
+    function refresh() {
+      setConfig(readCarouselConfig());
+    }
+    window.addEventListener("storage", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
+  return config;
+}
+
+function HomeCarousel({ slides, intervalMs = 5000 }) {
+  const [index, setIndex] = React.useState(0);
+  const [paused, setPaused] = React.useState(false);
+  const count = slides ? slides.length : 0;
+
+  React.useEffect(() => {
+    setIndex(0);
+  }, [count]);
+
+  React.useEffect(() => {
+    if (count <= 1 || paused) return undefined;
+    const timer = window.setInterval(() => {
+      setIndex((prev) => (prev + 1) % count);
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [count, intervalMs, paused]);
+
+  if (!slides || count === 0) return null;
+
+  function handleSlideClick(e, link) {
+    if (!link) return;
+    const trimmed = link.trim();
+    if (!trimmed) return;
+    if (/^https?:\/\//i.test(trimmed)) return;
+    e.preventDefault();
+    const path = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+    navigateTo(path.startsWith("/") ? path : "/" + path);
+  }
+
+  function goTo(i) {
+    if (i < 0 || i >= count) return;
+    setIndex(i);
+  }
+
+  return (
+    <section
+      className="shop-carousel mb-6"
+      aria-label="首頁輪播"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <div className="shop-carousel-frame relative aspect-[2/1] sm:aspect-[2.4/1] rounded-lg overflow-hidden bg-neutral-100 border border-neutral-200">
+        {slides.map((slide, i) => {
+          const isActive = i === index;
+          const imgEl = (
+            <img
+              src={slide.url}
+              alt=""
+              className="w-full h-full object-cover"
+              loading={i === 0 ? "eager" : "lazy"}
+            />
+          );
+          return (
+            <div
+              key={slide.url + "-" + i}
+              className={"shop-carousel-slide" + (isActive ? " is-active" : "")}
+              aria-hidden={!isActive}
+            >
+              {slide.link ? (
+                /^https?:\/\//i.test(slide.link) ? (
+                  <a href={slide.link} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
+                    {imgEl}
+                  </a>
+                ) : (
+                  <a
+                    href={slide.link.startsWith("#") ? slide.link : "#" + slide.link.replace(/^\/?/, "/")}
+                    className="block w-full h-full"
+                    onClick={(e) => handleSlideClick(e, slide.link)}
+                  >
+                    {imgEl}
+                  </a>
+                )
+              ) : (
+                imgEl
+              )}
+            </div>
+          );
+        })}
+
+        {count > 1 ? (
+          <>
+            <button
+              type="button"
+              className="shop-carousel-nav shop-carousel-nav-prev"
+              onClick={() => goTo((index - 1 + count) % count)}
+              aria-label="上一張"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              className="shop-carousel-nav shop-carousel-nav-next"
+              onClick={() => goTo((index + 1) % count)}
+              aria-label="下一張"
+            >
+              ›
+            </button>
+            <div className="shop-carousel-dots">
+              {slides.map((slide, i) => (
+                <button
+                  key={"dot-" + i}
+                  type="button"
+                  className={"shop-carousel-dot" + (i === index ? " is-active" : "")}
+                  onClick={() => goTo(i)}
+                  aria-label={"第 " + (i + 1) + " 張"}
+                />
+              ))}
+            </div>
+          </>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword, onSearchChange }) {
   return (
     <header className="shop-header sticky top-0 z-20 border-b border-neutral-200/80">
@@ -1157,16 +1472,6 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
             ) : null}
           </div>
         ) : null}
-
-        {(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購) ? (
-          <div className="absolute bottom-2 left-2 z-[1]">
-            <StockTag
-              value={String(product.stockType || product.raw?.貨況 || product.raw?.stockType || product.raw?.現貨預購 || "").trim()}
-              size="sm"
-              overlay
-            />
-          </div>
-        ) : null}
       </div>
       <div className="pt-2.5 space-y-1">
         <h2 className="text-sm text-neutral-800 line-clamp-2 leading-snug">
@@ -1193,7 +1498,7 @@ function parseSearchParams(searchString) {
   }
 }
 
-function HomePage({ products, rate, loading, error, search: routeSearch, searchKeyword = "", onSearchChange, onNavigateHome, wishlist, onToggleWishlist }) {
+function HomePage({ products, rate, loading, error, search: routeSearch, searchKeyword = "", onSearchChange, onNavigateHome, wishlist, onToggleWishlist, carouselConfig }) {
   const CATEGORY_KEY = "maarushop_home_category_v1";
   const SORT_KEY = "maarushop_home_sort_v1";
   const params = React.useMemo(() => parseSearchParams(routeSearch || ""), [routeSearch]);
@@ -1369,6 +1674,9 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
 
   return (
     <div className="flex-1 min-w-0 pb-16">
+      {carouselConfig ? (
+        <HomeCarousel slides={carouselConfig.slides} intervalMs={carouselConfig.intervalMs} />
+      ) : null}
       <div className="mb-5 pb-4 border-b border-neutral-200">
         <h1 className="text-lg sm:text-xl font-semibold text-neutral-900 mb-3">
           {pageTitle}
@@ -1494,67 +1802,67 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
     const allParts = [];
     const seen = new Set();
     for (const p of baseGroup) {
-      const rawV = p.variant ?? p.規格 ?? "";
+      const rawV = p.variant ?? p.規格 ?? p.raw?.variant ?? p.raw?.規格 ?? "";
       const variantStr = Array.isArray(rawV)
         ? rawV.map((v) => String(v).trim()).filter(Boolean).join(",")
         : String(rawV || "");
-      const parts = splitVariantString(variantStr);
-      for (const part of parts) {
+      for (const part of splitVariantString(variantStr)) {
         if (part && !seen.has(part)) {
           seen.add(part);
           allParts.push(part);
         }
       }
     }
-    const toQty = (v) => (v !== undefined && v !== null && v !== "") ? (typeof v === "number" ? Math.max(0, v) : Math.max(0, parseInt(String(v).trim(), 10) || 0)) : null;
-    let stockList = Array.isArray(p0.variantStock) ? p0.variantStock.map(toQty) : (typeof (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存) === "string" ? (p0.variantStock || p0.raw?.variantStock || p0.raw?.規格庫存 || "").split(/[,，、\s]+/).map((s) => toQty(s)) : []);
+
+    let stockList = Array.isArray(p0.variantStock)
+      ? p0.variantStock.map((n) => Math.max(0, Number(n) || 0))
+      : parseVariantStockStrict(p0.variantStock ?? p0.raw?.variantStock ?? p0.raw?.規格庫存 ?? "");
+
     if (stockList.length === 0) {
-      let mainStock = getProductStockNumber(p0);
-      if (mainStock == null && baseGroup.length > 1) {
-        for (let i = 1; i < baseGroup.length; i++) {
-          mainStock = getProductStockNumber(baseGroup[i]);
-          if (mainStock != null) break;
-        }
-      }
+      const mainStock = getProductStockNumber(p0);
       if (mainStock != null) stockList = [mainStock];
     }
+
     if (allParts.length > 1 && baseGroup.length > 1) {
       stockList = allParts.map((part) => {
         const row = baseGroup.find((p) => {
-          const v = p.variant ?? p.規格 ?? "";
-          const str = Array.isArray(v) ? v.join(",") : String(v || "").trim();
+          const str = String(p.variant ?? p.規格 ?? p.raw?.variant ?? p.raw?.規格 ?? "").trim();
           if (str === part) return true;
-          const partsOfRow = splitVariantString(str);
-          return partsOfRow.indexOf(part) >= 0;
+          return splitVariantString(str).includes(part);
         });
-        return row != null ? getProductStockNumber(row) : null;
+        return row != null ? getVariantStockQty(row, part) : null;
       });
-      for (let i = 0; i < stockList.length; i++) {
-        if (stockList[i] == null) stockList[i] = getProductStockNumber(p0) ?? stockList[0] ?? null;
-      }
+    } else if (allParts.length > 1) {
+      stockList = allParts.map((_, i) => {
+        if (stockList[i] != null) return stockList[i];
+        if (stockList.length === 1 && stockList[0] != null) return stockList[0];
+        return getVariantStockQty(p0, allParts[i]) ?? getProductStockNumber(p0);
+      });
     }
-    if (allParts.length === 0) {
-      const rawV = p0.variant ?? p0.規格 ?? "";
-      const v = Array.isArray(rawV) ? rawV.join(",") : String(rawV || "").trim();
-      const qty = stockList[0] != null ? stockList[0] : getProductStockNumber(p0);
-      return [{ ...p0, variant: v || "單一規格", sku: [p0.name, v || "單一規格", p0.price ?? ""].join("||"), variantStockQty: qty }];
-    }
-    if (allParts.length === 1) {
-      const qty = stockList[0] != null ? stockList[0] : getProductStockNumber(p0);
-      return [{ ...p0, variant: allParts[0], sku: [p0.name, allParts[0], p0.price ?? ""].join("||"), variantStockQty: qty }];
-    }
+
     const variantImgList =
       p0.variantImages && Array.isArray(p0.variantImages)
         ? p0.variantImages
         : typeof p0.variantImages === "string"
           ? splitVariantString(p0.variantImages)
           : [];
+
+    if (allParts.length === 0) {
+      const rawV = p0.variant ?? p0.規格 ?? "";
+      const v = Array.isArray(rawV) ? rawV.join(",") : String(rawV || "").trim();
+      const qty = stockList[0] != null ? stockList[0] : getProductStockNumber(p0);
+      return [{ ...p0, variant: v || "單一規格", sku: [p0.name, v || "單一規格", p0.price ?? ""].join("||"), variantStockQty: qty }];
+    }
+
     return allParts.map((part, i) => {
       const variantImage =
         variantImgList[i] && String(variantImgList[i]).trim()
           ? variantImgList[i]
           : p0.image;
-      const stock = stockList[i] != null ? stockList[i] : (getProductStockNumber(p0) ?? stockList[0] ?? null);
+      const stock =
+        stockList[i] != null
+          ? stockList[i]
+          : getVariantStockQty(p0, part) ?? getProductStockNumber(p0);
       return {
         ...p0,
         variant: part,
@@ -1694,20 +2002,14 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                     {group.map((item, index) => {
                       const label =
                         item.variant || (group.length === 1 ? "單一規格" : `款式 ${index + 1}`);
-                      const isSoldOut = item.variantStockQty !== undefined && item.variantStockQty !== null && item.variantStockQty === 0;
                       return (
                         <label
                           key={item.sku || item.id || index}
                           className={[
-                            "flex items-center justify-between gap-3 rounded-xl border px-3 py-2",
-                            isSoldOut ? "cursor-not-allowed opacity-70 bg-slate-50 border-slate-200" : "cursor-pointer",
-                            selectedSku === item.sku && !isSoldOut
+                            "flex items-center justify-between gap-3 rounded-xl border px-3 py-2 cursor-pointer",
+                            selectedSku === item.sku
                               ? "border-slate-900 bg-slate-50"
-                              : selectedSku === item.sku && isSoldOut
-                                ? "border-slate-300 bg-slate-100"
-                                : !isSoldOut
-                                  ? "border-slate-200 bg-white hover:border-slate-900"
-                                  : "border-slate-200 bg-white",
+                              : "border-slate-200 bg-white hover:border-slate-900",
                           ].join(" ")}
                         >
                           <span className="flex items-center gap-2 text-sm text-slate-700 min-w-0 flex-1">
@@ -1715,8 +2017,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                               type="radio"
                               name="variant"
                               checked={selectedSku === item.sku}
-                              onChange={() => !isSoldOut && setSelectedSku(item.sku)}
-                              disabled={isSoldOut}
+                              onChange={() => setSelectedSku(item.sku)}
                             />
                             {item.image ? (
                               <span className="w-8 h-8 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
@@ -1729,14 +2030,6 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                               </span>
                             ) : null}
                             <span className="inline-block text-left" style={{ writingMode: "horizontal-tb" }}>{label}</span>
-                            {isSoldOut ? (
-                              <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded">已售完</span>
-                            ) : null}
-                          </span>
-                          <span className="text-xs text-slate-500 shrink-0 w-16 text-center">
-                            {item.variantStockQty !== undefined && item.variantStockQty !== null
-                              ? `庫存 ${item.variantStockQty}`
-                              : "庫存 -"}
                           </span>
                           <span className="text-xs text-slate-500 shrink-0">
                             {getDisplayPrice(item, rate) || ""}
@@ -1748,19 +2041,14 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
                 </div>
               ) : null}
 
-              {(() => {
-                const selectedSoldOut = selectedItem && selectedItem.variantStockQty !== undefined && selectedItem.variantStockQty !== null && selectedItem.variantStockQty === 0;
-                return (
-                  <button
-                    type="button"
-                    onClick={() => selectedItem && !selectedSoldOut && onAddToCart(selectedItem, 1)}
-                    disabled={!selectedItem || selectedSoldOut}
-                    className="w-full rounded-md bg-neutral-800 text-white text-sm py-3 hover:bg-neutral-700 disabled:bg-neutral-300 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {selectedSoldOut ? "已售完" : "加入購物車"}
-                  </button>
-                );
-              })()}
+              <button
+                type="button"
+                onClick={() => selectedItem && onAddToCart(selectedItem, 1)}
+                disabled={!selectedItem}
+                className="w-full rounded-md bg-neutral-800 text-white text-sm py-3 hover:bg-neutral-700 disabled:bg-neutral-300 disabled:cursor-not-allowed transition-colors"
+              >
+                加入購物車
+              </button>
             </div>
           </div>
         </div>
@@ -1800,19 +2088,6 @@ function CartDrawer({
       price: it.price ?? fromList.price ?? it.price,
       sellingPrice: it.sellingPrice ?? fromList.sellingPrice,
     };
-  }
-
-  function getMaxStock(it) {
-    const key = it.key || [it.name, it.variant || "", it.price ?? ""].join("||");
-    let p = products.find(
-      (x) => (x.sku || [x.name, x.variant || "", x.price ?? ""].join("||")) === key
-    );
-    if (!p) {
-      p = products.find(
-        (x) => (x.name || "") === (it.name || "") && (x.variant || "") === (it.variant || "")
-      );
-    }
-    return p ? (p.variantStockQty ?? getProductStockNumber(p) ?? null) : null;
   }
 
   React.useEffect(() => {
@@ -2007,22 +2282,14 @@ function CartDrawer({
                           −
                         </button>
                         <span className="text-sm w-6 text-center">{it.qty}</span>
-                        {(() => {
-                          const maxStock = it.maxStock ?? getMaxStock(it);
-                          const atMax = maxStock != null && (Number(it.qty) || 0) >= maxStock;
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => !atMax && onInc(it.key)}
-                              disabled={atMax}
-                              className="w-8 h-8 rounded-full border border-slate-200 hover:border-slate-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-slate-200"
-                              aria-label="增加數量"
-                              title={atMax ? "已達庫存上限 " + maxStock : "增加數量"}
-                            >
-                              +
-                            </button>
-                          );
-                        })()}
+                        <button
+                          type="button"
+                          onClick={() => onInc(it.key)}
+                          className="w-8 h-8 rounded-full border border-slate-200 hover:border-slate-900"
+                          aria-label="增加數量"
+                        >
+                          +
+                        </button>
                         <button
                           type="button"
                           onClick={() => onRemove(it.key)}
@@ -2127,15 +2394,12 @@ function App() {
 
   function addToCart(product, qty) {
     const key = product.sku || [product.name, product.variant || "", product.price ?? ""].join("||");
-    const maxStock = product.variantStockQty ?? getProductStockNumber(product) ?? null;
     const addQty = Math.max(1, Number(qty || 1));
     setCartItems((prev) => {
       const idx = prev.findIndex((x) => x.key === key);
       if (idx >= 0) {
         const copy = prev.slice();
-        const cur = copy[idx];
-        const newQty = Math.min((cur.qty || 0) + addQty, maxStock != null ? maxStock : Infinity);
-        copy[idx] = { ...cur, qty: newQty, maxStock: maxStock != null ? maxStock : cur.maxStock };
+        copy[idx] = { ...copy[idx], qty: (copy[idx].qty || 0) + addQty };
         return copy;
       }
       return [
@@ -2147,8 +2411,7 @@ function App() {
           price: product.price,
           sellingPrice: product.sellingPrice,
           image: product.image || "",
-          qty: Math.min(addQty, maxStock != null ? maxStock : addQty),
-          maxStock: maxStock,
+          qty: addQty,
         },
       ];
     });
@@ -2157,12 +2420,7 @@ function App() {
 
   function incItem(key) {
     setCartItems((prev) =>
-      prev.map((it) => {
-        if (it.key !== key) return it;
-        const max = it.maxStock != null ? it.maxStock : Infinity;
-        if ((it.qty || 0) >= max) return it;
-        return { ...it, qty: (it.qty || 0) + 1 };
-      })
+      prev.map((it) => (it.key === key ? { ...it, qty: (it.qty || 0) + 1 } : it))
     );
   }
 
@@ -2239,6 +2497,7 @@ function App() {
   };
 
   const homeParams = React.useMemo(() => parseSearchParams(route.search || ""), [route.search]);
+  const carouselConfig = useHomeCarousel();
 
   // 從網址 ?q= 同步到左側搜尋（例如從連結開啟時）
   React.useEffect(() => {
@@ -2260,6 +2519,7 @@ function App() {
         onNavigateHome={navigateTo}
         wishlist={wishlist}
         onToggleWishlist={toggleWishlist}
+        carouselConfig={carouselConfig}
       />
     );
   } else if (route.name === "product") {
