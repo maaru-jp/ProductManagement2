@@ -1016,7 +1016,14 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                         onClick={() => setExpandedStoreKey(isExpanded ? null : value)}
                         className={storeCategoryClass}
                       >
-                        <span>{label}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span>{label}</span>
+                          {value === "預購商品" ? (
+                            <span className="sidebar-hot-badge" role="status" aria-label="熱門預購">
+                              Hot
+                            </span>
+                          ) : null}
+                        </span>
                         <span className={["text-slate-400 transition-transform duration-200", isExpanded ? "rotate-90" : ""].join(" ")}>›</span>
                       </button>
                       {isExpanded ? (
@@ -1338,9 +1345,22 @@ function ShopSidebar({ products, activeCategory, activeSubcategory, newTodayActi
 
   function navClass(isActive) {
     return [
-      "block w-full py-2 px-2 rounded-md text-left text-sm transition-colors",
+      "flex items-center gap-1.5 w-full py-2 px-2 rounded-md text-left text-sm transition-colors",
       isActive ? "shop-sidebar-item-active" : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50",
     ].join(" ");
+  }
+
+  function renderCategoryLabel(item) {
+    return (
+      <>
+        <span>{item.label}</span>
+        {item.value === "預購商品" ? (
+          <span className="sidebar-hot-badge" role="status" aria-label="熱門預購">
+            Hot
+          </span>
+        ) : null}
+      </>
+    );
   }
 
   return (
@@ -1377,7 +1397,7 @@ function ShopSidebar({ products, activeCategory, activeSubcategory, newTodayActi
                   }}
                   className={navClass(isActive && !activeSubcategory)}
                 >
-                  {item.label}
+                  {renderCategoryLabel(item)}
                 </button>
                 {isExpanded ? (
                   <div className="ml-2 pl-2 border-l border-neutral-200 space-y-0.5 mt-0.5 mb-1">
@@ -1406,7 +1426,7 @@ function ShopSidebar({ products, activeCategory, activeSubcategory, newTodayActi
               onClick={() => onNavigate("/?category=" + encodeURIComponent(item.value))}
               className={navClass(isActive)}
             >
-              {item.label}
+              {renderCategoryLabel(item)}
             </button>
           );
         })}
