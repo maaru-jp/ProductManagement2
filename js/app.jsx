@@ -1415,6 +1415,21 @@ function ShopSidebar({ products, activeCategory, activeSubcategory, newTodayActi
   );
 }
 
+function NewListingBadge({ size = "card" }) {
+  const sizeClass = size === "detail" ? "new-listing-badge--detail" : "new-listing-badge--card";
+  return (
+    <span className={"new-listing-badge " + sizeClass} role="status">
+      <span className="new-listing-badge__shine" aria-hidden="true" />
+      <span className="new-listing-badge__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="currentColor" className="new-listing-badge__svg">
+          <path d="M12 2l2.4 7.4h7.6l-6 4.6 2.3 7-6.3-4.6-6.3 4.6 2.3-7-6-4.6h7.6L12 2z" />
+        </svg>
+      </span>
+      <span className="new-listing-badge__text">新上架</span>
+    </span>
+  );
+}
+
 function StockTag({ value, size = "sm", overlay = false }) {
   if (!value || !String(value).trim()) return null;
   const v = String(value).trim();
@@ -1448,14 +1463,14 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
   return (
     <Link
       to={`/product/${encodedName}`}
-      className="product-card group block"
+      className="product-card group block w-full"
     >
       <div className="product-image-wrap relative aspect-square bg-white border border-neutral-200 overflow-hidden rounded-md">
         {imgSrc ? (
           <img
             src={imgSrc}
             alt={product.name}
-            className="product-card-image w-full h-full object-contain p-2"
+            className="product-card-image w-full h-full object-contain p-3 sm:p-4"
             loading="lazy"
           />
         ) : (
@@ -1472,7 +1487,7 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
             if (onToggleWishlist) onToggleWishlist(productKey);
           }}
           className={[
-            "absolute top-2 right-2 w-7 h-7 rounded-md flex items-center justify-center transition-colors",
+            "absolute top-2.5 right-2.5 w-8 h-8 sm:w-9 sm:h-9 rounded-md flex items-center justify-center transition-colors",
             isWishlisted ? "bg-neutral-800 text-white" : "bg-white/90 text-neutral-500 border border-neutral-200 hover:text-neutral-800",
           ].join(" ")}
           aria-label={isWishlisted ? "取消收藏" : "加入收藏"}
@@ -1481,23 +1496,21 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
         </button>
 
         {(product.isHot || product.isNewListing) ? (
-          <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+          <div className="absolute top-2.5 left-2.5 z-[2] flex flex-col items-start gap-1.5 max-w-[calc(100%-3.5rem)]">
+            {product.isNewListing ? <NewListingBadge size="card" /> : null}
             {product.isHot ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-white font-medium">熱銷</span>
-            ) : null}
-            {product.isNewListing ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-600 text-white font-medium">新上架</span>
+              <span className="product-badge-hot">熱銷</span>
             ) : null}
           </div>
         ) : null}
       </div>
-      <div className="pt-2.5 space-y-1">
-        <h2 className="text-sm text-neutral-800 line-clamp-2 leading-snug">
+      <div className="pt-3 space-y-1.5">
+        <h2 className="text-sm sm:text-base text-neutral-800 line-clamp-2 leading-snug font-medium">
           {product.name}
         </h2>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {twd ? (
-            <p className="text-sm font-medium text-neutral-900">{twd}</p>
+            <p className="text-sm sm:text-base font-semibold text-neutral-900">{twd}</p>
           ) : (
             <p className="text-sm text-neutral-500">價格請洽詢</p>
           )}
@@ -1774,7 +1787,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
         </div>
       )}
 
-      <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-8">
+      <section className="product-grid">
         {filteredByStockType.map((p) => (
           <ProductCard
             key={p.id || p.name}
@@ -1959,9 +1972,12 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
           </div>
 
           <div className="space-y-4">
-            <h1 className="text-lg font-semibold tracking-tight">
-              {mainProduct.name}
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-semibold tracking-tight">
+                {mainProduct.name}
+              </h1>
+              {mainProduct.isNewListing ? <NewListingBadge size="detail" /> : null}
+            </div>
 
             {(mainProduct.character || selectedItem?.character) ? (
               <p className="text-sm text-slate-500">
@@ -2574,7 +2590,7 @@ function App() {
         characterImages={characterImages}
       />
       {route.name === "home" ? (
-        <div className="flex-1 w-full max-w-[1200px] mx-auto px-4 sm:px-6 pt-6 sm:pt-8 flex gap-6 lg:gap-8">
+        <div className="flex-1 w-full max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 flex gap-6 lg:gap-8">
           <ShopSidebar
             products={products}
             activeCategory={homeParams.category || "ALL"}
