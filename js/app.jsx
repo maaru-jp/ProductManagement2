@@ -225,17 +225,36 @@ function toBoolFlag(v) {
 
 function parseDateOrNull(v) {
   if (!v) return null;
+  if (typeof v === "string") {
+    const m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
   const d = v instanceof Date ? v : new Date(v);
   return Number.isFinite(d.getTime()) ? d : null;
 }
 
-function isWithinLastDays(dateValue, days) {
+/** 上架日距今幾天（本地日期；上架當天 = 0） */
+function daysSinceLocalDate(dateValue) {
   const d = parseDateOrNull(dateValue);
-  if (!d) return false;
-  const now = Date.now();
-  const ms = now - d.getTime();
-  if (ms < 0) return true; // future date: treat as new
-  return ms <= days * 24 * 60 * 60 * 1000;
+  if (!d) return null;
+  const today = new Date();
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((end - start) / (24 * 60 * 60 * 1000));
+}
+
+/** 新上架視窗：上架後 7 日內（第 0～6 天）顯示，第 7 天起自動移除 */
+const NEW_LISTING_DAYS = 7;
+
+function isNewListingWithinDays(dateValue, windowDays = NEW_LISTING_DAYS) {
+  const days = daysSinceLocalDate(dateValue);
+  if (days == null) return false;
+  if (days < 0) return true;
+  return days < windowDays;
+}
+
+function isWithinLastDays(dateValue, days) {
+  return isNewListingWithinDays(dateValue, days);
 }
 
 /** 上架日期是否為「今天」（以當地日期比對） */
@@ -369,9 +388,8 @@ function normalizeItem(row, index) {
   const isRecommended = toBoolFlag(row.recommended ?? row.推薦);
   const publishedAt = row.publishedAt ?? row.上架日期 ?? row.上架時間 ?? null;
   const isNewByFlag = toBoolFlag(row.isNew ?? row.新品);
-  const isNewListing = toBoolFlag(row.isNewListing ?? row.新上架);
-  const isNewByDate = isWithinLastDays(publishedAt, 7);
-  const isNew = isNewByFlag || isNewListing || isNewByDate;
+  const isNewListing = isNewListingWithinDays(publishedAt, NEW_LISTING_DAYS);
+  const isNew = isNewByFlag || isNewListing;
 
   const sku = [name, variant, price ?? ""].join("||");
 
@@ -1468,7 +1486,7 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-white font-medium">熱銷</span>
             ) : null}
             {product.isNewListing ? (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-600 text-white font-medium">新品</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-600 text-white font-medium">新上架</span>
             ) : null}
           </div>
         ) : null}
@@ -1587,12 +1605,9 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
     // products 已僅含「上架」商品；點「全部」時無 category/subcategory/character，顯示全部
     let result = products;
 
-    // 左側欄「今日上架」：只顯示試算表有勾選「新上架」的商品
+    // 左側欄「新上架」：上架日期 7 日內自動顯示
     if (newTodayFromUrl) {
-      result = result.filter((p) => {
-        const flag = p?.isNewListing ?? p?.新上架 ?? p?.raw?.isNewListing ?? p?.raw?.新上架;
-        return flag === true || String(flag).trim().toLowerCase() === "y" || String(flag).trim().toLowerCase() === "true" || String(flag).trim() === "1";
-      });
+      result = result.filter((p) => isNewListingWithinDays(p?.publishedAt ?? p?.上架日期 ?? p?.raw?.publishedAt ?? p?.raw?.上架日期, NEW_LISTING_DAYS));
       return result;
     }
 
@@ -1750,7 +1765,7 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
         <div className="text-center text-sm text-neutral-500 space-y-1 py-20">
           <p>目前沒有可顯示的商品</p>
           {newTodayFromUrl ? (
-            <p className="text-xs text-neutral-400">尚無新上架商品，請在試算表勾選「新上架」欄位</p>
+            <p className="text-xs text-neutral-400">尚無新上架商品（上架 7 日內會自動顯示於此）</p>
           ) : characterFromUrl ? (
             <p className="text-xs text-neutral-400">
               篩選角色「{characterFromUrl}」：試算表「規格」欄需包含該名稱
