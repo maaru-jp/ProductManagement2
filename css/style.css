@@ -276,3 +276,93 @@ body {
 .stock-tag--overlay.stock-tag--preorder {
   background: rgba(239, 246, 255, 0.96);
 }
+
+/* 首頁輪播 */
+.shop-carousel-frame {
+  isolation: isolate;
+}
+
+.shop-carousel-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.65s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.shop-carousel-slide.is-active {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.shop-carousel-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  transform: translateY(-50%);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  border: none;
+  background: rgba(255, 255, 255, 0.88);
+  color: #171717;
+  font-size: 1.25rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.shop-carousel-nav:hover {
+  background: #fff;
+  transform: translateY(-50%) scale(1.05);
+}
+
+.shop-carousel-nav-prev {
+  left: 0.75rem;
+}
+
+.shop-carousel-nav-next {
+  right: 0.75rem;
+}
+
+.shop-carousel-dots {
+  position: absolute;
+  left: 50%;
+  bottom: 0.75rem;
+  z-index: 3;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(4px);
+}
+
+.shop-carousel-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 9999px;
+  border: none;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: width 0.2s ease, background 0.2s ease;
+}
+
+.shop-carousel-dot.is-active {
+  width: 1.125rem;
+  background: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shop-carousel-slide {
+    transition: none;
+  }
+}
