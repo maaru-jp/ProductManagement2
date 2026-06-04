@@ -1419,13 +1419,7 @@ function NewListingBadge({ size = "card" }) {
   const sizeClass = size === "detail" ? "new-listing-badge--detail" : "new-listing-badge--card";
   return (
     <span className={"new-listing-badge " + sizeClass} role="status">
-      <span className="new-listing-badge__shine" aria-hidden="true" />
-      <span className="new-listing-badge__icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="currentColor" className="new-listing-badge__svg">
-          <path d="M12 2l2.4 7.4h7.6l-6 4.6 2.3 7-6.3-4.6-6.3 4.6 2.3-7-6-4.6h7.6L12 2z" />
-        </svg>
-      </span>
-      <span className="new-listing-badge__text">新上架</span>
+      新上架
     </span>
   );
 }
