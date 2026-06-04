@@ -991,6 +991,7 @@
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">上架日期</label>
             <input type="date" name="publishedAt" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="YYYY-MM-DD" />
+            <p class="text-xs text-slate-400 mt-1">填寫後顧客頁會自動顯示「新上架」標籤，7 天後自動移除（不需手動勾選）</p>
           </div>
           <div class="flex flex-wrap items-center gap-6">
             <label class="inline-flex items-center gap-2 cursor-pointer">
@@ -3080,6 +3081,8 @@
           resetProductFormFields();
           var statusInput = document.getElementById("statusInput");
           if (statusInput) statusInput.value = "上架";
+          var pubInp = document.querySelector("#productForm input[name=\"publishedAt\"]");
+          if (pubInp) pubInp.value = fmtDateLocal(new Date());
           updateSuggestedPriceDisplay();
           updateProfitAnalysis();
         }
@@ -3200,6 +3203,9 @@
         var stockInp = document.querySelector("#productForm input[name=\"stock\"]");
         if (stockInp) formProduct.stock = stockInp.value === "" ? "" : (Number(stockInp.value) || 0);
         finalizeStockForSave(formProduct);
+        if (!formProduct.publishedAt || String(formProduct.publishedAt).trim() === "") {
+          formProduct.publishedAt = fmtDateLocal(new Date());
+        }
         if (!formProduct.name || !String(formProduct.name).trim()) {
           showMessage("請輸入商品名稱", true);
           return;
