@@ -233,6 +233,48 @@ body {
   }
 }
 
+/* 新上架：方塊標籤＋玫瑰紅識別（與熱銷深灰方塊同款型） */
+.new-listing-badge {
+  display: inline-block;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  color: #fff;
+  background: #e11d48;
+  box-shadow: 0 1px 4px rgba(225, 29, 72, 0.35);
+  white-space: nowrap;
+}
+
+.new-listing-badge--card {
+  font-size: 0.625rem;
+}
+
+@media (min-width: 640px) {
+  .new-listing-badge--card {
+    font-size: 0.6875rem;
+    padding: 0.3125rem 0.5625rem;
+  }
+}
+
+.new-listing-badge--detail {
+  font-size: 0.6875rem;
+}
+
+.product-badge-hot {
+  display: inline-block;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  color: #fff;
+  background: #262626;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
 /* 現貨 / 預購標籤 */
 .stock-tag {
   display: inline-flex;
