@@ -739,7 +739,9 @@ function getApiData() {
   return {
     rate: rate,
     products: products,
-    characterImages: characterImages
+    characterImages: characterImages,
+    serverTime: new Date().getTime(),
+    nonce: Utilities.getUuid()
   };
 }
 
