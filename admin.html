@@ -893,6 +893,7 @@
               <select name="subcategory" id="productSubcategorySelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
                 <option value="">-- 請選擇 --</option>
               </select>
+              <p class="text-[11px] text-slate-400 mt-1">預購月份請用格式：2026年04月（會自動從試算表已有商品帶出選項）</p>
             </div>
           </div>
           <div>
@@ -2649,18 +2650,59 @@
         "旅行用品": ["行李吊牌", "行李箱束帶", "護照套", "旅行收納"],
         "戶外用品": ["雨傘", "雨具", "其他戶外用品"]
       };
-      function updateSubcategoryOptions(categoryValue) {
+      function sortSubcategoryLabels(labels) {
+        return labels.slice().sort(function(a, b) {
+          var ma = String(a).trim().match(/^(\d{4})年(\d{1,2})月$/);
+          var mb = String(b).trim().match(/^(\d{4})年(\d{1,2})月$/);
+          if (ma && mb) {
+            var pa = parseInt(ma[1], 10) * 100 + parseInt(ma[2], 10);
+            var pb = parseInt(mb[1], 10) * 100 + parseInt(mb[2], 10);
+            return pb - pa;
+          }
+          if (ma) return -1;
+          if (mb) return 1;
+          return String(a).localeCompare(String(b), "zh-Hant");
+        });
+      }
+
+      function updateSubcategoryOptions(categoryValue, preserveValue) {
         var sel = document.getElementById("productSubcategorySelect");
         if (!sel) return;
-        var opts = SUBCATEGORY_BY_CATEGORY[categoryValue];
-        sel.innerHTML = "<option value=\"\">-- 請選擇 --</option>";
-        if (opts && opts.length) {
-          opts.forEach(function(label) {
-            var o = document.createElement("option");
-            o.value = label;
-            o.textContent = label;
-            sel.appendChild(o);
+        var seen = {};
+        var opts = [];
+        function addOpt(label) {
+          var v = String(label || "").trim();
+          if (!v) return;
+          var ym = v.match(/^(\d{4})年(\d{1,2})月$/);
+          if (ym) {
+            var month = parseInt(ym[2], 10);
+            if (month >= 1 && month <= 12) {
+              v = ym[1] + "年" + String(month).padStart(2, "0") + "月";
+            }
+          }
+          if (seen[v]) return;
+          seen[v] = true;
+          opts.push(v);
+        }
+        (SUBCATEGORY_BY_CATEGORY[categoryValue] || []).forEach(addOpt);
+        if (categoryValue && Array.isArray(products)) {
+          products.forEach(function(p) {
+            var cat = (p.category || p.分類 || "").toString().trim();
+            var sub = (p.subcategory || p.子分類 || "").toString().trim();
+            if (cat === categoryValue) addOpt(sub);
           });
+        }
+        addOpt(preserveValue);
+        opts = sortSubcategoryLabels(opts);
+        sel.innerHTML = "<option value=\"\">-- 請選擇 --</option>";
+        opts.forEach(function(label) {
+          var o = document.createElement("option");
+          o.value = label;
+          o.textContent = label;
+          sel.appendChild(o);
+        });
+        if (preserveValue && seen[String(preserveValue).trim()]) {
+          sel.value = String(preserveValue).trim();
         }
       }
 
@@ -2772,7 +2814,10 @@
         var form = document.getElementById("productForm");
         var fromEdit = opts && opts.fromEdit === true;
         if (fromEdit) resetProductFormFields();
-        updateSubcategoryOptions(obj && obj.category ? obj.category : "");
+        updateSubcategoryOptions(
+          obj && obj.category ? obj.category : "",
+          obj && obj.subcategory ? obj.subcategory : ""
+        );
         Object.keys(obj || {}).forEach(function(key) {
           if (key === "hot" || key === "recommended" || key === "isNew" || key === "isNewListing" || key === "variant") return;
           var input = form.querySelector("[name=" + key + "]");
