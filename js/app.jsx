@@ -456,6 +456,10 @@ function normalizeItem(row, index) {
     rawVariantPrices != null && String(rawVariantPrices).trim() !== ""
       ? String(rawVariantPrices).trim()
       : "";
+  const variantDim1Label = (row.variantDim1Label ?? row["規格維度1名稱"] ?? "").toString().trim();
+  const variantDim1Options = (row.variantDim1Options ?? row["規格維度1選項"] ?? "").toString().trim();
+  const variantDim2Label = (row.variantDim2Label ?? row["規格維度2名稱"] ?? "").toString().trim();
+  const variantDim2Options = (row.variantDim2Options ?? row["規格維度2選項"] ?? "").toString().trim();
   const category = row.category ?? row.分類 ?? "";
   const subcategory = row.subcategory ?? row.子分類 ?? "";
   const character = row.character ?? row.角色 ?? row.角色名稱 ?? "";
@@ -482,6 +486,10 @@ function normalizeItem(row, index) {
     variantImages,
     variantStock,
     variantPrices,
+    variantDim1Label,
+    variantDim1Options,
+    variantDim2Label,
+    variantDim2Options,
     stock,
     description,
     introduction,
@@ -1985,6 +1993,138 @@ function splitVariantString(variantStr) {
   return s.split(/[,，、;；\n\r\uFF0C]+/).map((part) => part.trim()).filter(Boolean);
 }
 
+function parseDimOptionsFromSheet_(raw) {
+  if (raw == null || String(raw).trim() === "") return [];
+  return String(raw)
+    .split(/[,，、;；\n\r\uFF0C\u3000]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function formatVariantComboName_(parts) {
+  return (parts || []).map((p) => String(p || "").trim()).filter(Boolean).join(" ");
+}
+
+function variantNameTokens_(name) {
+  return String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function inferVariantDimensionsFromParts_(parts) {
+  if (!parts || parts.length < 2) return null;
+  const tokens = parts.map((p) => variantNameTokens_(p));
+  const len = tokens[0]?.length || 0;
+  if (len < 2 || !tokens.every((t) => t.length === len)) return null;
+  const dims = [];
+  for (let i = 0; i < len; i++) {
+    const seen = new Set();
+    const options = [];
+    tokens.forEach((t) => {
+      if (t[i] && !seen.has(t[i])) {
+        seen.add(t[i]);
+        options.push(t[i]);
+      }
+    });
+    const defaultLabel = len === 2 ? (i === 0 ? "品項" : "角色") : `規格${i + 1}`;
+    dims.push({ label: defaultLabel, options });
+  }
+  return dims.length >= 2 ? dims : null;
+}
+
+function getVariantDimensionConfig_(product, variantParts) {
+  const src = product?.raw ?? product ?? {};
+  const dims = [];
+  for (let i = 1; i <= 2; i++) {
+    const label = (src[`variantDim${i}Label`] ?? src[`規格維度${i}名稱`] ?? "").toString().trim();
+    const options = parseDimOptionsFromSheet_(src[`variantDim${i}Options`] ?? src[`規格維度${i}選項`]);
+    if (options.length) {
+      dims.push({
+        label: label || (i === 1 ? "品項" : "角色"),
+        options,
+      });
+    }
+  }
+  if (dims.length >= 2) return dims;
+  if (product) {
+    const fromProduct = [];
+    for (let i = 1; i <= 2; i++) {
+      const label = (product[`variantDim${i}Label`] ?? "").toString().trim();
+      const options = parseDimOptionsFromSheet_(product[`variantDim${i}Options`]);
+      if (options.length) {
+        fromProduct.push({ label: label || (i === 1 ? "品項" : "角色"), options });
+      }
+    }
+    if (fromProduct.length >= 2) return fromProduct;
+  }
+  return inferVariantDimensionsFromParts_(variantParts);
+}
+
+function findGroupItemByCombo_(group, parts) {
+  const combo = formatVariantComboName_(parts);
+  if (!combo) return null;
+  return group.find((g) => String(g.variant || "").trim() === combo) || null;
+}
+
+function isDimOptionAvailable_(dimIndex, option, selectedDims, group) {
+  if (!option || !group?.length) return false;
+  if (dimIndex === 0) {
+    return group.some((g) => variantNameTokens_(g.variant)[0] === option);
+  }
+  const dim0 = selectedDims[0];
+  if (!dim0) return false;
+  return !!findGroupItemByCombo_(group, [dim0, option]);
+}
+
+function VariantTwoTierPicker({ variantDims, group, selectedDims, onPickDim, rate }) {
+  return (
+    <div className="variant-two-tier space-y-4">
+      {variantDims.map((dim, dimIndex) => (
+        <div key={`${dim.label}-${dimIndex}`} className="variant-tier-block">
+          <h3 className="text-xs font-medium text-slate-500 tracking-wide mb-2">
+            {dim.label}
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {dim.options.map((opt) => {
+              const available = isDimOptionAvailable_(dimIndex, opt, selectedDims, group);
+              const active = selectedDims[dimIndex] === opt;
+              const previewItem =
+                dimIndex === 0
+                  ? group.find((g) => variantNameTokens_(g.variant)[0] === opt)
+                  : findGroupItemByCombo_(group, [selectedDims[0], opt]);
+              const previewPrice = previewItem ? getDisplayPrice(previewItem, rate) : "";
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  disabled={!available}
+                  onClick={() => onPickDim(dimIndex, opt)}
+                  className={[
+                    "variant-dim-chip min-w-[4.5rem] px-3 py-2 rounded-xl border text-sm text-left transition-colors",
+                    active
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : available
+                        ? "border-slate-200 bg-white text-slate-700 hover:border-slate-900"
+                        : "border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed",
+                  ].join(" ")}
+                >
+                  <span className="block font-medium leading-tight">{opt}</span>
+                  {dimIndex === 0 && previewPrice ? (
+                    <span className={`block text-[10px] mt-0.5 ${active ? "text-slate-200" : "text-slate-500"}`}>
+                      {previewPrice}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
   const decodedName = decodeURIComponent(encodedName || "");
 
@@ -2084,6 +2224,14 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
     });
   }, [baseGroup]);
 
+  const variantDims = React.useMemo(() => {
+    if (!group.length || group.length < 2) return null;
+    const parts = group.map((g) => String(g.variant || "").trim()).filter(Boolean);
+    return getVariantDimensionConfig_(group[0], parts);
+  }, [group]);
+
+  const useTwoTier = !!(variantDims && variantDims.length >= 2);
+
   if (!decodedName) {
     return (
       <main className="max-w-[1200px] mx-auto px-4 sm:px-6 py-8">
@@ -2101,14 +2249,46 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
 
   const mainProduct = group[0];
   const [selectedSku, setSelectedSku] = React.useState(null);
+  const [selectedDims, setSelectedDims] = React.useState([null, null]);
 
   React.useEffect(() => {
     if (!group?.length) return;
+    if (useTwoTier && variantDims) {
+      const initial = variantDims.map((d) => d.options[0]);
+      const item = findGroupItemByCombo_(group, initial) || group[0];
+      setSelectedDims(initial);
+      setSelectedSku(item.sku);
+      return;
+    }
+    setSelectedDims([null, null]);
     setSelectedSku((prev) => {
       if (prev && group.some((g) => g.sku === prev)) return prev;
       return group[0].sku;
     });
-  }, [decodedName, group?.length]);
+  }, [decodedName, group, useTwoTier, variantDims]);
+
+  function onPickDim(dimIndex, value) {
+    setSelectedDims((prev) => {
+      const next = variantDims.map((d, i) => {
+        if (i === dimIndex) return value;
+        return prev[i] && d.options.includes(prev[i]) ? prev[i] : d.options[0];
+      });
+      if (dimIndex === 0) {
+        const matched = findGroupItemByCombo_(group, next);
+        if (!matched) {
+          const fallback = group.find((g) => variantNameTokens_(g.variant)[0] === value);
+          if (fallback) {
+            const tokens = variantNameTokens_(fallback.variant);
+            next[0] = tokens[0];
+            next[1] = tokens[1] || next[1];
+          }
+        }
+      }
+      const item = findGroupItemByCombo_(group, next);
+      if (item) setSelectedSku(item.sku);
+      return next;
+    });
+  }
 
   const selectedItem = React.useMemo(() => {
     if (!group?.length) return null;
@@ -2209,49 +2389,74 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
             <div className="mt-2 space-y-3">
               {group.length >= 1 ? (
                 <div>
-                  <h2 className="text-xs font-medium text-slate-500 tracking-[0.2em] uppercase mb-2">
-                    規格
-                  </h2>
-                  <div className="space-y-2">
-                    {group.map((item, index) => {
-                      const label =
-                        item.variant || (group.length === 1 ? "單一規格" : `款式 ${index + 1}`);
-                      return (
-                        <label
-                          key={item.sku || item.id || index}
-                          className={[
-                            "flex items-center justify-between gap-3 rounded-xl border px-3 py-2 cursor-pointer",
-                            selectedSku === item.sku
-                              ? "border-slate-900 bg-slate-50"
-                              : "border-slate-200 bg-white hover:border-slate-900",
-                          ].join(" ")}
-                        >
-                          <span className="flex items-center gap-2 text-sm text-slate-700 min-w-0 flex-1">
-                            <input
-                              type="radio"
-                              name="variant"
-                              checked={selectedSku === item.sku}
-                              onChange={() => setSelectedSku(item.sku)}
-                            />
-                            {item.image ? (
-                              <span className="w-8 h-8 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
-                                <img
-                                  src={item.image}
-                                  alt={label}
-                                  className="w-full h-full object-contain"
-                                  loading="lazy"
+                  {useTwoTier && variantDims ? (
+                    <>
+                      <h2 className="text-xs font-medium text-slate-500 tracking-[0.2em] uppercase mb-3">
+                        請選擇規格
+                      </h2>
+                      <VariantTwoTierPicker
+                        variantDims={variantDims}
+                        group={group}
+                        selectedDims={selectedDims}
+                        onPickDim={onPickDim}
+                        rate={rate}
+                      />
+                      {selectedItem ? (
+                        <p className="text-xs text-slate-500 mt-3 pt-3 border-t border-slate-100">
+                          已選：<span className="text-slate-800 font-medium">{selectedItem.variant}</span>
+                          {getDisplayPrice(selectedItem, rate) ? (
+                            <span className="ml-2">{getDisplayPrice(selectedItem, rate)}</span>
+                          ) : null}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="text-xs font-medium text-slate-500 tracking-[0.2em] uppercase mb-2">
+                        規格
+                      </h2>
+                      <div className="space-y-2">
+                        {group.map((item, index) => {
+                          const label =
+                            item.variant || (group.length === 1 ? "單一規格" : `款式 ${index + 1}`);
+                          return (
+                            <label
+                              key={item.sku || item.id || index}
+                              className={[
+                                "flex items-center justify-between gap-3 rounded-xl border px-3 py-2 cursor-pointer",
+                                selectedSku === item.sku
+                                  ? "border-slate-900 bg-slate-50"
+                                  : "border-slate-200 bg-white hover:border-slate-900",
+                              ].join(" ")}
+                            >
+                              <span className="flex items-center gap-2 text-sm text-slate-700 min-w-0 flex-1">
+                                <input
+                                  type="radio"
+                                  name="variant"
+                                  checked={selectedSku === item.sku}
+                                  onChange={() => setSelectedSku(item.sku)}
                                 />
+                                {item.image ? (
+                                  <span className="w-8 h-8 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
+                                    <img
+                                      src={item.image}
+                                      alt={label}
+                                      className="w-full h-full object-contain"
+                                      loading="lazy"
+                                    />
+                                  </span>
+                                ) : null}
+                                <span className="inline-block text-left" style={{ writingMode: "horizontal-tb" }}>{label}</span>
                               </span>
-                            ) : null}
-                            <span className="inline-block text-left" style={{ writingMode: "horizontal-tb" }}>{label}</span>
-                          </span>
-                          <span className="text-xs text-slate-500 shrink-0">
-                            {getDisplayPrice(item, rate) || ""}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
+                              <span className="text-xs text-slate-500 shrink-0">
+                                {getDisplayPrice(item, rate) || ""}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : null}
 
