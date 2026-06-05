@@ -2664,7 +2664,12 @@ function PointsPage() {
             </p>
           ) : null}
           {balance === 0 ? (
-            <p className="text-sm text-neutral-600">{result.message || "目前尚無可用紅利點數"}</p>
+            <div className="text-sm text-neutral-600 space-y-2">
+              <p>{result.message || "目前尚無可用紅利點數"}</p>
+              <p className="text-xs text-neutral-500">
+                若後台已有點數卻顯示 0，請到後台「紅利點數」按<strong>同步至試算表</strong>，並確認姓名與訂單完全一致。
+              </p>
+            </div>
           ) : (
             <p className="text-sm text-neutral-600">下次下單時可於 LINE 告知要使用幾點折抵。</p>
           )}
