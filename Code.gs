@@ -1325,17 +1325,21 @@ function getActiveLotsForCustomer_(ledger, customerName) {
   return lots;
 }
 
-function getPointsBalancePublic_(params) {
-  var card = normalizeMemberCardNo_(params.card || params.memberCardNo || params["會員卡號"] || "");
-  if (!isValidMemberCardNo_(card)) {
-    return { error: true, message: "請輸入 13 碼會員卡號" };
-  }
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var pointsSheet = getPointsSheet(ss);
-  if (!pointsSheet) {
-    return { error: true, message: "找不到紅利紀錄工作表" };
-  }
-  var ledger = getPointsLedger(pointsSheet);
+/** 顧客端查詢：從 GET 參數解析 13 碼卡號（支援 card / memberCardNo / 誤填在 name 欄） */
+function resolvePublicMemberCardParam_(params) {
+  params = params || {};
+  var direct = normalizeMemberCardNo_(
+    params.card || params.memberCardNo || params["會員卡號"] || ""
+  );
+  if (isValidMemberCardNo_(direct)) return direct;
+  var fromText = normalizeMemberCardNo_(
+    params.name || params.customerName || params["姓名"] || ""
+  );
+  if (isValidMemberCardNo_(fromText)) return fromText;
+  return "";
+}
+
+function buildPointsBalanceResult_(ledger, card) {
   var lots = getActiveLotsForMemberCard_(ledger, card);
   var balance = 0;
   for (var j = 0; j < lots.length; j++) {
@@ -1363,6 +1367,55 @@ function getPointsBalancePublic_(params) {
     },
     message: balance > 0 ? "OK" : "目前尚無可用紅利點數"
   };
+}
+
+function getPointsBalancePublic_(params) {
+  params = params || {};
+  var card = resolvePublicMemberCardParam_(params);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pointsSheet = getPointsSheet(ss);
+  if (!pointsSheet) {
+    return { error: true, message: "找不到紅利紀錄工作表" };
+  }
+  var ledger = getPointsLedger(pointsSheet);
+  if (isValidMemberCardNo_(card)) {
+    return buildPointsBalanceResult_(ledger, card);
+  }
+  // 舊版相容：僅姓名查詢（無卡號的舊紀錄）
+  var legacyName = normalizeCustomerNameForPoints_(
+    params.name || params.customerName || params["姓名"] || ""
+  );
+  if (legacyName.length >= 2) {
+    var nameLots = getActiveLotsForCustomer_(ledger, legacyName);
+    var nameBalance = 0;
+    for (var i = 0; i < nameLots.length; i++) {
+      nameBalance += Number(nameLots[i].remaining) || 0;
+    }
+    var nameNextExpireDate = "";
+    var nameNextExpirePoints = 0;
+    if (nameLots.length > 0) {
+      nameNextExpireDate = nameLots[0].expireDate || "";
+      nameNextExpirePoints = Number(nameLots[0].remaining) || 0;
+    }
+    return {
+      error: false,
+      memberCardNo: "",
+      customerName: legacyName,
+      balance: nameBalance,
+      pointValue: 1,
+      discountAmount: nameBalance,
+      nextExpireDate: nameNextExpireDate,
+      nextExpirePoints: nameNextExpirePoints,
+      rules: {
+        spendPerPoint: 100,
+        pointValue: 1,
+        expireDays: 365,
+        minRedeemNet: 199
+      },
+      message: nameBalance > 0 ? "OK" : "目前尚無可用紅利點數"
+    };
+  }
+  return { error: true, message: "請輸入 13 碼會員卡號" };
 }
 
 function orderMatchesMemberCard_(order, memberCardNo) {
@@ -1436,7 +1489,8 @@ function sanitizePublicOrder_(ord) {
 }
 
 function getCustomerOrdersPublic_(params) {
-  var card = normalizeMemberCardNo_(params.card || params.memberCardNo || params["會員卡號"] || "");
+  params = params || {};
+  var card = resolvePublicMemberCardParam_(params);
   if (!isValidMemberCardNo_(card)) {
     return { error: true, message: "請輸入 13 碼會員卡號" };
   }
