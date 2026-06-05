@@ -6256,22 +6256,37 @@
             ".pdf-date-row{display:flex;align-items:center;margin:6px 0;} .pdf-date-row:first-child{margin-top:0;} .pdf-date-row:last-child{margin-bottom:0;} .pdf-date-row .label{color:#64748b;font-size:15px;flex:0 0 auto;width:4.5em;} .pdf-date-row .value{font-weight:600;font-size:17px;flex:1;min-width:0;text-align:right;} " +
             "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:5px;margin:0 0 6px 0;} h2{font-size:14px;margin:12px 0 6px 0;} .row{margin:5px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:1px;font-size:15px;} " +
             ".pdf-title-box{display:block;background:#4b5563;color:#ffffff;border-radius:4px;padding:10px 14px;font-size:22px;font-weight:700;letter-spacing:1px;margin:0 0 10px 0;} " +
-            "table{width:100%;border-collapse:collapse;margin:8px 0;page-break-inside:avoid;} th,td{border:1px solid #e2e8f0;padding:6px;text-align:left;font-size:14px;} th{background:#f1f5f9;} " +
+            "table{width:100%;border-collapse:collapse;margin:8px 0;} table th,table td{border:1px solid #e2e8f0;padding:6px;text-align:left;font-size:14px;} table th{background:#f1f5f9;} " +
+            "table.pdf-items-table{page-break-inside:auto;} table.pdf-items-table tr{page-break-inside:avoid;break-inside:avoid;} " +
+            "table.pdf-amount-table,.pdf-amount-block{page-break-inside:avoid;break-inside:avoid;} " +
             ".pdf-deposit-box{border:2px solid #64748b;border-radius:6px;padding:10px 12px;margin-top:6px;min-height:1.2em;background:#f8fafc;white-space:pre-wrap;font-size:15px;line-height:1.55;page-break-inside:auto;} " +
-            ".pdf-page-deposit{page-break-before:always;break-before:page;padding-top:0;} " +
+            ".pdf-page-deposit{page-break-before:always;break-before:page;padding-top:0;} .pdf-page-deposit h2{page-break-after:avoid;break-after:avoid;} " +
+            ".pdf-page-deposit-inline{margin-top:8px;} " +
             ".pdf-two-cols{display:flex;gap:12px;margin-top:6px;flex-wrap:nowrap;} .pdf-two-cols .pdf-col{flex:1;min-width:0;} " +
-            ".pdf-page-footer{position:fixed;bottom:6mm;left:0;right:0;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 12mm;font-size:12px;color:#000;z-index:9999;} " +
-            ".pdf-page-num{justify-self:center;text-align:center;} .pdf-page-num::after{content:'第 ' counter(page) ' 頁 共 ' counter(pages) ' 頁';} " +
-            ".pdf-printed-at{justify-self:end;text-align:right;white-space:nowrap;} " +
-            ".total{font-size:16px;font-weight:bold;margin-top:12px;}";
+            ".pdf-page-footer-center{display:none;} " +
+            ".pdf-page-footer{position:fixed;bottom:6mm;right:12mm;left:auto;font-size:12px;color:#000;z-index:9999;} " +
+            ".pdf-printed-at{text-align:right;white-space:nowrap;} " +
+            ".total{font-size:16px;font-weight:bold;margin-top:12px;} " +
+            "@media print{" +
+            ".pdf-page-footer-center{display:block;position:fixed;bottom:6mm;left:0;right:0;width:100%;text-align:center;font-size:12px;color:#000;pointer-events:none;}" +
+            ".pdf-page-footer-center::after{content:'第 ' counter(page) ' 頁 共 ' counter(pages) ' 頁';}" +
+            "}";
+        }
+
+        function orderPdfHasDepositContent_(innerHtml) {
+          if (innerHtml == null) return false;
+          var t = String(innerHtml).replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
+          return t !== "" && t !== "—" && t !== "-";
         }
 
         function buildOrderPdfFooterHtml_(printedAtStr) {
-          return "<div class=\"pdf-page-footer\"><span aria-hidden=\"true\"></span><span class=\"pdf-page-num\" aria-label=\"頁碼\"></span><span class=\"pdf-printed-at\">印單時間：" + escapeHtml(printedAtStr) + "</span></div>";
+          return "<div class=\"pdf-page-footer-center\" aria-hidden=\"true\"></div>" +
+            "<div class=\"pdf-page-footer\"><span class=\"pdf-printed-at\">印單時間：" + escapeHtml(printedAtStr) + "</span></div>";
         }
 
         function buildOrderPdfDepositPageHtml_(innerHtml) {
-          return "<div class=\"pdf-page-deposit\"><h2>收訂金歷程記錄</h2><div class=\"pdf-deposit-box\">" + innerHtml + "</div></div>";
+          var pageCls = orderPdfHasDepositContent_(innerHtml) ? "pdf-page-deposit" : "pdf-page-deposit-inline";
+          return "<div class=\"" + pageCls + "\"><h2>收訂金歷程記錄</h2><div class=\"pdf-deposit-box\">" + innerHtml + "</div></div>";
         }
 
         function buildOrderPdfHtml_(ord, itemsForPdf, shipmentBatch, options) {
@@ -6283,7 +6298,7 @@
             var itemsTitle = batchNum != null
               ? "本次出貨商品（出貨第 " + escapeHtml(String(batchNum)) + " 次）"
               : "購買商品";
-            itemsRows = "<h2 style=\"font-size:14px;margin-top:12px;margin-bottom:6px;\">" + itemsTitle + "</h2><table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
+            itemsRows = "<h2 style=\"font-size:14px;margin-top:12px;margin-bottom:6px;\">" + itemsTitle + "</h2><table class=\"pdf-items-table\"><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
             for (var i = 0; i < itemsForPdf.length; i++) {
               var it = itemsForPdf[i];
               var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
@@ -6370,8 +6385,8 @@
             "<div class=\"row\"><span class=\"label\">地址</span><div class=\"value\">" + escapeHtml(ord.address || "") + "</div></div></div>" +
             "</div>" +
             itemsRows +
-            "<h2>金額</h2>" +
-            "<table><tr><th>項目</th><th>金額</th></tr>" +
+            "<div class=\"pdf-amount-block\"><h2>金額</h2>" +
+            "<table class=\"pdf-amount-table\"><tr><th>項目</th><th>金額</th></tr>" +
             "<tr><td>商品小計</td><td>NT$ " + (ord.subtotal != null ? ord.subtotal : 0) + "</td></tr>" +
             "<tr><td>折扣</td><td>- NT$ " + (ord.discount != null ? ord.discount : 0) + "</td></tr>" +
             pdfPointsRows +
@@ -6379,6 +6394,7 @@
             ((ord.shippingStatus != null && String(ord.shippingStatus).trim() !== "") ? "<tr><td>運費折抵</td><td>- NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "（" + escapeHtml(String(ord.shippingStatus).trim()) + "）</td></tr>" : "") +
             pdfAmountCloseRows +
             (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(displayRemark) + "</div></div>" : "") +
+            "</div>" +
             buildOrderPdfDepositPageHtml_(depositInner) +
             buildOrderPdfFooterHtml_(printedAtStr) +
             "</body></html>";
@@ -6414,7 +6430,7 @@
             itemsByOrder.forEach(function(entry) {
               var oid = normalizeOrderIdToken_(entry.ord && entry.ord.id);
               itemsRows += "<h3 style=\"font-size:13px;margin:10px 0 4px;color:#475569;\">" + escapeHtml(oid) + "</h3>";
-              itemsRows += "<table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
+              itemsRows += "<table class=\"pdf-items-table\"><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
               (entry.items || []).forEach(function(it) {
                 var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
                 var qty = (it.qty != null && !isNaN(it.qty)) ? Number(it.qty) : 0;
@@ -6513,14 +6529,15 @@
             "<div class=\"row\"><span class=\"label\">地址</span><div class=\"value\">" + escapeHtml(masterOrd.address || "") + "</div></div></div>" +
             "</div>" +
             itemsRows +
-            "<h2>金額（併箱合計）</h2>" +
-            "<table><tr><th>項目</th><th>金額</th></tr>" +
+            "<div class=\"pdf-amount-block\"><h2>金額（併箱合計）</h2>" +
+            "<table class=\"pdf-amount-table\"><tr><th>項目</th><th>金額</th></tr>" +
             subtotalRows +
             (orderGroup.length > 1 ? ("<tr><td><strong>商品小計合計</strong></td><td><strong>NT$ " + sumSubtotal + "</strong></td></tr>") : ("<tr><td>商品小計</td><td>NT$ " + sumSubtotal + "</td></tr>")) +
             "<tr><td>折扣合計</td><td>- NT$ " + sumDiscount + "</td></tr>" +
             pdfPointsRows +
             "<tr><td>" + shipLabel + "</td><td>" + shipCell + "</td></tr>" +
             pdfAmountCloseRows +
+            "</div>" +
             buildOrderPdfDepositPageHtml_(depositInnerCombine) +
             buildOrderPdfFooterHtml_(printedAtStr) +
             "</body></html>";
@@ -6613,7 +6630,7 @@
             w.document.write(html);
             w.document.close();
             w.focus();
-            setTimeout(function() { w.print(); }, 300);
+            setTimeout(function() { w.print(); }, 500);
             return true;
           } catch (err) {
             try { w.close(); } catch (e2) {}
