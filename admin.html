@@ -430,6 +430,9 @@
         <div class="rounded-xl border border-slate-200 bg-white p-5 mb-6">
           <h3 class="text-sm font-semibold text-slate-800 mb-3">發點時機</h3>
           <p class="text-sm text-slate-600">訂單狀態改為 <strong>已確認</strong> 或 <strong>已完成</strong> 時，依<strong>客戶姓名</strong>自動發放／折抵紅利（每筆訂單僅處理一次）。</p>
+          <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+            <strong>顧客官網查點數</strong>是讀取試算表「紅利紀錄」。後台發點後請按右上角 <strong>同步至試算表</strong>，顧客頁才會顯示相同餘額。
+          </p>
           <div class="flex flex-wrap gap-2 mt-3">
             <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理已完成訂單紅利</button>
             <button type="button" id="btnLoyaltyExpireAll" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">執行到期失效檢查</button>
@@ -3874,7 +3877,13 @@
               if (typeof window.showLoyaltyMessage === "function") window.showLoyaltyMessage(result.message);
             }
             if (typeof window.syncPointsLedgerToSheet === "function") {
-              window.syncPointsLedgerToSheet().catch(function() {});
+              window.syncPointsLedgerToSheet().then(function() {
+                if (typeof window.showLoyaltyMessage === "function") window.showLoyaltyMessage("紅利已同步至試算表，顧客頁可查詢");
+              }).catch(function(syncErr) {
+                if (typeof window.showLoyaltyMessage === "function") {
+                  window.showLoyaltyMessage("紅利已處理，但同步試算表失敗：" + (syncErr.message || "請按「同步至試算表」"), true);
+                }
+              });
             }
             if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
             return result.order;

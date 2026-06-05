@@ -1038,6 +1038,30 @@ function buildRowFromPointRecord_(sheet, rec) {
   return row;
 }
 
+function normalizeSheetDateValue_(val) {
+  if (val == null || val === "") return "";
+  if (Object.prototype.toString.call(val) === "[object Date]" && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd");
+  }
+  var s = String(val).trim();
+  var m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) {
+    return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
+  }
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function normalizePointLedgerRecord_(obj) {
+  if (!obj) return obj;
+  if (obj.date != null && obj.date !== "") obj.date = normalizeSheetDateValue_(obj.date);
+  if (obj.expireDate != null && obj.expireDate !== "") obj.expireDate = normalizeSheetDateValue_(obj.expireDate);
+  if (obj.customerName != null) obj.customerName = String(obj.customerName).trim();
+  if (obj.type != null) obj.type = String(obj.type).trim();
+  if (obj.remaining != null && obj.remaining !== "") obj.remaining = Number(obj.remaining);
+  if (obj.points != null && obj.points !== "") obj.points = Number(obj.points);
+  return obj;
+}
+
 function getPointsLedger(sheet) {
   ensurePointsHeaderRow_(sheet);
   var data = sheet.getDataRange().getValues();
@@ -1058,7 +1082,7 @@ function getPointsLedger(sheet) {
       empty = false;
     }
     if (empty || !obj.id) continue;
-    list.push(obj);
+    list.push(normalizePointLedgerRecord_(obj));
   }
   return list;
 }
@@ -1107,24 +1131,28 @@ function recordMatchesCustomerForPoints_(rec, customerName) {
   return normalizeCustomerNameForPoints_(getPointRecordCustomerName_(rec)) === n;
 }
 
+function isActivePointLot_(rec, today) {
+  var type = (rec.type || "").toString().trim();
+  if (type !== "發放" && type !== "調整") return false;
+  var remaining = Number(rec.remaining);
+  if (!remaining || remaining <= 0 || isNaN(remaining)) return false;
+  var exp = normalizeSheetDateValue_(rec.expireDate);
+  if (!exp) return true;
+  return exp >= today;
+}
+
 function getActiveLotsForCustomer_(ledger, customerName) {
   var today = todayStrForPoints_();
   var lots = [];
   for (var i = 0; i < ledger.length; i++) {
     var rec = ledger[i];
-    var type = (rec.type || "").toString().trim();
-    if (type !== "發放") continue;
     if (!recordMatchesCustomerForPoints_(rec, customerName)) continue;
-    var remaining = Number(rec.remaining);
-    if (!remaining || remaining <= 0 || isNaN(remaining)) continue;
-    var exp = rec.expireDate != null ? String(rec.expireDate).slice(0, 10) : "";
-    if (!exp || exp >= today) {
-      lots.push({
-        date: rec.date != null ? String(rec.date) : "",
-        remaining: remaining,
-        expireDate: exp
-      });
-    }
+    if (!isActivePointLot_(rec, today)) continue;
+    lots.push({
+      date: rec.date != null ? normalizeSheetDateValue_(rec.date) : "",
+      remaining: Number(rec.remaining) || 0,
+      expireDate: normalizeSheetDateValue_(rec.expireDate)
+    });
   }
   lots.sort(function(a, b) {
     return String(a.date || "").localeCompare(String(b.date || ""));
