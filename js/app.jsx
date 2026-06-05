@@ -376,12 +376,23 @@ function getApiBaseUrl() {
 function buildPointsBalanceUrl(memberCardNo) {
   const base = getApiBaseUrl();
   const sep = base.indexOf("?") >= 0 ? "&" : "?";
+  const card = normalizeMemberCardInput(memberCardNo);
   const q =
     "action=points_balance&card=" +
-    encodeURIComponent(normalizeMemberCardInput(memberCardNo)) +
+    encodeURIComponent(card) +
+    "&memberCardNo=" +
+    encodeURIComponent(card) +
     "&_t=" +
     Date.now();
   return base + sep + q;
+}
+
+function parsePointsApiErrorMessage(data) {
+  const msg = (data && data.message) ? String(data.message) : "查詢失敗";
+  if (/至少.*姓名|客戶姓名/.test(msg)) {
+    return "查詢服務尚未更新為會員卡號模式。請聯絡店家重新部署試算表 API（Code.gs），或稍後再試。";
+  }
+  return msg;
 }
 
 async function fetchPointsBalance(memberCardNo) {
@@ -400,7 +411,7 @@ async function fetchPointsBalance(memberCardNo) {
         throw new Error("API 回傳 HTML，請確認 Code.gs 已重新部署");
       }
       const data = JSON.parse(text);
-      if (data && data.error) throw new Error(data.message || "查詢失敗");
+      if (data && data.error) throw new Error(parsePointsApiErrorMessage(data));
       return data;
     } catch (err) {
       lastError = err;
@@ -413,9 +424,12 @@ async function fetchPointsBalance(memberCardNo) {
 function buildCustomerOrdersUrl(memberCardNo) {
   const base = getApiBaseUrl();
   const sep = base.indexOf("?") >= 0 ? "&" : "?";
+  const card = normalizeMemberCardInput(memberCardNo);
   const q =
     "action=customer_orders&card=" +
-    encodeURIComponent(normalizeMemberCardInput(memberCardNo)) +
+    encodeURIComponent(card) +
+    "&memberCardNo=" +
+    encodeURIComponent(card) +
     "&_t=" +
     Date.now();
   return base + sep + q;
@@ -437,7 +451,7 @@ async function fetchCustomerOrders(memberCardNo) {
         throw new Error("API 回傳 HTML，請確認 Code.gs 已重新部署");
       }
       const data = JSON.parse(text);
-      if (data && data.error) throw new Error(data.message || "查詢失敗");
+      if (data && data.error) throw new Error(parsePointsApiErrorMessage(data));
       return data;
     } catch (err) {
       lastError = err;
@@ -3195,9 +3209,9 @@ function PointsPage() {
 
       <div className="mt-6 rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-600 space-y-2">
         <p className="font-medium text-neutral-800">集點規則</p>
-        <ul className="list-disc list-inside space-y-1 text-xs sm:text-sm">
-          <li>消費滿 NT$100 集 1 點（依商品小計 − 折扣 − 紅利計算，不含運費與預購訂金）</li>
-          <li>1 點可折抵 NT$1（商品淨額須滿 NT$199 才可折抵）</li>
+        <ul className="list-none space-y-2 text-xs sm:text-sm">
+          <li>消費滿 NT$100 集 1 點（不含運費）</li>
+          <li>1 點可折抵 NT$1（下一次消費須滿 NT$199 才可折抵）</li>
           <li>點數自發放日起 365 天內有效</li>
         </ul>
       </div>
