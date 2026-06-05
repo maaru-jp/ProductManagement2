@@ -786,6 +786,72 @@ const CATEGORY_MENU = [
   },
 ];
 
+function subcategorySortKey(label) {
+  const normalized = normalizeSubcategoryLabel(label);
+  const m = normalized.match(/^(\d{4})年(\d{1,2})月$/);
+  if (m) return parseInt(m[1], 10) * 100 + parseInt(m[2], 10);
+  return null;
+}
+
+/** 月份子分類統一為 YYYY年MM月，避免 4月 / 04月 對不上 */
+function normalizeSubcategoryLabel(label) {
+  const t = String(label ?? "").trim();
+  const m = t.match(/^(\d{4})年(\d{1,2})月$/);
+  if (m) {
+    const month = parseInt(m[2], 10);
+    if (month >= 1 && month <= 12) {
+      return `${m[1]}年${String(month).padStart(2, "0")}月`;
+    }
+  }
+  return t;
+}
+
+function subcategoriesMatch(a, b) {
+  return normalizeSubcategoryLabel(a) === normalizeSubcategoryLabel(b);
+}
+
+function sortSubcategoryLabels(labels) {
+  return labels.slice().sort((a, b) => {
+    const pa = subcategorySortKey(a);
+    const pb = subcategorySortKey(b);
+    if (pa != null && pb != null) return pb - pa;
+    if (pa != null) return -1;
+    if (pb != null) return 1;
+    return a.localeCompare(b, "zh-Hant");
+  });
+}
+
+/** 合併試算表子分類，新增月份無需再改程式 */
+function buildCategoryMenu(products) {
+  const subsByCategory = new Map();
+  for (const p of products || []) {
+    const cat = (p?.category ?? p?.分類 ?? "").toString().trim();
+    const sub = normalizeSubcategoryLabel(p?.subcategory ?? p?.子分類 ?? "");
+    if (!cat || !sub) continue;
+    if (!subsByCategory.has(cat)) subsByCategory.set(cat, new Set());
+    subsByCategory.get(cat).add(sub);
+  }
+
+  return CATEGORY_MENU.map((item) => {
+    const staticSubs = (item.children || [])
+      .map((c) => (typeof c === "string" ? c : c.value || c.label || ""))
+      .filter(Boolean);
+    const fromProducts = subsByCategory.has(item.value)
+      ? Array.from(subsByCategory.get(item.value))
+      : [];
+    const merged = sortSubcategoryLabels(Array.from(new Set([...staticSubs, ...fromProducts])));
+    if (!merged.length) return { ...item, children: item.children || [] };
+    return {
+      ...item,
+      children: merged.map((v) => ({ label: v, value: v })),
+    };
+  });
+}
+
+function getKnownCategoryValues() {
+  return CATEGORY_MENU.map((item) => item.value).filter(Boolean);
+}
+
 // 商品款式角色（點擊後列出該角色所有商品）
 const CHARACTER_LIST = [
   { value: "", label: "全部" },
@@ -830,10 +896,11 @@ const STORE_CATEGORIES = [
   "使用者指南",
 ];
 
-function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate, selectedCharacter = "", characterImages = {} }) {
+function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavigate, selectedCharacter = "", characterImages = {}, products = [] }) {
   const searchRef = React.useRef(null);
   const characterCarouselRef = React.useRef(null);
   const [expandedStoreKey, setExpandedStoreKey] = React.useState(null);
+  const menu = React.useMemo(() => buildCategoryMenu(products), [products]);
 
   React.useEffect(() => {
     if (open && searchRef.current) searchRef.current.focus();
@@ -1002,7 +1069,7 @@ function CategorySidebar({ open, onClose, searchKeyword, onSearchChange, onNavig
                   <span className="text-slate-400">›</span>
                 </button>
               </div>
-              {CATEGORY_MENU.map((item) => {
+              {menu.map((item) => {
                 const label = item.label;
                 const value = item.value;
                 const children = item.children || [];
@@ -1338,6 +1405,7 @@ function PromoBanner({ onDismiss, visible }) {
 
 function ShopSidebar({ products, activeCategory, activeSubcategory, newTodayActive, onNavigate }) {
   const [expandedKey, setExpandedKey] = React.useState(activeCategory || null);
+  const menu = React.useMemo(() => buildCategoryMenu(products), [products]);
 
   React.useEffect(() => {
     if (activeCategory) setExpandedKey(activeCategory);
@@ -1381,7 +1449,7 @@ function ShopSidebar({ products, activeCategory, activeSubcategory, newTodayActi
         >
           全部商品
         </button>
-        {CATEGORY_MENU.map((item) => {
+        {menu.map((item) => {
           const isActive = activeCategory === item.value && !newTodayActive;
           const isExpanded = expandedKey === item.value;
           const hasChildren = item.children && item.children.length > 0;
@@ -1408,7 +1476,7 @@ function ShopSidebar({ products, activeCategory, activeSubcategory, newTodayActi
                         onClick={() => onNavigate("/?category=" + encodeURIComponent(item.value) + "&subcategory=" + encodeURIComponent(sub.value))}
                         className={[
                           "block w-full text-left py-1.5 px-2 rounded-md text-xs",
-                          activeSubcategory === sub.value ? "text-neutral-900 font-medium bg-neutral-100" : "text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50",
+                          subcategoriesMatch(activeSubcategory, sub.value) ? "text-neutral-900 font-medium bg-neutral-100" : "text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50",
                         ].join(" ")}
                       >
                         {sub.label}
@@ -1604,9 +1672,9 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   }, [sortMode]);
 
   const categories = React.useMemo(() => {
-    const set = new Set();
+    const set = new Set(getKnownCategoryValues());
     for (const p of products) {
-      const c = (p?.category || "").trim();
+      const c = (p?.category ?? p?.分類 ?? "").toString().trim();
       if (c) set.add(c);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-Hant"));
@@ -1659,8 +1727,8 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
       );
     }
     if (subcategoryFromUrl) {
-      result = result.filter(
-        (p) => (p?.subcategory ?? p?.子分類 ?? "").toString().trim() === subcategoryFromUrl
+      result = result.filter((p) =>
+        subcategoriesMatch(p?.subcategory ?? p?.子分類 ?? "", subcategoryFromUrl)
       );
     }
 
@@ -2602,6 +2670,7 @@ function App() {
         onNavigate={handleMenuNavigate}
         selectedCharacter={homeParams.character || ""}
         characterImages={characterImages}
+        products={products}
       />
       {route.name === "home" ? (
         <div className="flex-1 w-full max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 flex gap-6 lg:gap-8">
