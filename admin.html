@@ -1049,7 +1049,7 @@
             <label class="block text-xs font-medium text-slate-700 mb-1">規格與款式</label>
             <div class="rounded-lg border border-amber-200 bg-amber-50/70 p-3 mb-3 space-y-2">
               <p class="text-xs font-semibold text-amber-900">各規格可設不同台幣售價</p>
-              <p class="text-[11px] text-amber-900/80 leading-relaxed">例：吊飾娃 350 元、手機鍊 280 元。在下方每列<strong>黃色「台幣售價」</strong>欄填寫；留空則沿用本表單的台幣售價。</p>
+              <p class="text-[11px] text-amber-900/80 leading-relaxed"><strong>品項不用填價格。</strong>請用下方「批次套用」（例：吊飾娃 → 350），或於各規格列<strong>黃色售價</strong>欄填寫；留空則沿用表單台幣售價。</p>
               <div class="flex flex-wrap gap-2 items-end pt-1">
                 <div class="min-w-[120px] flex-1">
                   <label class="text-[10px] font-medium text-amber-800 block mb-0.5">批次：規格名稱含</label>
@@ -1062,7 +1062,7 @@
                 <button type="button" id="btnApplyBatchVariantPrice" class="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-medium hover:bg-amber-600 shrink-0">套用到符合規格</button>
               </div>
               <div id="variantDimPricePanel" class="hidden space-y-1.5 pt-2 border-t border-amber-200/80"></div>
-              <p class="text-[10px] text-amber-800/70">提示：請先按下方「自動生成規格組合」，再按套用；或填好各選項售價後直接按套用（會自動生成再帶入）。</p>
+              <p class="text-[10px] text-amber-800/70">提示：請先按「自動生成規格組合」，再用批次套用帶入各品項售價（會套到該品項下所有角色款式）。</p>
             </div>
             <div class="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3 space-y-2">
               <div class="flex flex-wrap items-center justify-between gap-2">
@@ -3314,6 +3314,7 @@
         var seen = {};
         var dims = collectVariantDims_();
         dims.forEach(function(dim) {
+          if (isItemTypeDimLabel_(dim.label)) return;
           (dim.options || []).forEach(function(opt) {
             if (map[opt] && !seen[opt]) {
               seen[opt] = true;
@@ -3327,30 +3328,15 @@
         return ordered;
       }
 
+      function isItemTypeDimLabel_(label) {
+        return /品項|類型|種類|類別/.test(String(label || "").trim());
+      }
+
       function updateVariantDimPricePanel_() {
         var panel = document.getElementById("variantDimPricePanel");
         if (!panel) return;
-        var dims = collectVariantDims_();
-        var prev = readDimOptionPriceMap_();
-        var blocks = dims.filter(function(d) { return d.options && d.options.length; }).map(function(dim) {
-          var label = dim.label || "選項";
-          var rows = dim.options.map(function(opt) {
-            var pv = prev[opt] || "";
-            return "<div class=\"dim-option-price-row flex flex-wrap items-center gap-2\" data-option=\"" + escapeAttr(opt) + "\">" +
-              "<span class=\"text-xs text-amber-900 min-w-[4.5rem] shrink-0 truncate\" title=\"" + escapeAttr(opt) + "\">" + escapeHtml(opt) + "</span>" +
-              "<span class=\"text-[10px] text-amber-700\">NT$</span>" +
-              "<input type=\"number\" class=\"dim-option-price w-24 rounded-lg border border-amber-200 bg-white px-2 py-1 text-sm variant-price\" min=\"0\" step=\"1\" placeholder=\"售價\" value=\"" + escapeAttr(pv) + "\" />" +
-              "</div>";
-          }).join("");
-          return "<div class=\"space-y-1\"><p class=\"text-[10px] font-medium text-amber-800\">「" + escapeHtml(label) + "」各選項售價</p>" + rows + "</div>";
-        });
-        if (!blocks.length) {
-          panel.innerHTML = "";
-          panel.classList.add("hidden");
-          return;
-        }
-        panel.classList.remove("hidden");
-        panel.innerHTML = "<p class=\"text-[10px] text-amber-800/80 mb-1\">填好售價後按「套用到符合規格」，會帶入所有含該選項的款式組合</p>" + blocks.join("");
+        panel.innerHTML = "";
+        panel.classList.add("hidden");
       }
 
       function variantNameMatchesOption_(name, optionKey) {
@@ -3370,7 +3356,7 @@
 
         var matchOrder = buildDimOptionPriceOrder_(map);
         if (!matchOrder.length) {
-          if (!silent) showMessage("請在「各選項定價」填寫售價，或於上方批次欄輸入關鍵字與售價", true);
+          if (!silent) showMessage("請於上方批次欄輸入關鍵字與售價（例：吊飾娃 / 350），或於各規格列填黃色售價", true);
           return 0;
         }
 
