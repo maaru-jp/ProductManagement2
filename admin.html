@@ -372,6 +372,9 @@
           <button type="button" id="btnExportOrders" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
             匯出 CSV
           </button>
+          <button type="button" id="btnSyncOrdersSheet" class="px-4 py-2 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-900 text-sm hover:bg-emerald-100" title="將本機全部訂單寫入試算表「歷史訂單」">
+            同步全部至試算表
+          </button>
           <div class="flex-1 flex items-center gap-2 min-w-0 justify-end">
             <input type="text" id="orderSearchInput" placeholder="搜尋訂單編號、客戶姓名、電話..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm pl-9" />
             <button type="button" id="btnOrderSearch" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm hover:bg-slate-50">搜尋</button>
@@ -1477,9 +1480,11 @@
   <script src="js/admin-loyalty.js"></script>
   <script>
     (function() {
-      // ※ 重要：請換成「您自己的」Google 試算表網頁應用程式 URL，否則後台無法寫入試算表、顧客頁也讀不到資料。
-      // 步驟：試算表 → 擴充功能 → Apps Script → 貼上 Code.gs → 部署 → 新增部署 → 網頁應用程式 →
-      // 執行身分「我」、誰可以存取「任何人」→ 部署 → 複製「網頁應用程式 URL」貼到下面兩行（READ 與 WRITE 用同一個 URL）。
+      // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
+      // 不可使用「訂單進度試算表」的 URL，否則改「已確認」不會寫入「歷史訂單」。
+      // 步驟：開啟 ProductManagement2 試算表 → 擴充功能 → Apps Script → 貼上 Code.gs →
+      // 部署 → 網頁應用程式（執行身分：我、存取：任何人）→ 複製 URL 貼到 API_BASE。
+      // 驗證：開啟 API_BASE?action=spreadsheet_info 應見 spreadsheetId 為 14dqpe... 且含 postRoutes。
       var isLocalHost = (
         window.location.hostname === "localhost" ||
         window.location.hostname === "127.0.0.1" ||
@@ -1491,6 +1496,7 @@
       var CORS_PROXY_PREFIX = "https://corsproxy.io/?";
       // 請與 Code.gs 的 CONFIG.adminWriteToken 設成相同字串
       var ADMIN_WRITE_TOKEN = "CHANGE_ME_TO_A_STRONG_TOKEN_2026";
+      var EXPECTED_SHOP_SPREADSHEET_ID = "14dqpeCDpKRA8_Ca2b5Phinh00ydPiaBh3MHKrVYMVOI";
 
       function fetchWrite(body) {
         var payload = Object.assign({}, body || {}, { token: ADMIN_WRITE_TOKEN });
@@ -4412,11 +4418,72 @@
           if (ORDER_LOCAL_ONLY) return Promise.resolve({ localOnly: true, message: "local only" });
           if (!ord || !ord.id) return Promise.resolve(null);
           return fetchWrite({ action: "order_upsert", order: ord })
-            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
+            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON（可能 API 未支援 order_upsert，請確認 GAS 部署在 ProductManagement2 試算表）" }; } }); })
             .then(function(res) {
               if (res && res.error) throw new Error(res.message || "寫入訂單失敗");
+              if (res.spreadsheetId && res.spreadsheetId !== EXPECTED_SHOP_SPREADSHEET_ID) {
+                throw new Error("API 綁定錯誤試算表（" + (res.spreadsheetName || res.spreadsheetId) + "），請改用 ProductManagement2 試算表部署的 GAS URL");
+              }
               return res;
             });
+        }
+
+        function verifyShopApiBinding_() {
+          var url = API_BASE + (API_BASE.indexOf("?") >= 0 ? "&" : "?") + "action=spreadsheet_info&_t=" + Date.now();
+          return fetch(url, { cache: "no-store" })
+            .then(function(r) { return r.json(); })
+            .then(function(meta) {
+              if (!meta || !meta.spreadsheetId) {
+                showOrderMessage("⚠ 無法辨識 API 試算表。請確認 GAS 已從 ProductManagement2 試算表部署，且 URL 貼在 admin.html 的 API_BASE。", true);
+                return false;
+              }
+              if (meta.spreadsheetId !== EXPECTED_SHOP_SPREADSHEET_ID) {
+                showOrderMessage("⚠ API 綁定在「" + (meta.spreadsheetName || meta.spreadsheetId) + "」，不是 ProductManagement2。訂單改「已確認」不會寫入「歷史訂單」。請改用 ProductManagement2 試算表（14dqpe...）部署的 GAS URL。", true);
+                return false;
+              }
+              if (!meta.postRoutes || meta.postRoutes.indexOf("order_upsert") < 0) {
+                showOrderMessage("⚠ 此 API 未啟用 order_upsert（可能部署錯誤專案）。請在 ProductManagement2 試算表貼最新 Code.gs 並重新部署。", true);
+                return false;
+              }
+              return true;
+            })
+            .catch(function() {
+              showOrderMessage("⚠ 無法連線 API，請檢查 API_BASE 與網路。", true);
+              return false;
+            });
+        }
+
+        function syncAllLocalOrdersToSheet() {
+          if (ORDER_LOCAL_ONLY) {
+            showOrderMessage("目前為本機模式，無法同步試算表", true);
+            return Promise.resolve();
+          }
+          if (!orders.length) {
+            showOrderMessage("沒有訂單可同步", true);
+            return Promise.resolve();
+          }
+          showOrderMessage("同步 " + orders.length + " 筆訂單至試算表「歷史訂單」…");
+          var chain = Promise.resolve();
+          var ok = 0;
+          var fail = 0;
+          orders.forEach(function(ord) {
+            chain = chain.then(function() {
+              return upsertOrderToSheet(ord).then(function(res) {
+                ok++;
+                return res;
+              }).catch(function() {
+                fail++;
+                return null;
+              });
+            });
+          });
+          return chain.then(function() {
+            if (fail > 0) {
+              showOrderMessage("同步完成：成功 " + ok + " 筆、失敗 " + fail + " 筆。若失敗請檢查 API 是否綁定 ProductManagement2 試算表。", true);
+            } else {
+              showOrderMessage("已同步 " + ok + " 筆訂單至試算表「歷史訂單」");
+            }
+          });
         }
 
         function deleteOrderFromSheet(id) {
@@ -5570,8 +5637,9 @@
                 saveOrders();
                 renderOrders();
                 selectEl.disabled = true;
-                upsertOrderToSheet(ord).then(function() {
-                  showOrderMessage("訂單狀態已寫入試算表");
+                upsertOrderToSheet(ord).then(function(res) {
+                  var sheetHint = (res && res.sheetName) ? ("「" + res.sheetName + "」") : "試算表";
+                  showOrderMessage("訂單狀態已寫入 " + sheetHint);
                 }).catch(function(err) {
                   showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
                 }).finally(function() {
@@ -6293,6 +6361,12 @@
         if (btnExportOrders) btnExportOrders.addEventListener("click", function() {
           exportOrdersCsvFromCurrentList();
         });
+        var btnSyncOrdersSheet = document.getElementById("btnSyncOrdersSheet");
+        if (btnSyncOrdersSheet) btnSyncOrdersSheet.addEventListener("click", function() {
+          verifyShopApiBinding_().then(function(ok) {
+            if (ok) return syncAllLocalOrdersToSheet();
+          });
+        });
         if (btnSaveOrders) {
           btnSaveOrders.disabled = false;
           btnSaveOrders.classList.remove("cursor-not-allowed", "bg-slate-100", "text-slate-400");
@@ -6315,7 +6389,10 @@
         renderOrders();
         processPendingLoyaltyOrders_(true);
         if (!ORDER_LOCAL_ONLY) {
-          loadOrdersFromSheet().catch(function() {
+          verifyShopApiBinding_().then(function(ok) {
+            if (!ok) return;
+            return loadOrdersFromSheet();
+          }).catch(function() {}).finally(function() {
             processPendingLoyaltyOrders_(true);
           });
         }

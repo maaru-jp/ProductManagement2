@@ -24,8 +24,11 @@ var CONFIG = {
   rateColumnName: "匯率",
   // 後台寫入驗證 token（請改成高強度字串，並與 admin.html 的 ADMIN_WRITE_TOKEN 一致）
   adminWriteToken: "CHANGE_ME_TO_A_STRONG_TOKEN_2026",
-  // 訂單工作表名稱（不存在會自動建立）
-  orderSheetName: "訂單",
+  // 訂單工作表：會員卡查詢與後台同步寫入「歷史訂單」（備援「訂單」）
+  orderSheetName: "歷史訂單",
+  orderSheetFallbackNames: ["訂單", "订单"],
+  // 此 GAS 必須部署在 ProductManagement2 試算表（後台寫入用，與訂單進度試算表不同）
+  spreadsheetId: "14dqpeCDpKRA8_Ca2b5Phinh00ydPiaBh3MHKrVYMVOI",
   // 顧客訂單進度查詢（五碼編號）優先讀此分頁，搭配「歷程」
   legacyProgressSheetName: "工作表1",
   legacyHistorySheetName: "歷程",
@@ -46,7 +49,9 @@ function doGet(e) {
         apiVersion: "2026-06-04-sheet1",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
-        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"]
+        orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
+        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"],
+        postRoutes: ["order_list", "order_upsert", "order_delete", "points_sync", "append", "update", "delete"]
       });
     }
     if (action === "points_balance") {
@@ -177,7 +182,10 @@ function doPost(e) {
         return jsonOutput(out);
       }
       upsertOrder(orderSheet, order);
-      out.message = "已寫入訂單 " + upId;
+      out.message = "已寫入訂單 " + upId + " →「" + orderSheet.getName() + "」";
+      out.sheetName = orderSheet.getName();
+      out.spreadsheetId = ss.getId();
+      out.spreadsheetName = ss.getName();
       return jsonOutput(out);
     }
 
@@ -269,37 +277,92 @@ function isAuthorizedPost_(body) {
   return actual === expected;
 }
 
+function isPointsLedgerSheetName_(name) {
+  var n = String(name || "").trim();
+  return n.indexOf("紅利") >= 0;
+}
+
+function isPointsLedgerHeaders_(headers) {
+  var h0 = String((headers && headers[0]) || "").trim();
+  return h0 === "紀錄ID" || (h0.indexOf("紀錄") >= 0 && h0.indexOf("訂單") < 0);
+}
+
+function isLikelyOrderSheetHeaders_(headers) {
+  headers = headers || [];
+  var h0 = String(headers[0] || "").trim();
+  if (h0 === "訂單編號") return true;
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").trim();
+    if (h.indexOf("品項") >= 0 || h === "小計" || h === "客戶姓名" || h === "待結清總金額") return true;
+  }
+  return false;
+}
+
+function sheetHasOrderIdHeader_(headers) {
+  for (var h = 0; h < (headers || []).length; h++) {
+    var t = String(headers[h] || "").trim();
+    if (t === "訂單編號" || t.indexOf("訂單編號") >= 0) return true;
+  }
+  return false;
+}
+
+function scoreOrderSheetCandidate_(sheet) {
+  if (!sheet) return -1;
+  var sname = String(sheet.getName() || "").trim();
+  if (isPointsLedgerSheetName_(sname)) return -1;
+  var headers = getOrderHeaders_(sheet);
+  if (isPointsLedgerHeaders_(headers)) return -1;
+  if (!sheetHasOrderIdHeader_(headers) && !isLikelyOrderSheetHeaders_(headers)) return -1;
+  var score = 0;
+  if (String(headers[0] || "").trim() === "訂單編號") score += 20;
+  if (isLikelyOrderSheetHeaders_(headers)) score += 10;
+  if (sname.indexOf("歷史") >= 0 && sname.indexOf("訂單") >= 0) score += 12;
+  if (sname === (CONFIG.orderSheetName || "歷史訂單")) score += 15;
+  if (sname.indexOf("訂單") >= 0 && sname.indexOf("紅利") < 0) score += 8;
+  score += Math.min(Math.max(0, sheet.getLastRow() - 1), 200);
+  return score;
+}
+
+/** 後台訂單讀寫分頁：優先「歷史訂單」，排除「紅利紀錄」 */
 function getOrderSheet(ss) {
-  var name = (CONFIG.orderSheetName || "訂單").toString().trim();
-  var sheet = ss.getSheetByName(name);
-  // 允許分頁名稱有前後空白或含「訂單」字樣
-  if (!sheet) {
-    var sheets = ss.getSheets();
-    for (var i = 0; i < sheets.length; i++) {
-      var s = sheets[i];
-      var n = (s.getName() || "").toString().trim();
-      if (n === name || n.indexOf("訂單") >= 0) {
-        sheet = s;
-        break;
-      }
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var preferred = [
+    (CONFIG.orderSheetName || "歷史訂單").toString().trim(),
+    "歷史訂單",
+    "历史订单"
+  ];
+  var fallbacks = CONFIG.orderSheetFallbackNames || ["訂單", "订单"];
+  for (var f = 0; f < fallbacks.length; f++) {
+    preferred.push(String(fallbacks[f] || "").trim());
+  }
+  var seen = {};
+  for (var p = 0; p < preferred.length; p++) {
+    var pname = preferred[p];
+    if (!pname || seen[pname]) continue;
+    seen[pname] = true;
+    var hit = ss.getSheetByName(pname);
+    if (hit && scoreOrderSheetCandidate_(hit) >= 0) {
+      ensureOrderHeaderRow_(hit);
+      return hit;
     }
   }
-  // 再保底：找第一列含「訂單編號」的分頁
-  if (!sheet) {
-    var all = ss.getSheets();
-    for (var j = 0; j < all.length; j++) {
-      var cand = all[j];
-      var lastCol = cand.getLastColumn();
-      if (lastCol < 1) continue;
-      var headers = cand.getRange(1, 1, 1, lastCol).getValues()[0];
-      var hasOrderId = headers.some(function(h) { return (h || "").toString().trim() === "訂單編號"; });
-      if (hasOrderId) {
-        sheet = cand;
-        break;
-      }
+  var all = ss.getSheets();
+  var best = null;
+  var bestScore = -1;
+  for (var i = 0; i < all.length; i++) {
+    var cand = all[i];
+    var score = scoreOrderSheetCandidate_(cand);
+    if (score > bestScore) {
+      bestScore = score;
+      best = cand;
     }
   }
-  if (!sheet) sheet = ss.insertSheet(name);
+  if (best) {
+    ensureOrderHeaderRow_(best);
+    return best;
+  }
+  var createName = (CONFIG.orderSheetName || "歷史訂單").toString().trim();
+  var sheet = ss.insertSheet(createName);
   ensureOrderHeaderRow_(sheet);
   return sheet;
 }
