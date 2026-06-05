@@ -51,6 +51,7 @@ function getRoute(path) {
   // - "/" => home
   // - "/product/:name" => detail (name is URI encoded)
   if (pathname === "/" || pathname === "") return { name: "home", search };
+  if (pathname === "/points") return { name: "points", search };
   if (pathname.startsWith("/product/")) {
     const encodedName = pathname.slice("/product/".length);
     return { name: "product", encodedName, search };
@@ -317,6 +318,53 @@ const API_URL_LOCAL = "/api";
 
 // 在 GitHub Pages 等跨站環境下，Google 試算表 API 常因 CORS 被擋，失敗時改經由此 proxy 重試
 const CORS_PROXY_PREFIX = "https://corsproxy.io/?";
+
+const LOYALTY_NAME_KEY = "maarushop_loyalty_name_v1";
+
+function getApiBaseUrl() {
+  return isLocalDev ? API_URL_LOCAL : API_URL;
+}
+
+function buildPointsBalanceUrl(customerName) {
+  const base = getApiBaseUrl();
+  const sep = base.indexOf("?") >= 0 ? "&" : "?";
+  const q =
+    "action=points_balance&name=" +
+    encodeURIComponent(String(customerName || "").trim()) +
+    "&_t=" +
+    Date.now();
+  return base + sep + q;
+}
+
+async function fetchPointsBalance(customerName) {
+  const directUrl = buildPointsBalanceUrl(customerName);
+  const urlsToTry = [directUrl];
+  if (!isLocalDev) {
+    urlsToTry.push(CORS_PROXY_PREFIX + encodeURIComponent(directUrl));
+  }
+  let lastError = null;
+  for (const url of urlsToTry) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const text = await res.text();
+      if (text.trimStart().startsWith("<")) {
+        throw new Error("API 回傳 HTML，請確認 Code.gs 已重新部署");
+      }
+      const data = JSON.parse(text);
+      if (data && data.error) throw new Error(data.message || "查詢失敗");
+      return data;
+    } catch (err) {
+      lastError = err;
+      console.warn("Points balance fetch failed:", url, err);
+    }
+  }
+  throw lastError || new Error("無法連線查詢紅利");
+}
+
+function normalizeLoyaltyCustomerName(name) {
+  return String(name || "").trim().replace(/\s+/g, "");
+}
 
 function normalizeItem(row, index) {
   if (!row || typeof row !== "object") return null;
@@ -1315,7 +1363,7 @@ function HomeCarousel({ slides, intervalMs = 5000 }) {
   );
 }
 
-function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword, onSearchChange }) {
+function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword, onSearchChange, loyaltyBalance }) {
   return (
     <header className="shop-header sticky top-0 z-20 border-b border-neutral-200/80">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-3.5 flex items-center gap-4 sm:gap-6">
@@ -1361,7 +1409,22 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword,
           </div>
         </div>
 
-        <div className="flex items-center justify-end shrink-0">
+        <div className="flex items-center justify-end gap-1 shrink-0">
+          <Link
+            to="/points"
+            className="relative inline-flex items-center justify-center gap-1 min-w-[2.25rem] h-9 px-2 rounded-md hover:bg-amber-50 text-amber-800 transition-colors"
+            aria-label="我的紅利點數"
+            title="我的紅利點數"
+          >
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+            {loyaltyBalance != null && loyaltyBalance > 0 ? (
+              <span className="text-[11px] font-semibold leading-none">{loyaltyBalance > 99 ? "99+" : loyaltyBalance}</span>
+            ) : (
+              <span className="hidden sm:inline text-[11px] font-medium leading-none">點數</span>
+            )}
+          </Link>
           <button
             type="button"
             onClick={onOpenCart}
@@ -2465,6 +2528,171 @@ function CartDrawer({
   );
 }
 
+function PointsPage() {
+  const [nameInput, setNameInput] = React.useState(() => {
+    try {
+      return localStorage.getItem(LOYALTY_NAME_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const [result, setResult] = React.useState(null);
+
+  const queryBalance = React.useCallback(async (name, silent) => {
+    const trimmed = String(name || "").trim();
+    if (normalizeLoyaltyCustomerName(trimmed).length < 2) {
+      setError("請輸入至少兩個字的客戶姓名（需與訂單姓名一致）");
+      setResult(null);
+      return;
+    }
+    if (!silent) setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchPointsBalance(trimmed);
+      setResult(data);
+      try {
+        localStorage.setItem(LOYALTY_NAME_KEY, trimmed);
+      } catch {
+        // ignore
+      }
+      setNameInput(trimmed);
+      try {
+        window.dispatchEvent(
+          new CustomEvent("maaru-loyalty-updated", { detail: { balance: Number(data.balance) || 0 } })
+        );
+      } catch {
+        // ignore
+      }
+    } catch (err) {
+      setError(err && err.message ? err.message : "查詢失敗");
+      setResult(null);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const saved = (nameInput || "").trim();
+    if (normalizeLoyaltyCustomerName(saved).length >= 2) {
+      queryBalance(saved, true).finally(() => setLoading(false));
+    }
+  }, []);
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    queryBalance(nameInput, false);
+  }
+
+  function handleClearSaved() {
+    try {
+      localStorage.removeItem(LOYALTY_NAME_KEY);
+    } catch {
+      // ignore
+    }
+    setNameInput("");
+    setResult(null);
+    setError(null);
+    try {
+      window.dispatchEvent(new CustomEvent("maaru-loyalty-updated", { detail: { balance: null } }));
+    } catch {
+      // ignore
+    }
+  }
+
+  const balance = result && !result.error ? Number(result.balance) || 0 : null;
+
+  return (
+    <main className="flex-1 w-full max-w-lg mx-auto px-4 sm:px-6 py-8 sm:py-10">
+      <div className="mb-6">
+        <Link to="/" className="text-xs text-neutral-500 hover:text-neutral-800 underline">
+          ← 回首頁
+        </Link>
+        <h1 className="mt-3 text-xl font-semibold text-neutral-900 tracking-tight">我的紅利點數</h1>
+        <p className="mt-1 text-sm text-neutral-500">輸入與訂單相同的客戶姓名，即可查詢可用點數</p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
+        <div>
+          <label htmlFor="loyaltyNameInput" className="block text-xs font-medium text-neutral-600 mb-1.5">
+            客戶姓名
+          </label>
+          <input
+            id="loyaltyNameInput"
+            type="text"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            placeholder="例：陳小華"
+            className="w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+            autoComplete="name"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-2.5 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 disabled:opacity-60 transition-colors"
+        >
+          {loading ? "查詢中…" : "查詢點數"}
+        </button>
+      </form>
+
+      {error ? (
+        <p className="mt-4 text-sm text-red-600 rounded-lg border border-red-100 bg-red-50 px-3 py-2">{error}</p>
+      ) : null}
+
+      {result && !error ? (
+        <div className="mt-6 rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm space-y-4">
+          <div>
+            <p className="text-xs text-amber-800/70 uppercase tracking-wide">會員</p>
+            <p className="text-lg font-semibold text-neutral-900 mt-0.5">{result.customerName || nameInput}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-white/80 border border-amber-100 p-3">
+              <p className="text-xs text-neutral-500">可用點數</p>
+              <p className="text-2xl font-bold text-amber-700 mt-1">{balance}</p>
+            </div>
+            <div className="rounded-lg bg-white/80 border border-amber-100 p-3">
+              <p className="text-xs text-neutral-500">約可折抵</p>
+              <p className="text-2xl font-bold text-neutral-800 mt-1">NT${balance}</p>
+            </div>
+          </div>
+          {result.nextExpireDate ? (
+            <p className="text-xs text-neutral-600">
+              最近到期：<span className="font-medium">{String(result.nextExpireDate).slice(0, 10)}</span>
+              {result.nextExpirePoints ? `（${result.nextExpirePoints} 點）` : ""}
+            </p>
+          ) : null}
+          {balance === 0 ? (
+            <p className="text-sm text-neutral-600">{result.message || "目前尚無可用紅利點數"}</p>
+          ) : (
+            <p className="text-sm text-neutral-600">下次下單時可於 LINE 告知要使用幾點折抵。</p>
+          )}
+        </div>
+      ) : null}
+
+      <div className="mt-6 rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-600 space-y-2">
+        <p className="font-medium text-neutral-800">集點規則</p>
+        <ul className="list-disc list-inside space-y-1 text-xs sm:text-sm">
+          <li>消費滿 NT$100 集 1 點（依訂單完成後計算）</li>
+          <li>1 點可折抵 NT$1</li>
+          <li>點數自發放日起 365 天內有效</li>
+        </ul>
+      </div>
+
+      {nameInput ? (
+        <button
+          type="button"
+          onClick={handleClearSaved}
+          className="mt-4 text-xs text-neutral-400 hover:text-neutral-600 underline"
+        >
+          清除已記住的姓名
+        </button>
+      ) : null}
+    </main>
+  );
+}
+
 function NotFoundPage() {
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
@@ -2504,6 +2732,42 @@ function App() {
   const cartCount = React.useMemo(() => {
     return cartItems.reduce((sum, it) => sum + (it.qty || 0), 0);
   }, [cartItems]);
+
+  const [loyaltyBalance, setLoyaltyBalance] = React.useState(null);
+
+  React.useEffect(() => {
+    function onLoyaltyUpdated(e) {
+      if (!e || !e.detail) return;
+      if (e.detail.balance == null) setLoyaltyBalance(null);
+      else setLoyaltyBalance(Number(e.detail.balance) || 0);
+    }
+    window.addEventListener("maaru-loyalty-updated", onLoyaltyUpdated);
+    return () => window.removeEventListener("maaru-loyalty-updated", onLoyaltyUpdated);
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let saved = "";
+    try {
+      saved = (localStorage.getItem(LOYALTY_NAME_KEY) || "").trim();
+    } catch {
+      saved = "";
+    }
+    if (normalizeLoyaltyCustomerName(saved).length < 2) {
+      setLoyaltyBalance(null);
+      return;
+    }
+    fetchPointsBalance(saved)
+      .then((data) => {
+        if (!cancelled) setLoyaltyBalance(Number(data.balance) || 0);
+      })
+      .catch(() => {
+        if (!cancelled) setLoyaltyBalance(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
 
   function addToCart(product, qty) {
     const key = product.sku || [product.name, product.variant || "", product.price ?? ""].join("||");
@@ -2644,6 +2908,8 @@ function App() {
         onAddToCart={addToCart}
       />
     );
+  } else if (route.name === "points") {
+    page = <PointsPage />;
   } else {
     page = <NotFoundPage />;
   }
@@ -2652,6 +2918,7 @@ function App() {
     <div className="flex flex-col min-h-screen bg-[#fafafa]">
       <Navbar
         cartCount={cartCount}
+        loyaltyBalance={loyaltyBalance}
         onOpenCart={() => setCartOpen(true)}
         onOpenMenu={() => setMenuOpen(true)}
         onLogoClick={() => {
