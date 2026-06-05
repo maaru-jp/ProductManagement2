@@ -304,17 +304,53 @@
       order.pointsEarned = earned;
     }
 
-    order.pointsProcessed = "Y";
-    saveLedger(ledger);
+    if (pointsUsed > 0 || earned > 0) {
+      order.pointsProcessed = "Y";
+      saveLedger(ledger);
+    }
 
     var msg = [];
     if (pointsUsed > 0) msg.push("折抵 " + pointsUsed + " 點");
     if (earned > 0) msg.push("發放 " + earned + " 點");
+    if (!pointsUsed && !earned && normalizeCustomerName(order.customerName)) {
+      var net = Math.max(0, merchandiseNet(order) - pointsUsed);
+      if (net < (Number(cfg.spendPerPoint) || 100)) {
+        msg.push("消費淨額未滿 " + cfg.spendPerPoint + " 元，無法集點");
+      }
+    }
     return {
       order: order,
       ledger: ledger,
-      message: msg.length ? msg.join("，") : "已標記處理（無點數異動）",
+      message: msg.length ? msg.join("，") : "",
     };
+  }
+
+  function mergeLedgers(local, remote) {
+    var byId = {};
+    (remote || []).forEach(function (r) {
+      var id = r && (r.id || r.紀錄ID);
+      if (id) byId[String(id)] = r;
+    });
+    (local || []).forEach(function (r) {
+      var id = r && (r.id || r.紀錄ID);
+      if (id) byId[String(id)] = r;
+    });
+    return Object.keys(byId).map(function (k) { return byId[k]; });
+  }
+
+  function processPendingOrders(orders) {
+    if (!Array.isArray(orders)) return { processed: 0, messages: [] };
+    var count = 0;
+    var messages = [];
+    orders.forEach(function (ord) {
+      if (!ord) return;
+      if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) return;
+      if (!shouldProcessOrder(ord)) return;
+      var result = processOrderPoints(ord, null);
+      if (result.order && (result.order.pointsProcessed === "Y" || result.order.pointsProcessed === true)) count++;
+      if (result.message) messages.push((ord.id || "訂單") + "：" + result.message);
+    });
+    return { processed: count, messages: messages };
   }
 
   function runGlobalExpiry() {
@@ -422,6 +458,8 @@
     runGlobalExpiry: runGlobalExpiry,
     summarizeCustomers: summarizeCustomers,
     normalizeLedgerFromApi: normalizeLedgerFromApi,
+    mergeLedgers: mergeLedgers,
+    processPendingOrders: processPendingOrders,
     normalizeCustomerName: normalizeCustomerName,
     customerKey: customerKey,
     todayStr: todayStr,
