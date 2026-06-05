@@ -52,6 +52,7 @@ function getRoute(path) {
   // - "/product/:name" => detail (name is URI encoded)
   if (pathname === "/" || pathname === "") return { name: "home", search };
   if (pathname === "/points") return { name: "points", search };
+  if (pathname === "/orders") return { name: "orders", search };
   if (pathname.startsWith("/product/")) {
     const encodedName = pathname.slice("/product/".length);
     return { name: "product", encodedName, search };
@@ -327,25 +328,64 @@ const API_URL_LOCAL = "/api";
 // 在 GitHub Pages 等跨站環境下，Google 試算表 API 常因 CORS 被擋，失敗時改經由此 proxy 重試
 const CORS_PROXY_PREFIX = "https://corsproxy.io/?";
 
-const LOYALTY_NAME_KEY = "maarushop_loyalty_name_v1";
+const MEMBER_CARD_KEY = "maarushop_member_card_v1";
+
+function getSavedMemberCard() {
+  try {
+    const raw = localStorage.getItem(MEMBER_CARD_KEY) || "";
+    return normalizeMemberCardInput(raw);
+  } catch {
+    return "";
+  }
+}
+
+function saveMemberCard(card) {
+  try {
+    localStorage.setItem(MEMBER_CARD_KEY, normalizeMemberCardInput(card));
+  } catch {
+    // ignore
+  }
+}
+
+function clearSavedMemberCard() {
+  try {
+    localStorage.removeItem(MEMBER_CARD_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function normalizeMemberCardInput(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 13);
+}
+
+function isValidMemberCardNo(card) {
+  return /^\d{13}$/.test(normalizeMemberCardInput(card));
+}
+
+function formatMemberCardDisplay(card) {
+  const c = normalizeMemberCardInput(card);
+  if (c.length !== 13) return c;
+  return c.slice(0, 4) + " " + c.slice(4, 8) + " " + c.slice(8);
+}
 
 function getApiBaseUrl() {
   return isLocalDev ? API_URL_LOCAL : API_URL;
 }
 
-function buildPointsBalanceUrl(customerName) {
+function buildPointsBalanceUrl(memberCardNo) {
   const base = getApiBaseUrl();
   const sep = base.indexOf("?") >= 0 ? "&" : "?";
   const q =
-    "action=points_balance&name=" +
-    encodeURIComponent(String(customerName || "").trim()) +
+    "action=points_balance&card=" +
+    encodeURIComponent(normalizeMemberCardInput(memberCardNo)) +
     "&_t=" +
     Date.now();
   return base + sep + q;
 }
 
-async function fetchPointsBalance(customerName) {
-  const directUrl = buildPointsBalanceUrl(customerName);
+async function fetchPointsBalance(memberCardNo) {
+  const directUrl = buildPointsBalanceUrl(memberCardNo);
   const urlsToTry = [directUrl];
   if (!isLocalDev) {
     urlsToTry.push(CORS_PROXY_PREFIX + encodeURIComponent(directUrl));
@@ -368,6 +408,59 @@ async function fetchPointsBalance(customerName) {
     }
   }
   throw lastError || new Error("無法連線查詢紅利");
+}
+
+function buildCustomerOrdersUrl(memberCardNo) {
+  const base = getApiBaseUrl();
+  const sep = base.indexOf("?") >= 0 ? "&" : "?";
+  const q =
+    "action=customer_orders&card=" +
+    encodeURIComponent(normalizeMemberCardInput(memberCardNo)) +
+    "&_t=" +
+    Date.now();
+  return base + sep + q;
+}
+
+async function fetchCustomerOrders(memberCardNo) {
+  const directUrl = buildCustomerOrdersUrl(memberCardNo);
+  const urlsToTry = [directUrl];
+  if (!isLocalDev) {
+    urlsToTry.push(CORS_PROXY_PREFIX + encodeURIComponent(directUrl));
+  }
+  let lastError = null;
+  for (const url of urlsToTry) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const text = await res.text();
+      if (text.trimStart().startsWith("<")) {
+        throw new Error("API 回傳 HTML，請確認 Code.gs 已重新部署");
+      }
+      const data = JSON.parse(text);
+      if (data && data.error) throw new Error(data.message || "查詢失敗");
+      return data;
+    } catch (err) {
+      lastError = err;
+      console.warn("Customer orders fetch failed:", url, err);
+    }
+  }
+  throw lastError || new Error("無法連線查詢訂單");
+}
+
+function formatCustomerOrderDate(dateStr) {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return String(dateStr).slice(0, 10);
+  return d.toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
+function customerOrderStatusClass(status) {
+  const s = String(status || "").trim();
+  if (s === "已完成") return "bg-emerald-50 text-emerald-800 border-emerald-200";
+  if (s === "出貨中") return "bg-amber-50 text-amber-900 border-amber-200";
+  if (s === "已確認") return "bg-sky-50 text-sky-800 border-sky-200";
+  if (s === "已取消") return "bg-neutral-100 text-neutral-500 border-neutral-200";
+  return "bg-neutral-50 text-neutral-700 border-neutral-200";
 }
 
 function normalizeLoyaltyCustomerName(name) {
@@ -1442,6 +1535,23 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword,
                 ? (loyaltyBalance > 99 ? "99+" : String(loyaltyBalance))
                 : "查"}
             </span>
+          </Link>
+          <Link
+            to="/orders"
+            className="shop-orders-btn group"
+            aria-label="我的訂單"
+            title="我的訂單"
+          >
+            <span className="shop-orders-btn-icon" aria-hidden="true">
+              <svg className="w-[1.125rem] h-[1.125rem]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </span>
+            <span className="shop-orders-btn-label">
+              <span className="shop-orders-btn-title">我的訂單</span>
+              <span className="shop-orders-btn-sub">查詢紀錄</span>
+            </span>
+            <span className="shop-orders-btn-mobile-label sm:hidden">訂單</span>
           </Link>
           <button
             type="button"
@@ -2937,35 +3047,25 @@ function CartDrawer({
 }
 
 function PointsPage() {
-  const [nameInput, setNameInput] = React.useState(() => {
-    try {
-      return localStorage.getItem(LOYALTY_NAME_KEY) || "";
-    } catch {
-      return "";
-    }
-  });
+  const [cardInput, setCardInput] = React.useState(() => getSavedMemberCard());
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
   const [result, setResult] = React.useState(null);
 
-  const queryBalance = React.useCallback(async (name, silent) => {
-    const trimmed = String(name || "").trim();
-    if (normalizeLoyaltyCustomerName(trimmed).length < 2) {
-      setError("請輸入至少兩個字的客戶姓名（需與訂單姓名一致）");
+  const queryBalance = React.useCallback(async (card, silent) => {
+    const normalized = normalizeMemberCardInput(card);
+    if (!isValidMemberCardNo(normalized)) {
+      setError("請輸入 13 碼會員卡號（純數字）");
       setResult(null);
       return;
     }
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const data = await fetchPointsBalance(trimmed);
+      const data = await fetchPointsBalance(normalized);
       setResult(data);
-      try {
-        localStorage.setItem(LOYALTY_NAME_KEY, trimmed);
-      } catch {
-        // ignore
-      }
-      setNameInput(trimmed);
+      saveMemberCard(normalized);
+      setCardInput(normalized);
       try {
         window.dispatchEvent(
           new CustomEvent("maaru-loyalty-updated", { detail: { balance: Number(data.balance) || 0 } })
@@ -2982,24 +3082,24 @@ function PointsPage() {
   }, []);
 
   React.useEffect(() => {
-    const saved = (nameInput || "").trim();
-    if (normalizeLoyaltyCustomerName(saved).length >= 2) {
+    const saved = getSavedMemberCard();
+    if (isValidMemberCardNo(saved)) {
       queryBalance(saved, true).finally(() => setLoading(false));
     }
   }, []);
 
   function handleSubmit(e) {
     e.preventDefault();
-    queryBalance(nameInput, false);
+    queryBalance(cardInput, false);
+  }
+
+  function handleCardChange(e) {
+    setCardInput(normalizeMemberCardInput(e.target.value));
   }
 
   function handleClearSaved() {
-    try {
-      localStorage.removeItem(LOYALTY_NAME_KEY);
-    } catch {
-      // ignore
-    }
-    setNameInput("");
+    clearSavedMemberCard();
+    setCardInput("");
     setResult(null);
     setError(null);
     try {
@@ -3018,23 +3118,30 @@ function PointsPage() {
           ← 回首頁
         </Link>
         <h1 className="mt-3 text-xl font-semibold text-neutral-900 tracking-tight">我的紅利點數</h1>
-        <p className="mt-1 text-sm text-neutral-500">請輸入您在社群的暱稱，即可查詢可用點數</p>
+        <p className="mt-1 text-sm text-neutral-500">請輸入您的 13 碼會員卡號，即可查詢可用點數</p>
+        <Link to="/orders" className="inline-block mt-2 text-xs text-sky-700 hover:text-sky-900 underline">
+          查看我的歷史訂單 →
+        </Link>
       </div>
 
       <form onSubmit={handleSubmit} className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
         <div>
-          <label htmlFor="loyaltyNameInput" className="block text-xs font-medium text-neutral-600 mb-1.5">
-            客戶姓名
+          <label htmlFor="memberCardInputPoints" className="block text-xs font-medium text-neutral-600 mb-1.5">
+            會員卡號
           </label>
           <input
-            id="loyaltyNameInput"
+            id="memberCardInputPoints"
             type="text"
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            placeholder="例：陳小華"
-            className="w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
-            autoComplete="name"
+            inputMode="numeric"
+            pattern="\d*"
+            maxLength={13}
+            value={cardInput}
+            onChange={handleCardChange}
+            placeholder="13 碼純數字"
+            className="w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm font-mono tracking-wider text-neutral-900 placeholder:text-neutral-400 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+            autoComplete="off"
           />
+          <p className="mt-1.5 text-[11px] text-neutral-400">卡號於首次下單後由店家提供，請妥善保管</p>
         </div>
         <button
           type="submit"
@@ -3052,8 +3159,10 @@ function PointsPage() {
       {result && !error ? (
         <div className="mt-6 rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm space-y-4">
           <div>
-            <p className="text-xs text-amber-800/70 uppercase tracking-wide">會員</p>
-            <p className="text-lg font-semibold text-neutral-900 mt-0.5">{result.customerName || nameInput}</p>
+            <p className="text-xs text-amber-800/70 uppercase tracking-wide">會員卡號</p>
+            <p className="text-lg font-semibold font-mono text-neutral-900 mt-0.5 tracking-wider">
+              {formatMemberCardDisplay(result.memberCardNo || cardInput)}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg bg-white/80 border border-amber-100 p-3">
@@ -3075,7 +3184,7 @@ function PointsPage() {
             <div className="text-sm text-neutral-600 space-y-2">
               <p>{result.message || "目前尚無可用紅利點數"}</p>
               <p className="text-xs text-neutral-500">
-                若後台已有點數卻顯示 0，請到後台「紅利點數」按<strong>同步至試算表</strong>，並確認姓名與訂單完全一致。
+                若後台已有點數卻顯示 0，請確認訂單已填寫相同會員卡號，並請店家至後台「紅利點數」按<strong>同步至試算表</strong>。
               </p>
             </div>
           ) : (
@@ -3087,19 +3196,239 @@ function PointsPage() {
       <div className="mt-6 rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-600 space-y-2">
         <p className="font-medium text-neutral-800">集點規則</p>
         <ul className="list-disc list-inside space-y-1 text-xs sm:text-sm">
-          <li>消費滿 NT$100 集 1 點（依訂單完成後計算）</li>
+          <li>消費滿 NT$100 集 1 點（依商品小計 − 折扣 − 紅利計算，不含運費與預購訂金）</li>
           <li>1 點可折抵 NT$1（商品淨額須滿 NT$199 才可折抵）</li>
           <li>點數自發放日起 365 天內有效</li>
         </ul>
       </div>
 
-      {nameInput ? (
+      {cardInput ? (
         <button
           type="button"
           onClick={handleClearSaved}
           className="mt-4 text-xs text-neutral-400 hover:text-neutral-600 underline"
         >
-          清除已記住的姓名
+          清除已記住的會員卡號
+        </button>
+      ) : null}
+    </main>
+  );
+}
+
+function OrdersPage() {
+  const [cardInput, setCardInput] = React.useState(() => getSavedMemberCard());
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const [result, setResult] = React.useState(null);
+
+  const queryOrders = React.useCallback(async (card, silent) => {
+    const normalized = normalizeMemberCardInput(card);
+    if (!isValidMemberCardNo(normalized)) {
+      setError("請輸入 13 碼會員卡號（純數字）");
+      setResult(null);
+      return;
+    }
+    if (!silent) setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchCustomerOrders(normalized);
+      setResult(data);
+      saveMemberCard(normalized);
+      setCardInput(normalized);
+    } catch (err) {
+      setError(err && err.message ? err.message : "查詢失敗");
+      setResult(null);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const saved = getSavedMemberCard();
+    if (isValidMemberCardNo(saved)) {
+      queryOrders(saved, true).finally(() => setLoading(false));
+    }
+  }, []);
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    queryOrders(cardInput, false);
+  }
+
+  function handleCardChange(e) {
+    setCardInput(normalizeMemberCardInput(e.target.value));
+  }
+
+  function handleClearSaved() {
+    clearSavedMemberCard();
+    setCardInput("");
+    setResult(null);
+    setError(null);
+  }
+
+  const orders = result && !result.error && Array.isArray(result.orders) ? result.orders : [];
+
+  return (
+    <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+      <div className="mb-6">
+        <Link to="/" className="text-xs text-neutral-500 hover:text-neutral-800 underline">
+          ← 回首頁
+        </Link>
+        <h1 className="mt-3 text-xl font-semibold text-neutral-900 tracking-tight">我的訂單</h1>
+        <p className="mt-1 text-sm text-neutral-500">請輸入 13 碼會員卡號，即可查詢過去的訂單紀錄</p>
+        <Link to="/points" className="inline-block mt-2 text-xs text-amber-700 hover:text-amber-900 underline">
+          查詢紅利點數 →
+        </Link>
+      </div>
+
+      <form onSubmit={handleSubmit} className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
+        <div>
+          <label htmlFor="memberCardInputOrders" className="block text-xs font-medium text-neutral-600 mb-1.5">
+            會員卡號
+          </label>
+          <input
+            id="memberCardInputOrders"
+            type="text"
+            inputMode="numeric"
+            pattern="\d*"
+            maxLength={13}
+            value={cardInput}
+            onChange={handleCardChange}
+            placeholder="13 碼純數字"
+            className="w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm font-mono tracking-wider text-neutral-900 placeholder:text-neutral-400 focus:border-sky-400 focus:ring-1 focus:ring-sky-400"
+            autoComplete="off"
+          />
+          <p className="mt-1.5 text-[11px] text-neutral-400">與紅利點數頁共用記憶，輸入一次兩頁皆可查詢</p>
+        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-2.5 rounded-lg bg-sky-600 text-white text-sm font-medium hover:bg-sky-700 disabled:opacity-60 transition-colors"
+        >
+          {loading ? "查詢中…" : "查詢訂單"}
+        </button>
+      </form>
+
+      {error ? (
+        <p className="mt-4 text-sm text-red-600 rounded-lg border border-red-100 bg-red-50 px-3 py-2">{error}</p>
+      ) : null}
+
+      {result && !error ? (
+        <div className="mt-6 space-y-4">
+          <div className="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm">
+            <p className="text-xs text-sky-800/70 uppercase tracking-wide">會員卡號</p>
+            <p className="text-lg font-semibold font-mono text-neutral-900 mt-0.5 tracking-wider">
+              {formatMemberCardDisplay(result.memberCardNo || cardInput)}
+            </p>
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="rounded-lg bg-white/80 border border-sky-100 p-3">
+                <p className="text-xs text-neutral-500">訂單筆數</p>
+                <p className="text-2xl font-bold text-neutral-800 mt-1">{result.orderCount || 0}</p>
+              </div>
+              <div className="rounded-lg bg-white/80 border border-sky-100 p-3">
+                <p className="text-xs text-neutral-500">待結清合計</p>
+                <p className="text-2xl font-bold text-neutral-800 mt-1">NT${result.totalDue || 0}</p>
+                <p className="text-[10px] text-neutral-400 mt-0.5">不含已完成</p>
+              </div>
+            </div>
+          </div>
+
+          {orders.length === 0 ? (
+            <p className="text-sm text-neutral-600 rounded-xl border border-neutral-200 bg-white p-4">
+              {result.message || "目前尚無訂單紀錄"}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {orders.map((ord) => {
+                const isDone = ord.status === "已完成";
+                const isCancelled = ord.status === "已取消";
+                return (
+                  <article
+                    key={ord.id}
+                    className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5 shadow-sm space-y-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="font-mono text-sm font-semibold text-neutral-900">{ord.id}</p>
+                        <p className="text-xs text-neutral-500 mt-0.5">{formatCustomerOrderDate(ord.date)}</p>
+                      </div>
+                      <span
+                        className={[
+                          "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border",
+                          customerOrderStatusClass(ord.status),
+                        ].join(" ")}
+                      >
+                        {ord.status || "待處理"}
+                      </span>
+                    </div>
+
+                    {ord.items && ord.items.length > 0 ? (
+                      <ul className="text-sm text-neutral-700 space-y-1.5 border-t border-neutral-100 pt-3">
+                        {ord.items.map((it, idx) => (
+                          <li key={ord.id + "-item-" + idx} className="flex justify-between gap-3">
+                            <span className="min-w-0">
+                              {it.lineName}
+                              {it.shipStatus && it.shipStatus !== "待出貨" ? (
+                                <span className="text-xs text-neutral-400 ml-1">（{it.shipStatus}）</span>
+                              ) : null}
+                            </span>
+                            <span className="shrink-0 text-neutral-600">
+                              {it.qty > 0 ? "×" + it.qty : ""}
+                              {it.price != null ? " NT$" + it.price : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+
+                    <div className="text-xs text-neutral-600 space-y-1 border-t border-neutral-100 pt-3">
+                      {ord.subtotal > 0 ? <p>商品小計：NT${ord.subtotal}</p> : null}
+                      {ord.discount > 0 ? <p>折扣：- NT${ord.discount}</p> : null}
+                      {ord.pointsUsed > 0 ? <p>紅利折抵：- NT${ord.pointsUsed}</p> : null}
+                      {ord.shippingFee > 0 ? <p>運費：NT${ord.shippingFee}</p> : null}
+                      {ord.depositAmount > 0 ? <p>已付訂金：- NT${ord.depositAmount}</p> : null}
+                      {ord.pointsEarned > 0 ? <p className="text-amber-700">本次獲得紅利：{ord.pointsEarned} 點</p> : null}
+                      {!isDone && !isCancelled ? (
+                        <p className="text-sm font-semibold text-neutral-900 pt-1">待結清：NT${ord.amountDue || 0}</p>
+                      ) : isDone ? (
+                        <p className="text-sm font-medium text-emerald-700 pt-1">此筆訂單已完成</p>
+                      ) : null}
+                    </div>
+
+                    {ord.linkedOrderIds ? (
+                      <p className="text-[11px] text-neutral-400">關聯訂單：{ord.linkedOrderIds}</p>
+                    ) : null}
+                    {ord.preorderDate || ord.shipDate ? (
+                      <p className="text-[11px] text-neutral-400">
+                        {ord.preorderDate ? "預購：" + String(ord.preorderDate).slice(0, 10) : ""}
+                        {ord.preorderDate && ord.shipDate ? " · " : ""}
+                        {ord.shipDate ? "出貨：" + String(ord.shipDate).slice(0, 10) : ""}
+                      </p>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      <div className="mt-6 rounded-xl border border-neutral-200 bg-white p-4 text-xs sm:text-sm text-neutral-600 space-y-2">
+        <p className="font-medium text-neutral-800">說明</p>
+        <ul className="list-disc list-inside space-y-1">
+          <li>請輸入店家提供的 13 碼會員卡號查詢</li>
+          <li>「待結清合計」不含狀態為「已完成」的訂單</li>
+          <li>如有疑問請透過 LINE 官方帳號聯繫我們</li>
+        </ul>
+      </div>
+
+      {cardInput ? (
+        <button
+          type="button"
+          onClick={handleClearSaved}
+          className="mt-4 text-xs text-neutral-400 hover:text-neutral-600 underline"
+        >
+          清除已記住的會員卡號
         </button>
       ) : null}
     </main>
@@ -3160,13 +3489,8 @@ function App() {
 
   React.useEffect(() => {
     let cancelled = false;
-    let saved = "";
-    try {
-      saved = (localStorage.getItem(LOYALTY_NAME_KEY) || "").trim();
-    } catch {
-      saved = "";
-    }
-    if (normalizeLoyaltyCustomerName(saved).length < 2) {
+    const saved = getSavedMemberCard();
+    if (!isValidMemberCardNo(saved)) {
       setLoyaltyBalance(null);
       return;
     }
@@ -3326,6 +3650,8 @@ function App() {
     );
   } else if (route.name === "points") {
     page = <PointsPage />;
+  } else if (route.name === "orders") {
+    page = <OrdersPage />;
   } else {
     page = <NotFoundPage />;
   }

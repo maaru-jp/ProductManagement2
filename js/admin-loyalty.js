@@ -1,6 +1,6 @@
 /**
  * MAARU 紅利點數 — 消費滿 100 元集 1 點，1 點折 1 元，商品淨額滿 199 元才可折抵，1 年內有效
- * 會員以「客戶姓名」識別（電話／Line ID 僅供備註，舊資料無姓名時仍可以電話／Line 對應）
+ * 會員以「13 碼會員卡號」識別；舊資料無卡號時仍可以姓名／電話／Line 對應
  */
 (function (global) {
   var CONFIG_KEY = "maaru_loyalty_config";
@@ -41,7 +41,17 @@
     return String(lineId || "").trim().toLowerCase();
   }
 
-  function customerKey(customerName, phone, lineId) {
+  function normalizeMemberCardNo(card) {
+    return String(card || "").replace(/\D/g, "").slice(0, 13);
+  }
+
+  function isValidMemberCardNo(card) {
+    return /^\d{13}$/.test(normalizeMemberCardNo(card));
+  }
+
+  function customerKey(memberCardNo, customerName, phone, lineId) {
+    var card = normalizeMemberCardNo(memberCardNo);
+    if (card.length === 13) return "C:" + card;
     var n = normalizeCustomerName(customerName);
     if (n) return "N:" + n;
     var p = normalizePhone(phone);
@@ -82,7 +92,12 @@
     localStorage.setItem(LEDGER_KEY, JSON.stringify(Array.isArray(list) ? list : []));
   }
 
-  function recordMatchesCustomer(rec, customerName, phone, lineId) {
+  function recordMatchesMember(rec, memberCardNo, customerName, phone, lineId) {
+    var card = normalizeMemberCardNo(memberCardNo);
+    if (card.length === 13) {
+      var recCard = normalizeMemberCardNo(rec.memberCardNo);
+      return recCard.length === 13 && recCard === card;
+    }
     var n = normalizeCustomerName(customerName);
     if (n && normalizeCustomerName(rec.customerName) === n) return true;
     if (n) return false;
@@ -93,12 +108,12 @@
     return false;
   }
 
-  function expireCustomerPoints(ledger, customerName, phone, lineId) {
+  function expireCustomerPoints(ledger, memberCardNo, customerName, phone, lineId) {
     var today = todayStr();
     var changed = false;
     ledger.forEach(function (rec) {
       if (rec.type !== "發放") return;
-      if (!recordMatchesCustomer(rec, customerName, phone, lineId)) return;
+      if (!recordMatchesMember(rec, memberCardNo, customerName, phone, lineId)) return;
       var remaining = Number(rec.remaining);
       if (!remaining || remaining <= 0) return;
       var exp = rec.expireDate ? String(rec.expireDate).slice(0, 10) : "";
@@ -109,6 +124,7 @@
         phone: rec.phone || "",
         lineId: rec.lineId || "",
         customerName: rec.customerName || "",
+        memberCardNo: rec.memberCardNo || "",
         type: "失效",
         points: -remaining,
         remaining: 0,
@@ -123,13 +139,13 @@
     return changed ? ledger : ledger;
   }
 
-  function getActiveLots(ledger, customerName, phone, lineId) {
-    ledger = expireCustomerPoints(ledger.slice(), customerName, phone, lineId);
+  function getActiveLots(ledger, memberCardNo, customerName, phone, lineId) {
+    ledger = expireCustomerPoints(ledger.slice(), memberCardNo, customerName, phone, lineId);
     var today = todayStr();
     return ledger
       .filter(function (rec) {
         if (rec.type !== "發放") return false;
-        if (!recordMatchesCustomer(rec, customerName, phone, lineId)) return false;
+        if (!recordMatchesMember(rec, memberCardNo, customerName, phone, lineId)) return false;
         var remaining = Number(rec.remaining);
         if (!remaining || remaining <= 0) return false;
         var exp = rec.expireDate ? String(rec.expireDate).slice(0, 10) : "";
@@ -140,9 +156,15 @@
       });
   }
 
-  function getBalance(customerName, phone, lineId) {
+  function getBalance(memberCardNo, customerName, phone, lineId) {
+    if (arguments.length === 3 && !isValidMemberCardNo(memberCardNo)) {
+      lineId = phone;
+      phone = customerName;
+      customerName = memberCardNo;
+      memberCardNo = "";
+    }
     var ledger = getLedger();
-    return getActiveLots(ledger, customerName, phone, lineId).reduce(function (sum, lot) {
+    return getActiveLots(ledger, memberCardNo, customerName, phone, lineId).reduce(function (sum, lot) {
       return sum + (Number(lot.remaining) || 0);
     }, 0);
   }
@@ -151,6 +173,12 @@
     var sub = Number(order && order.subtotal) || 0;
     var disc = Number(order && order.discount) || 0;
     return Math.max(0, Math.ceil(sub - disc));
+  }
+
+  /** 集點金額：商品淨額 − 紅利折抵（不含運費、不含預購訂金，非待結清總金額） */
+  function earnPointsBase(order) {
+    var used = Number(order && order.pointsUsed) || 0;
+    return Math.max(0, merchandiseNet(order) - used);
   }
 
   function calcMaxRedeemPoints(order, balance, cfg) {
@@ -174,8 +202,7 @@
 
   function calcEarnPoints(order, cfg) {
     cfg = cfg || getConfig();
-    var used = Number(order && order.pointsUsed) || 0;
-    var base = Math.max(0, merchandiseNet(order) - used);
+    var base = earnPointsBase(order);
     var spend = Number(cfg.spendPerPoint) || 100;
     if (spend <= 0) return 0;
     return Math.floor(base / spend);
@@ -190,7 +217,7 @@
   function redeemPoints(ledger, order, pointsToUse) {
     var pts = Math.max(0, Math.floor(Number(pointsToUse) || 0));
     if (!pts) return ledger;
-    var lots = getActiveLots(ledger, order.customerName, order.phone, order.lineId);
+    var lots = getActiveLots(ledger, order.memberCardNo, order.customerName, order.phone, order.lineId);
     var need = pts;
     lots.forEach(function (lot) {
       if (need <= 0) return;
@@ -211,6 +238,7 @@
       phone: order.phone || "",
       lineId: order.lineId || "",
       customerName: order.customerName || "",
+      memberCardNo: normalizeMemberCardNo(order.memberCardNo),
       type: "折抵",
       points: -pts,
       remaining: 0,
@@ -233,12 +261,13 @@
       phone: order.phone || "",
       lineId: order.lineId || "",
       customerName: order.customerName || "",
+      memberCardNo: normalizeMemberCardNo(order.memberCardNo),
       type: "發放",
       points: pts,
       remaining: pts,
       expireDate: exp,
       orderId: order.id || "",
-      note: "消費滿 " + cfg.spendPerPoint + " 元集點",
+      note: "消費滿 " + cfg.spendPerPoint + " 元集點（不含運費、訂金）",
       lotId: "",
     });
     return ledger;
@@ -247,10 +276,11 @@
   function manualAdjust(ledger, payload) {
     var pts = Math.floor(Number(payload.points) || 0);
     if (!pts) throw new Error("請輸入點數");
+    var memberCardNo = normalizeMemberCardNo(payload.memberCardNo);
     var customerName = (payload.customerName || "").trim();
     var phone = (payload.phone || "").trim();
     var lineId = (payload.lineId || "").trim();
-    if (!normalizeCustomerName(customerName)) throw new Error("請填客戶姓名");
+    if (!isValidMemberCardNo(memberCardNo)) throw new Error("請填 13 碼會員卡號");
     if (pts > 0) {
       var cfg = getConfig();
       ledger.push({
@@ -259,6 +289,7 @@
         phone: phone,
         lineId: lineId,
         customerName: customerName,
+        memberCardNo: memberCardNo,
         type: "調整",
         points: pts,
         remaining: pts,
@@ -270,7 +301,7 @@
     } else {
       ledger = redeemPoints(
         ledger,
-        { customerName: customerName, phone: phone, lineId: lineId, id: "ADJ" },
+        { memberCardNo: memberCardNo, customerName: customerName, phone: phone, lineId: lineId, id: "ADJ" },
         Math.abs(pts)
       );
       var last = ledger[ledger.length - 1];
@@ -297,15 +328,17 @@
     if (!shouldProcessOrder(order)) {
       return { order: order, ledger: getLedger(), message: "" };
     }
-    if (!normalizeCustomerName(order.customerName)) {
-      return { order: order, ledger: getLedger(), message: "缺少客戶姓名，無法發放紅利" };
+    var card = normalizeMemberCardNo(order.memberCardNo);
+    if (!isValidMemberCardNo(card)) {
+      return { order: order, ledger: getLedger(), message: "缺少有效會員卡號，無法處理紅利" };
     }
+    order.memberCardNo = card;
 
     var cfg = getConfig();
     var ledger = getLedger();
     var requestedPts = Math.floor(Number(order.pointsUsed) || 0);
     var pointsUsed = requestedPts;
-    var balance = getBalance(order.customerName, order.phone, order.lineId);
+    var balance = getBalance(card, order.customerName, order.phone, order.lineId);
     var msg = [];
 
     if (pointsUsed > 0) {
@@ -334,10 +367,10 @@
 
     if (pointsUsed > 0) msg.push("折抵 " + pointsUsed + " 點");
     if (earned > 0) msg.push("發放 " + earned + " 點");
-    if (!pointsUsed && !earned && normalizeCustomerName(order.customerName)) {
-      var net = Math.max(0, merchandiseNet(order) - pointsUsed);
-      if (net < (Number(cfg.spendPerPoint) || 100)) {
-        msg.push("消費淨額未滿 " + cfg.spendPerPoint + " 元，無法集點");
+    if (!pointsUsed && !earned && isValidMemberCardNo(card)) {
+      var earnBase = earnPointsBase(order);
+      if (earnBase < (Number(cfg.spendPerPoint) || 100)) {
+        msg.push("集點金額未滿 " + cfg.spendPerPoint + " 元，無法集點");
       }
     }
     return {
@@ -379,9 +412,10 @@
     var ledger = getLedger();
     var keys = {};
     ledger.forEach(function (rec) {
-      var k = customerKey(rec.customerName, rec.phone, rec.lineId);
+      var k = customerKey(rec.memberCardNo, rec.customerName, rec.phone, rec.lineId);
       if (!k) return;
       keys[k] = {
+        memberCardNo: rec.memberCardNo || "",
         customerName: rec.customerName || "",
         phone: rec.phone || "",
         lineId: rec.lineId || "",
@@ -389,7 +423,7 @@
     });
     Object.keys(keys).forEach(function (k) {
       var c = keys[k];
-      ledger = expireCustomerPoints(ledger, c.customerName, c.phone, c.lineId);
+      ledger = expireCustomerPoints(ledger, c.memberCardNo, c.customerName, c.phone, c.lineId);
     });
     saveLedger(ledger);
     return ledger;
@@ -399,11 +433,12 @@
     ledger = ledger || getLedger();
     var map = {};
     ledger.forEach(function (rec) {
-      var k = customerKey(rec.customerName, rec.phone, rec.lineId);
+      var k = customerKey(rec.memberCardNo, rec.customerName, rec.phone, rec.lineId);
       if (!k) return;
       if (!map[k]) {
         map[k] = {
           key: k,
+          memberCardNo: rec.memberCardNo || "",
           phone: rec.phone || "",
           lineId: rec.lineId || "",
           customerName: rec.customerName || "",
@@ -414,6 +449,7 @@
           nextExpirePoints: 0,
         };
       }
+      if (rec.memberCardNo && !map[k].memberCardNo) map[k].memberCardNo = rec.memberCardNo;
       if (rec.customerName && !map[k].customerName) map[k].customerName = rec.customerName;
       if (rec.type === "發放" || rec.type === "調整") {
         if (Number(rec.points) > 0) map[k].totalEarned += Number(rec.points);
@@ -424,7 +460,7 @@
     });
     Object.keys(map).forEach(function (k) {
       var c = map[k];
-      var lots = getActiveLots(ledger, c.customerName, c.phone, c.lineId);
+      var lots = getActiveLots(ledger, c.memberCardNo, c.customerName, c.phone, c.lineId);
       c.balance = lots.reduce(function (s, lot) { return s + (Number(lot.remaining) || 0); }, 0);
       if (lots.length) {
         c.nextExpireDate = lots[0].expireDate || "";
@@ -434,6 +470,9 @@
     return Object.keys(map)
       .map(function (k) { return map[k]; })
       .sort(function (a, b) {
+        var ca = normalizeMemberCardNo(a.memberCardNo);
+        var cb = normalizeMemberCardNo(b.memberCardNo);
+        if (ca && cb && ca !== cb) return ca.localeCompare(cb);
         var na = normalizeCustomerName(a.customerName);
         var nb = normalizeCustomerName(b.customerName);
         if (na && nb && na !== nb) return na.localeCompare(nb, "zh-Hant");
@@ -450,6 +489,7 @@
         phone: r.phone || r.電話 || "",
         lineId: r.lineId || r["Line ID"] || "",
         customerName: r.customerName || r.姓名 || "",
+        memberCardNo: normalizeMemberCardNo(r.memberCardNo || r["會員卡號"] || ""),
         type: r.type || r.類型 || "",
         points: Number(r.points != null ? r.points : r.點數) || 0,
         remaining: Number(r.remaining != null ? r.remaining : r.剩餘) || 0,
@@ -471,6 +511,7 @@
     saveLedger: saveLedger,
     getBalance: getBalance,
     merchandiseNet: merchandiseNet,
+    earnPointsBase: earnPointsBase,
     calcMaxRedeemPoints: calcMaxRedeemPoints,
     getMinRedeemNet: getMinRedeemNet,
     meetsMinRedeemNet: meetsMinRedeemNet,
@@ -485,6 +526,8 @@
     mergeLedgers: mergeLedgers,
     processPendingOrders: processPendingOrders,
     normalizeCustomerName: normalizeCustomerName,
+    normalizeMemberCardNo: normalizeMemberCardNo,
+    isValidMemberCardNo: isValidMemberCardNo,
     customerKey: customerKey,
     todayStr: todayStr,
   };
