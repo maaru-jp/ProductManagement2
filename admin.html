@@ -459,7 +459,10 @@
           <p class="text-sm text-slate-600 mt-2"><strong>備用：</strong>若從未改過「已確認」、直接改 <strong>已完成</strong>，也會發點一次，但不會重複發放。</p>
           <p class="text-sm text-slate-600 mt-2"><strong>不發點：</strong>「產生 PDF」、狀態「出貨中」本身<strong>不會</strong>觸發紅利；「已完成」僅作結案，若已在「已確認」發過點則不再發。</p>
           <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-            <strong>顧客查詢中心</strong>讀取試算表「紅利點數」。訂單改「已確認」並寫入試算表後，系統會<strong>自動同步紅利</strong>；若仍查不到，請至本頁按「同步至試算表」。
+            <strong>資料分工：</strong>試算表「<strong>紅利點數</strong>」＝會員中心（餘額＋異動歷程）；「<strong>歷史訂單</strong>」＝每筆交易的獲得／折抵點數與金額。顧客查詢中心分兩個分頁查詢。
+          </p>
+          <p class="text-xs text-slate-600 mt-2">
+            訂單改「已確認」並寫入「歷史訂單」後，系統會<strong>自動同步紅利至「紅利點數」</strong>；若顧客查不到，請至本頁按「同步至試算表」。
           </p>
           <div class="flex flex-wrap gap-2 mt-3">
             <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理未發點訂單</button>
@@ -4208,18 +4211,38 @@
         function syncPointsLedgerToSheet(orders) {
           if (typeof fetchWrite !== "function") return Promise.resolve();
           try {
-            var prep = function (ordList) {
-              var ledger = preparePointsLedgerForSync_(ordList);
-              if (!ledger.length) return Promise.resolve({ skipped: true, message: "尚無紅利紀錄" });
-              return fetchWrite({ action: "points_sync", ledger: ledger })
+            var prep = function (ordList, remoteRows) {
+              ordList = ordList || loadAdminOrdersForLoyalty_();
+              var remote = window.MaaruLoyalty
+                ? MaaruLoyalty.normalizeLedgerFromApi(remoteRows || [])
+                : [];
+              var local = preparePointsLedgerForSync_(ordList);
+              var merged = window.MaaruLoyalty
+                ? MaaruLoyalty.mergeLedgers(local, remote)
+                : (remote.length ? remote : local);
+              var bf = backfillLedgerSafe_(merged, ordList, true);
+              if (window.MaaruLoyalty) MaaruLoyalty.saveLedger(bf.ledger);
+              if (!bf.ledger.length) return Promise.resolve({ skipped: true, message: "尚無紅利紀錄" });
+              return fetchWrite({ action: "points_sync", ledger: bf.ledger })
                 .then(parseWriteApiResponse_)
                 .then(function (res) {
                   if (res && res.error) throw new Error(res.message || "同步失敗");
                   return res;
                 });
             };
-            if (Array.isArray(orders)) return prep(orders);
-            return fetchOrdersForLoyalty_().then(prep);
+            var loadRemote = fetchWrite({ action: "points_list" })
+              .then(parseWriteApiResponse_)
+              .then(function (res) {
+                if (res && res.error) throw new Error(res.message || "讀取紅利失敗");
+                return res.ledger || [];
+              })
+              .catch(function () { return []; });
+            if (Array.isArray(orders)) {
+              return loadRemote.then(function (remote) { return prep(orders, remote); });
+            }
+            return fetchOrdersForLoyalty_().then(function (ordList) {
+              return loadRemote.then(function (remote) { return prep(ordList, remote); });
+            });
           } catch (err) {
             return Promise.reject(err);
           }
@@ -4652,10 +4675,8 @@
               saveOrders();
               backfillMissingMemberCards_({ syncSheet: true, silent: true });
               processPendingLoyaltyOrders_(true);
-              if (typeof window.syncPointsLedgerToSheet === "function") {
-                window.syncPointsLedgerToSheet().catch(function(syncErr) {
-                  showOrderMessage("訂單已載入，但紅利同步失敗：" + (syncErr && syncErr.message ? syncErr.message : "請至紅利點數頁手動同步"), true);
-                });
+              if (typeof window.loadPointsFromSheet === "function") {
+                window.loadPointsFromSheet().catch(function() {});
               }
               renderOrders();
               showOrderMessage("已從試算表載入訂單");
@@ -4668,6 +4689,24 @@
             });
         }
 
+        function mergeOrderRecordPreferComplete_(sheetOrd, localOrd) {
+          if (!localOrd) return sheetOrd;
+          if (!sheetOrd) return localOrd;
+          var out = Object.assign({}, sheetOrd, localOrd);
+          ["memberCardNo", "customerName", "phone", "email", "lineId", "pointsEarned", "pointsUsed", "pointsProcessed",
+            "subtotal", "discount", "total", "shippingFee", "depositAmount", "remark", "updated"].forEach(function (key) {
+            var lv = localOrd[key];
+            var sv = sheetOrd[key];
+            var localEmpty = lv === "" || lv == null || lv === undefined;
+            var sheetHas = sv !== "" && sv != null && sv !== undefined;
+            if (localEmpty && sheetHas) out[key] = sv;
+          });
+          if ((!localOrd.items || !localOrd.items.length) && sheetOrd.items && sheetOrd.items.length) {
+            out.items = sheetOrd.items;
+          }
+          return out;
+        }
+
         function mergeOrdersPreferLocal_(sheetOrders, localOrders) {
           var out = [];
           var byId = {};
@@ -4676,14 +4715,14 @@
             if (!id) return;
             byId[id.toUpperCase()] = o;
           });
-          // 先放雲端，再用本機覆蓋同 ID（避免本機新建/未同步資料消失）
+          // 先放雲端，再用本機覆蓋同 ID（保留雙方較完整欄位）
           Object.keys(byId).forEach(function(k) { out.push(byId[k]); });
           (Array.isArray(localOrders) ? localOrders : []).forEach(function(o) {
             var id = (o && o.id != null) ? String(o.id).trim() : "";
             if (!id) return;
             var key = id.toUpperCase();
             var idx = out.findIndex(function(x) { return String(x.id || "").trim().toUpperCase() === key; });
-            if (idx >= 0) out[idx] = o;
+            if (idx >= 0) out[idx] = mergeOrderRecordPreferComplete_(out[idx], o);
             else out.push(o);
           });
           out.sort(function(a, b) {
@@ -5078,6 +5117,11 @@
               if (res && res.pointsSynced) msg += "；紅利已同步（" + res.pointsSynced + " 筆）";
               else if (res && res.pointsAppended) msg += "；已補寫紅利 " + res.pointsAppended + " 筆";
               else msg += "；紅利已同步";
+              if (typeof window.loadPointsFromSheet === "function") {
+                window.loadPointsFromSheet().then(function () {
+                  if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+                }).catch(function () {});
+              }
               if (typeof window.showLoyaltyMessage === "function") {
                 window.showLoyaltyMessage("紅利已寫入試算表，顧客可查詢");
               }
@@ -5111,7 +5155,7 @@
             orders.forEach(function (ord) {
               if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) {
                 chain = chain.then(function () {
-                  return upsertOrderToSheet(ord).catch(function () { return null; });
+                  return upsertOrderToSheet(ord, { syncPoints: true }).catch(function () { return null; });
                 });
               }
             });

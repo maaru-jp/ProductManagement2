@@ -135,15 +135,26 @@ function doPost(e) {
         out.message = "OK";
         return jsonOutput(out);
       }
+      if (action === "points_sync") {
       var ledger = body.ledger;
       if (!ledger || !Array.isArray(ledger)) {
         out.error = true;
         out.message = "缺少 ledger 陣列";
         return jsonOutput(out);
       }
-      syncPointsLedger(pointsSheet, ledger);
-      out.message = "已同步 " + ledger.length + " 筆至「紅利點數」";
+      if (ledger.length === 0) {
+        out.message = "略過空 ledger（未刪除試算表既有紅利資料）";
+        out.skipped = true;
+        out.ledgerCount = getPointsLedger(pointsSheet).length;
+        return jsonOutput(out);
+      }
+      var orderSheetForPoints = getOrderSheet(ss);
+      var ordersForPoints = orderSheetForPoints ? getOrders(orderSheetForPoints) : [];
+      syncPointsLedger(pointsSheet, ledger, ordersForPoints);
+      out.message = "已同步 " + getPointsLedger(pointsSheet).length + " 筆至「紅利點數」";
+      out.ledgerCount = getPointsLedger(pointsSheet).length;
       return jsonOutput(out);
+      }
     }
 
     // 訂單：list / upsert / delete
@@ -197,13 +208,15 @@ function doPost(e) {
         out.message = "訂單缺少 id";
         return jsonOutput(out);
       }
+      order = enrichOrderForSheetWrite_(order, ss);
       upsertOrder(orderSheet, order);
       var pointsNote = "";
       if (body.ledger && Array.isArray(body.ledger) && body.ledger.length) {
         var pointsSheetSync = getPointsSheet(ss);
-        syncPointsLedger(pointsSheetSync, body.ledger);
-        out.pointsSynced = body.ledger.length;
-        pointsNote = "；紅利點數 " + body.ledger.length + " 筆";
+        var ordersForLedger = getOrders(orderSheet);
+        syncPointsLedger(pointsSheetSync, body.ledger, ordersForLedger);
+        out.pointsSynced = getPointsLedger(pointsSheetSync).length;
+        pointsNote = "；紅利點數 " + out.pointsSynced + " 筆";
       } else {
         var pointsAppended = ensurePointsLedgerEntriesFromOrder_(ss, order);
         if (pointsAppended > 0) {
@@ -998,6 +1011,17 @@ function buildRowFromOrder_(sheet, order) {
   for (var i = 0; i < idCols.length; i++) {
     row[idCols[i]] = norm.id;
   }
+  var cardCol = findMemberCardColumnIndex_(headers);
+  if (cardCol >= 0 && norm.memberCardNo) {
+    row[cardCol] = "'" + normalizeMemberCardNo_(norm.memberCardNo);
+  }
+  var ptsProcCol = -1;
+  for (var p = 0; p < headers.length; p++) {
+    if (String(headers[p] || "").trim() === "紅利已處理") { ptsProcCol = p; break; }
+  }
+  if (ptsProcCol >= 0 && norm.pointsProcessed) {
+    row[ptsProcCol] = String(norm.pointsProcessed);
+  }
   return row;
 }
 
@@ -1006,9 +1030,14 @@ function upsertOrder(sheet, order) {
   var headers = getOrderHeaders_(sheet);
   var id = normalizeOrderId_(order && order.id != null ? order.id : "");
   if (!id) return;
-  // 寫入統一為標準格式，避免 ORD1 / ORD00001 造成重複列
   if (order && order.id != null) order.id = id;
   var row = buildRowFromOrder_(sheet, order);
+  var stdLen = getStandardOrderHeaders_().length;
+  if (row.length < stdLen) {
+    while (row.length < stdLen) row.push("");
+  } else if (row.length > stdLen) {
+    row = row.slice(0, stdLen);
+  }
   var existingRows = findOrderRowsById_(sheet, id, headers);
   if (existingRows.length > 0) {
     var keepRow = existingRows[0];
@@ -1674,8 +1703,10 @@ function getPointsLedger(sheet) {
   ensurePointsHeaderRow_(sheet);
   var data = sheet.getDataRange().getValues();
   if (!data || data.length < 2) return [];
+  var display = sheet.getDataRange().getDisplayValues();
   var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
   var keyMap = pointsKeyMap_(headers);
+  var cardCol = findMemberCardColumnIndex_(headers);
   var list = [];
   for (var r = 1; r < data.length; r++) {
     var row = data[r];
@@ -1689,32 +1720,166 @@ function getPointsLedger(sheet) {
       obj[key] = val;
       empty = false;
     }
+    if (cardCol >= 0) {
+      var dispCard = normalizeMemberCardNo_((display[r] && display[r][cardCol]) || row[cardCol]);
+      if (dispCard) obj.memberCardNo = dispCard;
+    }
     if (empty || !obj.id) continue;
     list.push(normalizePointLedgerRecord_(obj));
   }
   return list;
 }
 
-function syncPointsLedger(sheet, ledger) {
+function scorePointRecordCompleteness_(rec) {
+  var s = 0;
+  if (!rec) return 0;
+  if (isValidMemberCardNo_(normalizeMemberCardNo_(rec.memberCardNo))) s += 10;
+  if (normalizeCustomerNameForPoints_(rec.customerName)) s += 2;
+  if (normalizePhoneForPoints_(rec.phone)) s += 1;
+  if (normalizeLineIdForPoints_(rec.lineId)) s += 1;
+  if (rec.orderId) s += 1;
+  if (Number(rec.remaining) > 0) s += 2;
+  if (rec.note) s += 1;
+  return s;
+}
+
+function pickRicherPointRecord_(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  var sa = scorePointRecordCompleteness_(a);
+  var sb = scorePointRecordCompleteness_(b);
+  if (sa === sb && isValidMemberCardNo_(normalizeMemberCardNo_(b.memberCardNo)) &&
+      !isValidMemberCardNo_(normalizeMemberCardNo_(a.memberCardNo))) {
+    return b;
+  }
+  return sa >= sb ? a : b;
+}
+
+/** 合併試算表與本機 ledger（以紀錄ID為準，保留較完整一筆） */
+function mergePointsLedgersById_(existing, incoming) {
+  var byId = {};
+  (existing || []).forEach(function(rec) {
+    var id = rec && rec.id != null ? String(rec.id).trim() : "";
+    if (!id) return;
+    byId[id] = normalizePointLedgerRecord_(rec);
+  });
+  (incoming || []).forEach(function(rec) {
+    var id = rec && rec.id != null ? String(rec.id).trim() : "";
+    if (!id) return;
+    var norm = normalizePointLedgerRecord_(rec);
+    byId[id] = pickRicherPointRecord_(byId[id], norm);
+  });
+  return Object.keys(byId).map(function(k) { return byId[k]; });
+}
+
+function resolveMemberCardForOrderFromContext_(order, allOrders, ledger) {
+  var card = normalizeMemberCardNo_(order && order.memberCardNo);
+  if (isValidMemberCardNo_(card)) return card;
+  var n = normalizeCustomerNameForPoints_(order && order.customerName);
+  var p = normalizePhoneForPoints_(order && order.phone);
+  var oid = normalizeOrderId_(order && order.id);
+  for (var i = 0; i < (allOrders || []).length; i++) {
+    var ord = allOrders[i];
+    if (!ord) continue;
+    if (oid && normalizeOrderId_(ord.id) === oid) continue;
+    var oc = normalizeMemberCardNo_(ord.memberCardNo);
+    if (!isValidMemberCardNo_(oc)) continue;
+    if (n && normalizeCustomerNameForPoints_(ord.customerName) === n) return oc;
+    if (!n && p && normalizePhoneForPoints_(ord.phone) === p) return oc;
+  }
+  var idx = buildMemberCardIdentityIndex_(allOrders, ledger);
+  if (n) {
+    for (var j = 0; j < (ledger || []).length; j++) {
+      var rec = ledger[j];
+      if (normalizeCustomerNameForPoints_(getPointRecordCustomerName_(rec)) !== n) continue;
+      var rc = idx.resolveCard(rec);
+      if (isValidMemberCardNo_(rc)) return rc;
+    }
+  }
+  return "";
+}
+
+function enrichOrderForSheetWrite_(order, ss) {
+  order = order || {};
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var orderSheet = getOrderSheet(ss);
+  var allOrders = orderSheet ? getOrders(orderSheet) : [];
+  var pointsSheet = getPointsSheet(ss);
+  var ledger = pointsSheet ? getPointsLedger(pointsSheet) : [];
+  var card = resolveMemberCardForOrderFromContext_(order, allOrders, ledger);
+  if (isValidMemberCardNo_(card)) order.memberCardNo = card;
+  if (!order.updated || !String(order.updated).trim()) {
+    order.updated = Utilities.formatDate(
+      new Date(),
+      Session.getScriptTimeZone() || "Asia/Taipei",
+      "yyyy-MM-dd'T'HH:mm:ss"
+    );
+  }
+  if (order.pointsProcessed === true) order.pointsProcessed = "Y";
+  return order;
+}
+
+function enrichPointsLedgerMemberCardsFromOrders_(ledger, orders) {
+  ledger = (ledger || []).slice();
+  orders = orders || [];
+  if (!ledger.length) return ledger;
+  var idx = buildMemberCardIdentityIndex_(orders, ledger);
+  for (var i = 0; i < ledger.length; i++) {
+    var rec = ledger[i];
+    if (isValidMemberCardNo_(normalizeMemberCardNo_(rec.memberCardNo))) continue;
+    var resolved = idx.resolveCard(rec);
+    if (isValidMemberCardNo_(resolved)) {
+      rec = Object.assign({}, rec, { memberCardNo: resolved });
+      ledger[i] = rec;
+    }
+    if (!isValidMemberCardNo_(normalizeMemberCardNo_(rec.memberCardNo)) && rec.orderId) {
+      var oid = normalizeOrderId_(rec.orderId);
+      for (var j = 0; j < orders.length; j++) {
+        if (normalizeOrderId_(orders[j].id) !== oid) continue;
+        var oc = normalizeMemberCardNo_(orders[j].memberCardNo);
+        if (isValidMemberCardNo_(oc)) {
+          ledger[i] = Object.assign({}, rec, {
+            memberCardNo: oc,
+            customerName: rec.customerName || orders[j].customerName || "",
+            phone: rec.phone || orders[j].phone || "",
+            lineId: rec.lineId || orders[j].lineId || ""
+          });
+          break;
+        }
+      }
+    }
+  }
+  return ledger;
+}
+
+function syncPointsLedger(sheet, ledger, orders) {
   ensurePointsHeaderRow_(sheet);
   var stdHeaders = getStandardPointsHeaders_();
   var width = stdHeaders.length;
+  var existing = getPointsLedger(sheet);
+  var incoming = Array.isArray(ledger) ? ledger : [];
+  var merged = mergePointsLedgersById_(existing, incoming);
+  if (orders && orders.length) {
+    merged = enrichPointsLedgerMemberCardsFromOrders_(merged, orders);
+  }
+  merged.sort(function(a, b) {
+    var da = String(a.date || "");
+    var db = String(b.date || "");
+    if (da !== db) return da.localeCompare(db);
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  });
   var lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    sheet.deleteRows(2, lastRow - 1);
-  }
-  if (!ledger || !ledger.length) return;
+  if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
+  if (!merged.length) return;
   var rows = [];
-  for (var i = 0; i < ledger.length; i++) {
-    rows.push(buildRowFromPointRecord_(sheet, ledger[i]));
+  for (var i = 0; i < merged.length; i++) {
+    rows.push(buildRowFromPointRecord_(sheet, merged[i]));
   }
-  if (!rows.length) return;
   for (var r = 0; r < rows.length; r++) {
     if (rows[r].length !== width) {
       throw new Error("紅利點數第 " + (r + 1) + " 列欄位數不一致（" + rows[r].length + " vs " + width + "）");
     }
   }
-  // getRange(row, col, numRows, numCols) — numRows 必須等於 rows.length
   sheet.getRange(2, 1, rows.length, width).setValues(rows);
 }
 
@@ -1963,6 +2128,8 @@ function ensurePointsLedgerEntriesFromOrder_(ss, order) {
   if (!order) return 0;
   var processed = String(order.pointsProcessed || "").trim().toUpperCase();
   if (processed !== "Y" && processed !== "TRUE") return 0;
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  order = enrichOrderForSheetWrite_(order, ss);
   var card = normalizeMemberCardNo_(order.memberCardNo);
   if (!isValidMemberCardNo_(card)) return 0;
   var orderId = normalizeOrderId_(order.id);
