@@ -428,7 +428,7 @@
         <div class="mt-6 p-4 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-3">
           <span class="text-slate-500 text-lg">💡</span>
           <div class="text-sm text-slate-700 space-y-2">
-            <p><strong>產生 PDF：</strong>每筆訂單「操作」欄 → 列印視窗選「另存為 PDF」。僅含「待出貨」品項。<strong>併箱出貨</strong>時會詢問是否產生「併箱 PDF」（合併多張 ORD 品項與金額、運費只列 1 次）；也可在<strong>顧客總覽</strong>按「產生併箱 PDF」。</p>
+            <p><strong>產生 PDF：</strong>每筆訂單「操作」欄 → 列印視窗選「另存為 PDF」。僅含「待出貨」品項；<strong>併箱出貨</strong>可產生併箱 PDF 或於<strong>顧客總覽</strong>操作。</p>
             <p><strong>狀態與紅利：</strong><strong>已確認</strong>＝發點（建議金額定案後再改）· <strong>出貨中／PDF</strong>＝出貨作業 · <strong>已完成</strong>＝結案（不重複發點）。</p>
           </div>
         </div>
@@ -6263,14 +6263,9 @@
             ".pdf-page-deposit{page-break-before:always;break-before:page;padding-top:0;} .pdf-page-deposit h2{page-break-after:avoid;break-after:avoid;} " +
             ".pdf-page-deposit-inline{margin-top:8px;} " +
             ".pdf-two-cols{display:flex;gap:12px;margin-top:6px;flex-wrap:nowrap;} .pdf-two-cols .pdf-col{flex:1;min-width:0;} " +
-            ".pdf-page-footer-center{display:none;} " +
             ".pdf-page-footer{position:fixed;bottom:6mm;right:12mm;left:auto;font-size:12px;color:#000;z-index:9999;} " +
             ".pdf-printed-at{text-align:right;white-space:nowrap;} " +
-            ".total{font-size:16px;font-weight:bold;margin-top:12px;} " +
-            "@media print{" +
-            ".pdf-page-footer-center{display:block;position:fixed;bottom:6mm;left:0;right:0;width:100%;text-align:center;font-size:12px;color:#000;pointer-events:none;}" +
-            ".pdf-page-footer-center::after{content:'第 ' counter(page) ' 頁 共 ' counter(pages) ' 頁';}" +
-            "}";
+            ".total{font-size:16px;font-weight:bold;margin-top:12px;}";
         }
 
         function orderPdfHasDepositContent_(innerHtml) {
@@ -6280,8 +6275,7 @@
         }
 
         function buildOrderPdfFooterHtml_(printedAtStr) {
-          return "<div class=\"pdf-page-footer-center\" aria-hidden=\"true\"></div>" +
-            "<div class=\"pdf-page-footer\"><span class=\"pdf-printed-at\">印單時間：" + escapeHtml(printedAtStr) + "</span></div>";
+          return "<div class=\"pdf-page-footer\"><span class=\"pdf-printed-at\">印單時間：" + escapeHtml(printedAtStr) + "</span></div>";
         }
 
         function buildOrderPdfDepositPageHtml_(innerHtml) {
@@ -6630,7 +6624,7 @@
             w.document.write(html);
             w.document.close();
             w.focus();
-            setTimeout(function() { w.print(); }, 500);
+            setTimeout(function() { w.print(); }, 300);
             return true;
           } catch (err) {
             try { w.close(); } catch (e2) {}
