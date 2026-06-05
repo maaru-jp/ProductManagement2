@@ -431,6 +431,7 @@
           <h3 class="text-sm font-semibold text-slate-800 mb-3">發點時機</h3>
           <p class="text-sm text-slate-600">訂單狀態改為 <strong>已確認</strong> 或 <strong>已完成</strong> 時，依<strong>客戶姓名</strong>自動發放／折抵紅利（每筆訂單僅處理一次）。</p>
           <div class="flex flex-wrap gap-2 mt-3">
+            <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理已完成訂單紅利</button>
             <button type="button" id="btnLoyaltyExpireAll" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">執行到期失效檢查</button>
             <button type="button" id="btnLoyaltyReload" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">重新載入</button>
           </div>
@@ -3509,6 +3510,7 @@
           el.classList.remove("hidden");
           setTimeout(function() { el.classList.add("hidden"); }, 4000);
         }
+        window.showLoyaltyMessage = showLoyaltyMessage;
 
         function syncPointsLedgerToSheet() {
           if (typeof fetchWrite !== "function") return Promise.resolve();
@@ -3527,9 +3529,10 @@
             .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true }; } }); })
             .then(function(res) {
               if (res && res.error) throw new Error(res.message || "載入失敗");
-              var list = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
-              if (list.length) MaaruLoyalty.saveLedger(list);
-              return list;
+              var remote = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
+              var merged = MaaruLoyalty.mergeLedgers(MaaruLoyalty.getLedger(), remote);
+              MaaruLoyalty.saveLedger(merged);
+              return merged;
             });
         }
 
@@ -3595,6 +3598,13 @@
           renderLoyaltyPanel();
           syncPointsLedgerToSheet().catch(function() {});
           showLoyaltyMessage("已完成到期失效檢查");
+        });
+        var btnProcessOrders = document.getElementById("btnLoyaltyProcessOrders");
+        if (btnProcessOrders) btnProcessOrders.addEventListener("click", function() {
+          if (typeof window.processPendingLoyaltyOrders_ === "function") {
+            var res = window.processPendingLoyaltyOrders_(false);
+            if (!res.processed) showLoyaltyMessage("沒有需要補處理的訂單（需為已確認／已完成且尚未發點）");
+          }
         });
         var btnReload = document.getElementById("btnLoyaltyReload");
         if (btnReload) btnReload.addEventListener("click", function() {
@@ -3699,6 +3709,7 @@
               var sheetOrders = Array.isArray(list) ? list : [];
               orders = mergeOrdersPreferLocal_(sheetOrders, orders);
               saveOrders();
+              processPendingLoyaltyOrders_(true);
               renderOrders();
               showOrderMessage("已從試算表載入訂單");
               syncLocalOrdersToSheet_(sheetOrders, orders);
@@ -3858,7 +3869,10 @@
           if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) return ord;
           try {
             var result = MaaruLoyalty.processOrderPoints(ord, prevOrd || null);
-            if (result.message && typeof showOrderMessage === "function") showOrderMessage("紅利：" + result.message);
+            if (result.message) {
+              if (typeof showOrderMessage === "function") showOrderMessage("紅利：" + result.message);
+              if (typeof window.showLoyaltyMessage === "function") window.showLoyaltyMessage(result.message);
+            }
             if (typeof window.syncPointsLedgerToSheet === "function") {
               window.syncPointsLedgerToSheet().catch(function() {});
             }
@@ -3866,9 +3880,32 @@
             return result.order;
           } catch (err) {
             if (typeof showOrderMessage === "function") showOrderMessage("紅利處理失敗：" + (err.message || ""), true);
+            if (typeof window.showLoyaltyMessage === "function") window.showLoyaltyMessage("處理失敗：" + (err.message || ""), true);
             return ord;
           }
         }
+
+        function processPendingLoyaltyOrders_(silent) {
+          if (!window.MaaruLoyalty) return { processed: 0, messages: [] };
+          var result = MaaruLoyalty.processPendingOrders(orders);
+          if (result.processed > 0) {
+            saveOrders();
+            orders.forEach(function (ord) {
+              if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) {
+                upsertOrderToSheet(ord).catch(function() {});
+              }
+            });
+            if (typeof window.syncPointsLedgerToSheet === "function") {
+              window.syncPointsLedgerToSheet().catch(function() {});
+            }
+            if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+            if (!silent && typeof showOrderMessage === "function") {
+              showOrderMessage("已補處理 " + result.processed + " 筆訂單紅利");
+            }
+          }
+          return result;
+        }
+        window.processPendingLoyaltyOrders_ = processPendingLoyaltyOrders_;
 
         function orderAmountDue(ord) {
           var dep = ord.depositAmount != null && ord.depositAmount !== "" ? Number(ord.depositAmount) : 0;
@@ -4283,6 +4320,7 @@
                 ord.pointsUsed = ord.pointsUsed != null ? ord.pointsUsed : 0;
                 ord = applyLoyaltyToOrder_(ord, { status: prevStatus, pointsProcessed: prevProcessed });
                 saveOrders();
+                renderOrders();
                 selectEl.disabled = true;
                 upsertOrderToSheet(ord).then(function() {
                   showOrderMessage("訂單狀態已寫入試算表");
@@ -4916,9 +4954,10 @@
         if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders(); } });
         if (orderStatusFilter) orderStatusFilter.addEventListener("change", function() { renderOrders(); });
         renderOrders();
+        processPendingLoyaltyOrders_(true);
         if (!ORDER_LOCAL_ONLY) {
           loadOrdersFromSheet().catch(function() {
-            // 雲端載入失敗時保留本機資料顯示
+            processPendingLoyaltyOrders_(true);
           });
         }
       })();
