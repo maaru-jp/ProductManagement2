@@ -401,7 +401,7 @@
         <div class="mb-4 rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
           <p class="font-semibold text-sky-900">訂單合併與紅利（追加商品時）</p>
           <p><strong>做法 A｜同一訂單編號：</strong>用「追加」併入原單。<span class="text-amber-800">請等全部併完再改「已確認」</span>，否則發點後再追加，不會自動補發差額點數。</p>
-          <p><strong>做法 B｜不同訂單編號：</strong>同顧客開新單，適合分次下單／分次出貨。點客戶旁 <strong>總覽</strong> 或請顧客至 <a href="https://maaru-jp.github.io/Order-status/" target="_blank" rel="noopener"><strong>訂單查詢中心</strong></a> 查詢。</p>
+          <p><strong>做法 B｜不同訂單編號（推薦加單）：</strong>同顧客開新 ORD、同一會員卡；<strong>併箱免運</strong>時新單勾選「併箱出貨」、運費填 0，運費只留在出貨主單。點 <strong>總覽</strong> 可看「本批應收運費 1 次」。</p>
         </div>
 
         <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -1341,6 +1341,11 @@
                 <input type="number" id="orderShippingFee" min="0" value="0" step="1" class="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                 <span class="text-sm text-slate-600">元</span>
               </div>
+              <label class="mt-2 inline-flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" id="orderCombineShipFree" class="rounded border-sky-400" />
+                <span>併箱出貨（本單免運，運費併入關聯主單）</span>
+              </label>
+              <div id="orderCombineShipBanner" class="hidden mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 leading-relaxed"></div>
               <label class="mt-2 inline-flex items-center gap-2 text-sm text-slate-600">
                 <input type="checkbox" id="orderShippingStatusCoupon" class="rounded border-slate-300" />
                 <span>運費狀態：免運券折抵</span>
@@ -1454,6 +1459,7 @@
         </div>
         <div class="p-5 overflow-y-auto flex-1 min-h-0 space-y-4">
           <div id="customerOverviewSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+          <div id="customerOverviewShippingBanner" class="hidden rounded-xl border px-4 py-3 text-sm leading-relaxed"></div>
           <div class="rounded-xl border border-slate-200 overflow-hidden">
             <table class="w-full text-sm">
               <thead class="bg-slate-50 border-b border-slate-200">
@@ -1461,12 +1467,13 @@
                   <th class="text-left py-2.5 px-3 font-medium text-slate-600">訂單編號</th>
                   <th class="text-left py-2.5 px-3 font-medium text-slate-600">狀態</th>
                   <th class="text-left py-2.5 px-3 font-medium text-slate-600">待結清</th>
+                  <th class="text-left py-2.5 px-3 font-medium text-slate-600">運費</th>
                   <th class="text-left py-2.5 px-3 font-medium text-slate-600">關聯</th>
                   <th class="text-left py-2.5 px-3 font-medium text-slate-600">操作</th>
                 </tr>
               </thead>
               <tbody id="customerOverviewTableBody">
-                <tr><td colspan="5" class="py-8 text-center text-slate-500">載入中…</td></tr>
+                <tr><td colspan="6" class="py-8 text-center text-slate-500">載入中…</td></tr>
               </tbody>
             </table>
           </div>
@@ -4783,6 +4790,218 @@
           return fee;
         }
 
+        var DEFAULT_COMBINE_SHIP_FEE = 38;
+        var COMBINE_SHIP_REMARK_PREFIX = "併箱免運";
+
+        function orderHasCombineShipRemark_(ord) {
+          var r = String(ord && ord.remark || "");
+          return r.indexOf(COMBINE_SHIP_REMARK_PREFIX) >= 0 || (r.indexOf("併箱") >= 0 && r.indexOf("運費") >= 0);
+        }
+
+        function getActiveCustomerOrders_(customerName, phone, excludeId) {
+          var ex = normalizeOrderIdToken_(excludeId);
+          return getOrdersByCustomer_(customerName, phone).filter(function(o) {
+            if (!o) return false;
+            if (ex && normalizeOrderIdToken_(o.id) === ex) return false;
+            return o.status !== "已取消";
+          });
+        }
+
+        function pickCombineShipMasterId_(orderRows) {
+          orderRows = (orderRows || []).filter(function(o) { return o && !o._missing && o.status !== "已取消" && o.status !== "已完成"; });
+          if (!orderRows.length) return "";
+          var withFee = orderRows.filter(function(o) { return orderEffectiveShippingForOrder(o) > 0; });
+          if (withFee.length === 1) return normalizeOrderIdToken_(withFee[0].id);
+          if (withFee.length > 1) {
+            withFee.sort(function(a, b) {
+              var ma = String(a.id || "").match(/^ORD(\d+)$/i);
+              var mb = String(b.id || "").match(/^ORD(\d+)$/i);
+              return (ma ? parseInt(ma[1], 10) : 0) - (mb ? parseInt(mb[1], 10) : 0);
+            });
+            return normalizeOrderIdToken_(withFee[0].id);
+          }
+          return normalizeOrderIdToken_(orderRows[0].id);
+        }
+
+        function analyzeCombineShipForOrders_(orderRows) {
+          orderRows = (orderRows || []).filter(function(o) { return o && !o._missing; });
+          var active = orderRows.filter(function(o) { return o.status !== "已取消" && o.status !== "已完成"; });
+          var chargedOrders = active.filter(function(o) { return orderEffectiveShippingForOrder(o) > 0; });
+          var totalShippingCharged = active.reduce(function(sum, o) { return sum + orderEffectiveShippingForOrder(o); }, 0);
+          var masterId = pickCombineShipMasterId_(active);
+          var expectedOnce = DEFAULT_COMBINE_SHIP_FEE;
+          if (masterId) {
+            var master = active.find(function(o) { return normalizeOrderIdToken_(o.id) === masterId; });
+            if (master && orderEffectiveShippingForOrder(master) > 0) expectedOnce = orderEffectiveShippingForOrder(master);
+          }
+          return {
+            activeCount: active.length,
+            chargedCount: chargedOrders.length,
+            totalShippingCharged: totalShippingCharged,
+            expectedOnceFee: expectedOnce,
+            recommendedMasterId: masterId,
+            shouldChargeOnce: active.length > 1,
+            ok: active.length <= 1 || chargedOrders.length <= 1,
+            warning: (active.length > 1 && chargedOrders.length > 1)
+              ? ("目前有 " + chargedOrders.length + " 筆訂單各收運費（合計 NT$" + totalShippingCharged + "），併箱出貨應只收 1 次")
+              : ""
+          };
+        }
+
+        function appendCombineShipRemark_(remark, masterId) {
+          var tag = COMBINE_SHIP_REMARK_PREFIX + "，運費併入 " + masterId;
+          remark = String(remark || "").trim();
+          if (remark.indexOf(tag) >= 0) return remark;
+          return remark ? (remark + "\n" + tag) : tag;
+        }
+
+        function applyCombineShipFreeToForm_(masterId, otherOrders) {
+          masterId = normalizeOrderIdToken_(masterId);
+          if (!masterId) return;
+          var feeEl = document.getElementById("orderShippingFee");
+          var combineEl = document.getElementById("orderCombineShipFree");
+          var linkedEl = document.getElementById("orderLinkedOrderIds");
+          var remarkEl = document.getElementById("orderRemark");
+          var couponEl = document.getElementById("orderShippingStatusCoupon");
+          if (combineEl) combineEl.checked = true;
+          if (feeEl) feeEl.value = "0";
+          if (couponEl) couponEl.checked = false;
+          if (linkedEl) {
+            var merged = parseLinkedOrderIds_(linkedEl.value);
+            if (merged.indexOf(masterId) < 0) merged.unshift(masterId);
+            (otherOrders || []).forEach(function(o) {
+              var id = normalizeOrderIdToken_(o && o.id);
+              if (id && id !== masterId && merged.indexOf(id) < 0) merged.push(id);
+            });
+            linkedEl.value = merged.join(", ");
+          }
+          if (remarkEl) remarkEl.value = appendCombineShipRemark_(remarkEl.value, masterId);
+          updateOrderTotal();
+          refreshCombineShipPanel_();
+        }
+
+        function refreshCombineShipPanel_() {
+          var banner = document.getElementById("orderCombineShipBanner");
+          var combineEl = document.getElementById("orderCombineShipFree");
+          if (!banner) return;
+          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
+          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+          var editId = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id")) || "";
+          var selfId = normalizeOrderIdToken_((document.getElementById("orderId") && document.getElementById("orderId").value) || editId);
+          var others = getActiveCustomerOrders_(customerName, phone, selfId).filter(function(o) { return o.status !== "已完成"; });
+          if (!others.length) {
+            banner.classList.add("hidden");
+            banner.innerHTML = "";
+            return;
+          }
+          var masterId = pickCombineShipMasterId_(others.concat([{ id: selfId }].filter(function(x) { return x.id; })));
+          var stats = analyzeCombineShipForOrders_(others);
+          var lines = [
+            "此客戶另有 <strong>" + others.length + "</strong> 筆訂單。若<strong>併箱一起寄</strong>，通常只收一次運費（NT$" + DEFAULT_COMBINE_SHIP_FEE + "）。"
+          ];
+          if (masterId) lines.push("建議出貨主單：<strong class=\"font-mono\">" + escapeHtml(masterId) + "</strong>");
+          if (stats.warning) lines.push("<span class=\"text-amber-800\">⚠ " + escapeHtml(stats.warning) + "</span>");
+          if (combineEl && combineEl.checked) {
+            lines.push("本單已設為<strong>併箱免運</strong>（運費 0，併入主單）。");
+          } else {
+            lines.push("<button type=\"button\" id=\"btnApplyCombineShipToForm\" class=\"mt-1 px-2 py-1 rounded border border-sky-300 bg-white text-sky-800 hover:bg-sky-100\">套用併箱免運（本單運費改 0）</button>");
+          }
+          banner.innerHTML = lines.join("<br>");
+          banner.classList.remove("hidden");
+          var btn = document.getElementById("btnApplyCombineShipToForm");
+          if (btn) {
+            btn.addEventListener("click", function() {
+              applyCombineShipFreeToForm_(masterId, others);
+              showOrderMessage("已套用併箱免運：本單運費 0，已關聯 " + masterId);
+            });
+          }
+        }
+
+        function applyCombineShipFreeToStoredOrders_(rows, masterId) {
+          masterId = normalizeOrderIdToken_(masterId);
+          if (!masterId) {
+            showOrderMessage("無法判斷出貨主單", true);
+            return Promise.resolve(0);
+          }
+          var updated = [];
+          (rows || []).forEach(function(row) {
+            if (!row || row._missing) return;
+            var id = normalizeOrderIdToken_(row.id);
+            if (!id || id === masterId) return;
+            if (row.status === "已取消" || row.status === "已完成") return;
+            var ord = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === id; });
+            if (!ord) return;
+            if (orderEffectiveShippingForOrder(ord) <= 0 && orderHasCombineShipRemark_(ord)) return;
+            ord.shippingFee = 0;
+            if (ord.shippingStatus && String(ord.shippingStatus).indexOf("免運") >= 0) ord.shippingStatus = "";
+            ord.remark = appendCombineShipRemark_(ord.remark, masterId);
+            var linked = parseLinkedOrderIds_(ord.linkedOrderIds);
+            if (linked.indexOf(masterId) < 0) linked.unshift(masterId);
+            ord.linkedOrderIds = linked.join(", ");
+            updated.push(ord);
+          });
+          var masterOrd = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === masterId; });
+          if (masterOrd) {
+            var masterLinked = parseLinkedOrderIds_(masterOrd.linkedOrderIds);
+            updated.forEach(function(slave) {
+              var sid = normalizeOrderIdToken_(slave.id);
+              if (sid && masterLinked.indexOf(sid) < 0) masterLinked.push(sid);
+            });
+            masterOrd.linkedOrderIds = masterLinked.join(", ");
+            if (updated.indexOf(masterOrd) < 0) updated.push(masterOrd);
+          }
+          if (!updated.length) {
+            showOrderMessage("沒有需要調整的副單（可能已為併箱免運）", true);
+            return Promise.resolve(0);
+          }
+          saveOrders();
+          renderOrders();
+          var chain = Promise.resolve();
+          updated.forEach(function(ord) {
+            chain = chain.then(function() {
+              return upsertOrderToSheet(ord).catch(function() { return null; });
+            });
+          });
+          return chain.then(function() { return updated.length; });
+        }
+
+        function renderCustomerOverviewShippingBanner_(rows, stats) {
+          var el = document.getElementById("customerOverviewShippingBanner");
+          if (!el) return;
+          if (!stats || stats.activeCount <= 1) {
+            el.classList.add("hidden");
+            el.innerHTML = "";
+            return;
+          }
+          var masterId = stats.recommendedMasterId || "";
+          var cls = stats.ok ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900";
+          var statusLine = stats.ok
+            ? ("本批併箱<strong>應收運費 1 次</strong>（NT$" + stats.expectedOnceFee + "）· 目前 " + stats.chargedCount + " 筆含運費")
+            : ("⚠ 本批<strong>應收運費 1 次</strong>，但目前 " + stats.chargedCount + " 筆各收運費（合計 NT$" + stats.totalShippingCharged + "）");
+          el.className = "rounded-xl border px-4 py-3 text-sm leading-relaxed " + cls;
+          el.innerHTML =
+            "<div class=\"font-semibold mb-1\">併箱運費</div>" +
+            "<p>" + statusLine + (masterId ? " · 建議主單 <span class=\"font-mono font-semibold\">" + escapeHtml(masterId) + "</span>" : "") + "</p>" +
+            (stats.ok ? "" : ("<button type=\"button\" id=\"btnOverviewApplyCombineShip\" class=\"mt-2 px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-amber-900 text-xs hover:bg-amber-100\">副單運費改 0（併箱免運）</button>"));
+          el.classList.remove("hidden");
+          var btn = document.getElementById("btnOverviewApplyCombineShip");
+          if (btn) {
+            btn.addEventListener("click", function() {
+              if (!confirm("將副單運費改為 0，並在備註標記「併箱免運，運費併入 " + masterId + "」？\n\n出貨主單 " + masterId + " 保留運費。")) return;
+              btn.disabled = true;
+              applyCombineShipFreeToStoredOrders_(rows, masterId).then(function(count) {
+                if (count > 0) {
+                  showOrderMessage("已更新 " + count + " 筆訂單為併箱免運");
+                  renderCustomerOverviewModal_(customerOverviewLastName_, customerOverviewLastPhone_, customerOverviewFocusOrderId);
+                }
+              }).finally(function() { btn.disabled = false; });
+            });
+          }
+        }
+
+        var customerOverviewLastName_ = "";
+        var customerOverviewLastPhone_ = "";
+
         function orderHasAmountBreakdown(ord) {
           return ord.subtotal != null && ord.subtotal !== "" && !isNaN(Number(ord.subtotal));
         }
@@ -5319,8 +5538,12 @@
           var tbody = document.getElementById("customerOverviewTableBody");
           if (!modal || !tbody) return;
           customerOverviewFocusOrderId = focusOrderId || null;
+          customerOverviewLastName_ = customerName || "";
+          customerOverviewLastPhone_ = phone || "";
           var rows = getCustomerOverviewRows_(customerName, phone, focusOrderId);
           var stats = buildCustomerOverviewStats_(rows, customerName, phone);
+          var shipStats = analyzeCombineShipForOrders_(rows);
+          renderCustomerOverviewShippingBanner_(rows, shipStats);
           if (subtitle) {
             var parts = [customerName || "（未填姓名）"];
             if (phone) parts.push(phone);
@@ -5334,7 +5557,7 @@
               "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">累計獲得紅利</p><p class=\"text-lg font-bold text-slate-800\">" + stats.earnedPts + " 點</p></div>";
           }
           if (!rows.length) {
-            tbody.innerHTML = "<tr><td colspan=\"5\" class=\"py-8 text-center text-slate-500\">找不到此顧客的訂單</td></tr>";
+            tbody.innerHTML = "<tr><td colspan=\"6\" class=\"py-8 text-center text-slate-500\">找不到此顧客的訂單</td></tr>";
           } else {
             var focusNorm = normalizeOrderIdToken_(focusOrderId);
             tbody.innerHTML = rows.map(function(o) {
@@ -5345,10 +5568,12 @@
               var rowClass = (focusNorm && id === focusNorm) ? " bg-sky-50" : (missing ? " bg-rose-50/40" : "");
               var status = missing ? "（不存在）" : (o.status || "—");
               var due = missing ? "—" : ("NT$ " + orderAmountDue(o));
+              var shipCell = missing ? "—" : formatOrderShippingOverviewCell_(o);
               return "<tr class=\"border-b border-slate-100" + rowClass + "\" data-overview-order-id=\"" + escapeHtml(id) + "\">" +
                 "<td class=\"py-2.5 px-3 font-mono text-slate-800\">" + escapeHtml(id) + (missing ? " <span class=\"text-rose-600 text-xs\">未找到</span>" : "") + "</td>" +
                 "<td class=\"py-2.5 px-3 text-slate-600\">" + escapeHtml(status) + "</td>" +
                 "<td class=\"py-2.5 px-3 font-medium text-slate-800\">" + escapeHtml(due) + "</td>" +
+                "<td class=\"py-2.5 px-3 text-slate-600\">" + escapeHtml(shipCell) + "</td>" +
                 "<td class=\"py-2.5 px-3 text-xs text-slate-500\">" + escapeHtml(linkedText) + "</td>" +
                 "<td class=\"py-2.5 px-3 whitespace-nowrap\">" +
                 (missing ? "<span class=\"text-xs text-slate-400\">—</span>" :
@@ -5376,6 +5601,16 @@
             });
           }
           modal.classList.remove("hidden");
+        }
+
+        function formatOrderShippingOverviewCell_(ord) {
+          var fee = orderEffectiveShippingForOrder(ord);
+          if (fee <= 0) {
+            if (orderHasCombineShipRemark_(ord)) return "0（併箱）";
+            if (ord.shippingStatus && String(ord.shippingStatus).indexOf("免運") >= 0) return "0（免運券）";
+            return "0";
+          }
+          return "NT$ " + fee;
         }
 
         function openCustomerOverviewModal_(customerName, phone, focusOrderId) {
@@ -5692,6 +5927,11 @@
           document.getElementById("orderShippingFee").value = String(o.shippingFee != null && o.shippingFee !== "" ? o.shippingFee : 38);
           var shipStatusEl = document.getElementById("orderShippingStatusCoupon");
           if (shipStatusEl) shipStatusEl.checked = (o.shippingStatus && String(o.shippingStatus).indexOf("免運") >= 0);
+          var combineEl = document.getElementById("orderCombineShipFree");
+          if (combineEl) {
+            var effShip = orderEffectiveShippingForOrder(o);
+            combineEl.checked = effShip <= 0 && (orderHasCombineShipRemark_(o) || parseLinkedOrderIds_(o.linkedOrderIds).length > 0);
+          }
           document.getElementById("orderRemark").value = o.remark || "";
           document.getElementById("orderDepositRemark").value = o.depositRemark || "";
           var depEl = document.getElementById("orderDepositAmount");
@@ -5707,6 +5947,7 @@
           refreshOrderPointsPanel_(o.pointsProcessed === "Y" || o.pointsProcessed === true);
           updateOrderTotal();
           refreshOrderMemberCardHint_();
+          refreshCombineShipPanel_();
         }
 
         function openOrderModal(editOrder) {
@@ -5731,6 +5972,10 @@
             document.getElementById("orderShippingFee").value = "38";
             var shipStatusEl = document.getElementById("orderShippingStatusCoupon");
             if (shipStatusEl) shipStatusEl.checked = false;
+            var combineElNew = document.getElementById("orderCombineShipFree");
+            if (combineElNew) combineElNew.checked = false;
+            var combineBannerNew = document.getElementById("orderCombineShipBanner");
+            if (combineBannerNew) { combineBannerNew.classList.add("hidden"); combineBannerNew.innerHTML = ""; }
             var cardElNew = document.getElementById("orderMemberCardNo");
             if (cardElNew) cardElNew.value = "";
             document.getElementById("orderCustomerName").value = "";
@@ -5758,6 +6003,7 @@
             updateOrderTotal();
             refreshOrderMemberCardHint_();
           }
+          refreshCombineShipPanel_();
         }
 
         function closeOrderModal() {
@@ -6333,6 +6579,7 @@
               if (subEl2) subEl2.value = String(parsed.subtotal || 0);
               if (remarkEl2) remarkEl2.value = parsed.remark || "";
               updateOrderTotal();
+              refreshCombineShipPanel_();
               showOrderMessage("已解析 " + (parsed.itemsCount || 0) + " 筆商品，已帶入小計與備註");
             }, 50);
           });
@@ -6353,8 +6600,39 @@
         }
         ["orderCustomerName", "orderPhone"].forEach(function(id) {
           var el = document.getElementById(id);
-          if (el) el.addEventListener("input", refreshOrderMemberCardHint_);
+          if (el) {
+            el.addEventListener("input", refreshOrderMemberCardHint_);
+            el.addEventListener("blur", refreshCombineShipPanel_);
+          }
         });
+        var orderCombineShipFreeEl = document.getElementById("orderCombineShipFree");
+        if (orderCombineShipFreeEl) {
+          orderCombineShipFreeEl.addEventListener("change", function() {
+            if (this.checked) {
+              var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
+              var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+              var editId = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id")) || "";
+              var selfId = normalizeOrderIdToken_((document.getElementById("orderId") && document.getElementById("orderId").value) || editId);
+              var others = getActiveCustomerOrders_(customerName, phone, selfId).filter(function(o) { return o.status !== "已完成"; });
+              var masterId = pickCombineShipMasterId_(others);
+              if (!masterId && others.length) masterId = normalizeOrderIdToken_(others[0].id);
+              if (masterId) applyCombineShipFreeToForm_(masterId, others);
+              else {
+                var feeEl = document.getElementById("orderShippingFee");
+                if (feeEl) feeEl.value = "0";
+                var couponEl = document.getElementById("orderShippingStatusCoupon");
+                if (couponEl) couponEl.checked = false;
+                updateOrderTotal();
+                refreshCombineShipPanel_();
+              }
+            } else {
+              var feeElOff = document.getElementById("orderShippingFee");
+              if (feeElOff && Number(feeElOff.value) === 0) feeElOff.value = "38";
+              updateOrderTotal();
+              refreshCombineShipPanel_();
+            }
+          });
+        }
         var btnGenMemberCard = document.getElementById("btnGenerateMemberCard");
         if (btnGenMemberCard) {
           btnGenMemberCard.addEventListener("click", function() {
@@ -6493,6 +6771,21 @@
               });
             }
           } else {
+            var selfIdDraft = normalizeOrderIdToken_((document.getElementById("orderId") && document.getElementById("orderId").value) || "");
+            var othersNew = getActiveCustomerOrders_(data.customerName, data.phone, selfIdDraft).filter(function(o) { return o.status !== "已完成"; });
+            var combineCheckEl = document.getElementById("orderCombineShipFree");
+            var shippingEff = data.shippingStatus ? 0 : (Number(data.shippingFee) || 0);
+            if (othersNew.length > 0 && !(combineCheckEl && combineCheckEl.checked) && shippingEff > 0) {
+              var masterForPrompt = pickCombineShipMasterId_(othersNew);
+              if (confirm(
+                "此客戶已有 " + othersNew.length + " 筆訂單。\n\n若併箱一起寄，通常只收一次運費（NT$" + DEFAULT_COMBINE_SHIP_FEE + "）。\n\n" +
+                "按「確定」＝本單改併箱免運（運費 0" + (masterForPrompt ? "，併入 " + masterForPrompt : "") + "）\n" +
+                "按「取消」＝維持本單運費 NT$" + shippingEff
+              )) {
+                applyCombineShipFreeToForm_(masterForPrompt, othersNew);
+                data = getOrderFromForm();
+              }
+            }
             var orderIdInput = (document.getElementById("orderId") && document.getElementById("orderId").value) ? document.getElementById("orderId").value.trim() : "";
             var newId = orderIdInput || getNextOrderId();
             if (/^\d+$/.test(newId)) newId = "ORD" + ("00000" + newId).slice(-5);
