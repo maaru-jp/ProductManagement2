@@ -2543,6 +2543,13 @@ function countLedgerRowsForMemberCard_(ledger, card, allOrders) {
   return count;
 }
 
+function normalizePublicPointNote_(note) {
+  return String(note != null ? note : "")
+    .trim()
+    .replace(/（不含運費、訂金）/g, "（不含運費）")
+    .replace(/\(不含運費、訂金\)/g, "（不含運費）");
+}
+
 function sanitizePublicPointRecord_(rec) {
   var r = rec || {};
   var pts = Math.floor(Number(r.points) || 0);
@@ -2555,7 +2562,7 @@ function sanitizePublicPointRecord_(rec) {
     remaining: Math.floor(Number(r.remaining) || 0),
     expireDate: normalizeSheetDateValue_(r.expireDate) || "",
     orderId: r.orderId != null ? normalizeOrderId_(r.orderId) || String(r.orderId).trim() : "",
-    note: String(r.note != null ? r.note : "").trim()
+    note: normalizePublicPointNote_(r.note)
   };
 }
 
