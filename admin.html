@@ -428,7 +428,7 @@
         <div class="mt-6 p-4 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-3">
           <span class="text-slate-500 text-lg">💡</span>
           <div class="text-sm text-slate-700 space-y-2">
-            <p><strong>產生 PDF：</strong>每筆訂單「操作」欄 → 列印視窗選「另存為 PDF」。僅含「待出貨」品項，供客人出貨明細，<strong>不會</strong>觸發紅利發放。</p>
+            <p><strong>產生 PDF：</strong>每筆訂單「操作」欄 → 列印視窗選「另存為 PDF」。僅含「待出貨」品項。<strong>併箱出貨</strong>時會詢問是否產生「併箱 PDF」（合併多張 ORD 品項與金額、運費只列 1 次）；也可在<strong>顧客總覽</strong>按「產生併箱 PDF」。</p>
             <p><strong>狀態與紅利：</strong><strong>已確認</strong>＝發點（建議金額定案後再改）· <strong>出貨中／PDF</strong>＝出貨作業 · <strong>已完成</strong>＝結案（不重複發點）。</p>
           </div>
         </div>
@@ -4982,8 +4982,23 @@
           el.innerHTML =
             "<div class=\"font-semibold mb-1\">併箱運費</div>" +
             "<p>" + statusLine + (masterId ? " · 建議主單 <span class=\"font-mono font-semibold\">" + escapeHtml(masterId) + "</span>" : "") + "</p>" +
+            "<button type=\"button\" id=\"btnOverviewCombinePdf\" class=\"mt-2 mr-2 px-3 py-1.5 rounded-lg border border-sky-400 bg-white text-sky-900 text-xs hover:bg-sky-50\">產生併箱 PDF（合併明細）</button>" +
             (stats.ok ? "" : ("<button type=\"button\" id=\"btnOverviewApplyCombineShip\" class=\"mt-2 px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-amber-900 text-xs hover:bg-amber-100\">副單運費改 0（併箱免運）</button>"));
           el.classList.remove("hidden");
+          var pdfBtn = document.getElementById("btnOverviewCombinePdf");
+          if (pdfBtn) {
+            pdfBtn.addEventListener("click", function() {
+              var group = (rows || []).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
+              var pending = collectCombineShipPendingItems_(group);
+              if (!pending.length) {
+                alert("沒有「待出貨」品項可產生併箱 PDF。\n\n請先把各單要出的品項設為「待出貨」並儲存。");
+                return;
+              }
+              var masterOrd = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === masterId; });
+              if (!masterOrd && group.length) masterOrd = group[0];
+              runCombineShipPdf_(masterOrd || group[0], group, pending);
+            });
+          }
           var btn = document.getElementById("btnOverviewApplyCombineShip");
           if (btn) {
             btn.addEventListener("click", function() {
@@ -5468,6 +5483,56 @@
             var found = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === id; });
             return found || { id: id, _missing: true };
           });
+        }
+
+        function resolveCombineShipPdfOrders_(ord) {
+          if (!ord) return [];
+          var idSet = {};
+          function addOrder(o) {
+            if (!o || o._missing || o.status === "已取消") return;
+            var id = normalizeOrderIdToken_(o.id);
+            if (id) idSet[id] = o;
+          }
+          addOrder(ord);
+          var guard = 0;
+          while (guard < 20) {
+            guard++;
+            var changed = false;
+            Object.keys(idSet).slice().forEach(function(k) {
+              parseLinkedOrderIds_(idSet[k].linkedOrderIds).forEach(function(lid) {
+                if (!idSet[lid]) {
+                  var found = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === lid; });
+                  if (found) { addOrder(found); changed = true; }
+                }
+              });
+            });
+            orders.forEach(function(o) {
+              if (!o || o.status === "已取消") return;
+              var oid = normalizeOrderIdToken_(o.id);
+              if (idSet[oid]) return;
+              var links = parseLinkedOrderIds_(o.linkedOrderIds);
+              for (var i = 0; i < links.length; i++) {
+                if (idSet[links[i]]) { addOrder(o); changed = true; break; }
+              }
+            });
+            if (!changed) break;
+          }
+          return Object.keys(idSet).map(function(k) { return idSet[k]; }).sort(function(a, b) {
+            var ma = String((a && a.id) || "").match(/^ORD(\d+)$/i);
+            var mb = String((b && b.id) || "").match(/^ORD(\d+)$/i);
+            return (ma ? parseInt(ma[1], 10) : 0) - (mb ? parseInt(mb[1], 10) : 0);
+          });
+        }
+
+        function collectCombineShipPendingItems_(orderGroup) {
+          var itemsByOrder = [];
+          (orderGroup || []).forEach(function(o) {
+            if (!o || o._missing) return;
+            var itemsAll = normalizeOrderItems_(o.items || []);
+            var toShip = itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "待出貨"; });
+            if (toShip.length) itemsByOrder.push({ ord: o, items: toShip, itemsAll: itemsAll });
+          });
+          return itemsByOrder;
         }
 
         function getCustomerOverviewRows_(customerName, phone, focusOrderId) {
@@ -6303,6 +6368,226 @@
           return { html: html, fileNameBase: fileNameBase };
         }
 
+        function buildCombineShipPdfFileName_(masterOrd, orderGroup, shipmentBatch) {
+          var fileDate = new Date().toISOString().slice(0, 10);
+          var custPart = (masterOrd.customerName && String(masterOrd.customerName).trim() !== "") ? String(masterOrd.customerName).trim() : (masterOrd.lineId || masterOrd.id);
+          var ids = (orderGroup || []).map(function(o) { return normalizeOrderIdToken_(o.id); }).filter(Boolean);
+          var idPart = ids.length > 1 ? (normalizeOrderIdToken_(masterOrd.id) + "_併箱" + ids.filter(function(id) { return id !== normalizeOrderIdToken_(masterOrd.id); }).join("_")) : normalizeOrderIdToken_(masterOrd.id);
+          if (shipmentBatch != null) {
+            return sanitizePdfFileName_(idPart + "_" + custPart + "_出貨" + shipmentBatch + "_" + fileDate);
+          }
+          return sanitizePdfFileName_(idPart + "_" + custPart + "_" + fileDate);
+        }
+
+        function buildCombineShipPdfHtml_(orderGroup, masterOrd, itemsByOrder, shipmentBatch, options) {
+          options = options || {};
+          var printedAtStr = new Date().toLocaleString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+          var batchNum = shipmentBatch != null ? shipmentBatch : null;
+          var ids = (orderGroup || []).map(function(o) { return normalizeOrderIdToken_(o.id); }).filter(Boolean);
+          var masterId = normalizeOrderIdToken_(masterOrd && masterOrd.id);
+          var slaveIds = ids.filter(function(id) { return id !== masterId; });
+          var orderIdLabel = slaveIds.length
+            ? (masterId + "（併箱：" + slaveIds.join("、") + "）")
+            : ids.join("、");
+          var itemsRows = "";
+          if (itemsByOrder && itemsByOrder.length > 0) {
+            itemsRows = "<h2 style=\"font-size:14px;margin-top:12px;margin-bottom:6px;\">" +
+              (batchNum != null ? ("本次出貨商品（出貨第 " + escapeHtml(String(batchNum)) + " 次 · 併箱）") : "本次出貨商品（併箱）") +
+              "</h2>";
+            itemsByOrder.forEach(function(entry) {
+              var oid = normalizeOrderIdToken_(entry.ord && entry.ord.id);
+              itemsRows += "<h3 style=\"font-size:13px;margin:10px 0 4px;color:#475569;\">" + escapeHtml(oid) + "</h3>";
+              itemsRows += "<table><tr><th>商品名稱／規格</th><th>單價</th><th>數量</th><th>金額</th></tr>";
+              (entry.items || []).forEach(function(it) {
+                var name = (it.lineName != null ? String(it.lineName).trim() : "") || (it.name || "") + (it.variant ? " " + it.variant : "");
+                var qty = (it.qty != null && !isNaN(it.qty)) ? Number(it.qty) : 0;
+                var priceNum = (it.price != null && it.price !== "" && !isNaN(Number(it.price))) ? Number(it.price) : null;
+                var priceCell = priceNum !== null ? "NT$ " + (Number.isInteger(priceNum) ? priceNum : Math.round(priceNum)) : "—";
+                var lineTotal = (priceNum !== null && qty > 0) ? (priceNum * qty) : null;
+                var lineTotalCell = lineTotal !== null ? "NT$ " + (Number.isInteger(lineTotal) ? lineTotal : Math.round(lineTotal)) : "—";
+                itemsRows += "<tr><td>" + escapeHtml(name || "—") + "</td><td>" + escapeHtml(priceCell) + "</td><td>" + escapeHtml(String(qty)) + "</td><td>" + escapeHtml(lineTotalCell) + "</td></tr>";
+              });
+              itemsRows += "</table>";
+            });
+          }
+          var sumSubtotal = 0;
+          var sumDiscount = 0;
+          var sumPointsUsed = 0;
+          var sumPointsDiscount = 0;
+          var sumPointsEarned = 0;
+          var sumDue = 0;
+          var sumDeposit = 0;
+          var subtotalRows = "";
+          (orderGroup || []).forEach(function(o) {
+            var oid = normalizeOrderIdToken_(o.id);
+            var sub = Number(o.subtotal) || 0;
+            var disc = Number(o.discount) || 0;
+            var ptsUsed = Math.floor(Number(o.pointsUsed) || 0);
+            var ptsDisc = ptsUsed > 0 ? orderPointsDiscountForOrder(o) : 0;
+            if (ptsUsed > 0 && ptsDisc <= 0) ptsDisc = ptsUsed;
+            var dep = o.depositAmount != null && o.depositAmount !== "" ? Number(o.depositAmount) : 0;
+            if (isNaN(dep) || dep < 0) dep = 0;
+            sumSubtotal += sub;
+            sumDiscount += disc;
+            sumPointsUsed += ptsUsed;
+            sumPointsDiscount += ptsDisc;
+            sumPointsEarned += Math.floor(Number(o.pointsEarned) || 0);
+            sumDue += orderAmountDue(o);
+            sumDeposit += dep;
+            if (orderGroup.length > 1) {
+              subtotalRows += "<tr><td>商品小計（" + escapeHtml(oid) + "）</td><td>NT$ " + sub + "</td></tr>";
+            }
+          });
+          var masterShip = orderEffectiveShippingForOrder(masterOrd);
+          var shipLabel = "運費（併箱出貨，僅收一次）";
+          var shipCell = "NT$ " + masterShip;
+          if (masterOrd.shippingStatus && String(masterOrd.shippingStatus).indexOf("免運") >= 0) {
+            shipCell = "NT$ 0（" + escapeHtml(String(masterOrd.shippingStatus).trim()) + "）";
+          }
+          var pdfPointsRows = "";
+          if (sumPointsUsed > 0) {
+            pdfPointsRows += "<tr><td>紅利折抵合計（" + sumPointsUsed + " 點）</td><td>- NT$ " + sumPointsDiscount + "</td></tr>";
+          }
+          if (sumPointsEarned > 0) {
+            pdfPointsRows += "<tr><td>本次獲得紅利（合計）</td><td>" + sumPointsEarned + " 點</td></tr>";
+          }
+          var pdfAmountCloseRows = "";
+          if (sumDeposit > 0) {
+            pdfAmountCloseRows += "<tr><td>預購訂金合計（已付）</td><td>- NT$ " + sumDeposit + "</td></tr>";
+          }
+          pdfAmountCloseRows += "<tr><td><strong>待結清總金額（合計）</strong></td><td><strong>NT$ " + sumDue + "</strong></td></tr></table>";
+          var pdfLogoUrl = "";
+          try { pdfLogoUrl = (localStorage.getItem("maaru_admin_pdf_logo") || "").trim(); } catch (e) {}
+          var preorderStr = (masterOrd.preorderDate != null && String(masterOrd.preorderDate).trim() !== "") ? String(masterOrd.preorderDate).trim() : "";
+          var shipStr = (masterOrd.shipDate != null && String(masterOrd.shipDate).trim() !== "") ? String(masterOrd.shipDate).trim() : "";
+          var headerRight = "<div class=\"pdf-logo-wrap\">";
+          if (pdfLogoUrl) {
+            var safeLogoUrl = String(pdfLogoUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            headerRight += "<div class=\"pdf-logo-fallback\" style=\"display:none;\">品牌 Logo</div><img src=\"" + safeLogoUrl + "\" alt=\"Logo\" class=\"pdf-logo\" onerror=\"this.style.display=\\'none\\';var s=this.previousElementSibling;if(s)s.style.display=\\'flex\\';\" />";
+          } else {
+            headerRight += "<div class=\"pdf-logo-placeholder\">品牌 Logo</div>";
+          }
+          headerRight += "</div>";
+          headerRight += "<div class=\"pdf-dates-box\"><div class=\"pdf-date-row\"><span class=\"label\">預購日期</span><span class=\"value\">" + escapeHtml(preorderStr || "—") + "</span></div>";
+          headerRight += "<div class=\"pdf-date-row\"><span class=\"label\">出貨日期</span><span class=\"value\">" + escapeHtml(shipStr || "—") + "</span></div></div>";
+          var fileNameBase = options.fileNameBase || buildCombineShipPdfFileName_(masterOrd, orderGroup, shipmentBatch);
+          var batchRowHtml = batchNum != null
+            ? "<div class=\"row\"><span class=\"label\">出貨批次</span><div class=\"value\">出貨第 " + escapeHtml(String(batchNum)) + " 次（併箱）</div></div>"
+            : "";
+          var depositBlocks = (orderGroup || []).map(function(o) {
+            var dr = o.depositRemark != null ? String(o.depositRemark).trim() : "";
+            if (!dr) return "";
+            return "<div class=\"row\" style=\"margin-top:4px;\"><span class=\"label\">" + escapeHtml(normalizeOrderIdToken_(o.id)) + "</span><div class=\"value\">" + escapeHtml(dr).replace(/\n/g, "<br>") + "</div></div>";
+          }).filter(Boolean).join("");
+          var html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>" + escapeHtml(fileNameBase) + "</title>" +
+            "<style>@page{size:A4 portrait;margin:10mm;} *{-webkit-print-color-adjust:exact;print-color-adjust:exact;} body{font-family:'Microsoft JhengHei',sans-serif;padding:10px;max-width:760px;margin:0 auto;color:#1e293b;font-size:15px;line-height:1.45;} " +
+            ".pdf-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:8px;flex-wrap:nowrap;} " +
+            ".pdf-header-left{flex:1;min-width:200px;} .pdf-header-right{text-align:center;min-width:240px;} " +
+            ".pdf-logo-wrap{margin-bottom:8px;text-align:center;} .pdf-logo{max-width:280px;max-height:120px;width:100%;object-fit:contain;display:block;margin:0 auto;} " +
+            ".pdf-logo-placeholder,.pdf-logo-fallback{width:280px;height:110px;margin:0 auto;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:#94a3b8;font-size:14px;display:flex;align-items:center;justify-content:center;} " +
+            ".pdf-dates-box{border:2px solid #64748b;border-radius:6px;padding:8px 12px;display:inline-block;margin:0 auto;} " +
+            ".pdf-dates{font-size:17px;} .pdf-date-row{display:flex;align-items:center;margin:6px 0;} .pdf-date-row:first-child{margin-top:0;} .pdf-date-row:last-child{margin-bottom:0;} .pdf-date-row .label{color:#64748b;font-size:15px;flex:0 0 auto;width:4.5em;} .pdf-date-row .value{font-weight:600;font-size:17px;flex:1;min-width:0;text-align:right;} " +
+            "h1{font-size:18px;border-bottom:2px solid #334155;padding-bottom:5px;margin:0 0 6px 0;} h2{font-size:14px;margin:12px 0 6px 0;} .row{margin:5px 0;} .label{color:#64748b;font-size:12px;} .value{margin-top:1px;font-size:15px;} " +
+            ".pdf-title-box{display:block;background:#4b5563;color:#ffffff;border-radius:4px;padding:10px 14px;font-size:22px;font-weight:700;letter-spacing:1px;margin:0 0 10px 0;} " +
+            "table{width:100%;border-collapse:collapse;margin:8px 0;page-break-inside:avoid;} th,td{border:1px solid #e2e8f0;padding:6px;text-align:left;font-size:14px;} th{background:#f1f5f9;} " +
+            ".pdf-deposit-box{border:2px solid #64748b;border-radius:6px;padding:8px 10px;margin-top:6px;min-height:1.2em;background:#f8fafc;white-space:pre-wrap;font-size:15px;line-height:1.5;} " +
+            ".pdf-two-cols{display:flex;gap:12px;margin-top:6px;flex-wrap:nowrap;} .pdf-two-cols .pdf-col{flex:1;min-width:0;} " +
+            ".pdf-printed-at{position:fixed;right:12mm;bottom:8mm;color:#000000;font-size:12px;background:#ffffff;padding:2px 6px;border-radius:4px;} " +
+            ".total{font-size:16px;font-weight:bold;margin-top:12px;}</style></head><body>" +
+            "<div class=\"pdf-header\"><div class=\"pdf-header-left\">" +
+            "<div class=\"pdf-title-box\">訂單明細（併箱出貨）</div>" +
+            "<div class=\"row\"><span class=\"label\">訂單編號</span><div class=\"value\">" + escapeHtml(orderIdLabel) + "</div></div>" +
+            "<div class=\"row\"><span class=\"label\">狀態</span><div class=\"value\">" + escapeHtml(masterOrd.status || "待處理") + "</div></div>" +
+            batchRowHtml +
+            "</div><div class=\"pdf-header-right\">" + headerRight + "</div></div>" +
+            "<h2>客戶資訊 / 運送方式</h2>" +
+            "<div class=\"pdf-two-cols\">" +
+            "<div class=\"pdf-col\"><div class=\"row\"><span class=\"label\">姓名</span><div class=\"value\">" + escapeHtml(masterOrd.customerName || "") + "</div></div></div>" +
+            "<div class=\"pdf-col\"><div class=\"row\"><span class=\"label\">方式</span><div class=\"value\">" + escapeHtml(masterOrd.shippingMethod || "") + "</div></div>" +
+            (masterOrd.storeName || masterOrd.storeId ? "<div class=\"row\"><span class=\"label\">門市</span><div class=\"value\">" + escapeHtml((masterOrd.storeName || "") + (masterOrd.storeId ? " (" + masterOrd.storeId + ")" : "")) + "</div></div>" : "") +
+            "<div class=\"row\"><span class=\"label\">地址</span><div class=\"value\">" + escapeHtml(masterOrd.address || "") + "</div></div></div>" +
+            "</div>" +
+            itemsRows +
+            "<h2>金額（併箱合計）</h2>" +
+            "<table><tr><th>項目</th><th>金額</th></tr>" +
+            subtotalRows +
+            (orderGroup.length > 1 ? ("<tr><td><strong>商品小計合計</strong></td><td><strong>NT$ " + sumSubtotal + "</strong></td></tr>") : ("<tr><td>商品小計</td><td>NT$ " + sumSubtotal + "</td></tr>")) +
+            "<tr><td>折扣合計</td><td>- NT$ " + sumDiscount + "</td></tr>" +
+            pdfPointsRows +
+            "<tr><td>" + shipLabel + "</td><td>" + shipCell + "</td></tr>" +
+            pdfAmountCloseRows +
+            "<h2>收訂金歷程記錄</h2>" +
+            "<div class=\"pdf-deposit-box\">" + (depositBlocks || "—") + "</div>" +
+            "<div class=\"pdf-printed-at\">印單時間：" + escapeHtml(printedAtStr) + "</div>" +
+            "</body></html>";
+          return { html: html, fileNameBase: fileNameBase };
+        }
+
+        function runCombineShipPdf_(triggerOrd, orderGroup, itemsByOrder) {
+          if (!triggerOrd || !itemsByOrder || !itemsByOrder.length) {
+            showOrderMessage("沒有可合併的待出貨品項", true);
+            return;
+          }
+          var masterId = pickCombineShipMasterId_(orderGroup);
+          var masterOrd = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === masterId; }) || triggerOrd;
+          var maxBatch = 0;
+          itemsByOrder.forEach(function(entry) {
+            (entry.itemsAll || []).forEach(function(it) {
+              var b = it && it.shipBatch != null && !isNaN(Number(it.shipBatch)) ? parseInt(Number(it.shipBatch), 10) : null;
+              if (b != null && isFinite(b) && b > maxBatch) maxBatch = b;
+            });
+          });
+          var shipmentBatch = maxBatch + 1;
+          var fileNameBase = buildCombineShipPdfFileName_(masterOrd, orderGroup, shipmentBatch);
+          var built = buildCombineShipPdfHtml_(orderGroup, masterOrd, itemsByOrder, shipmentBatch, { fileNameBase: fileNameBase });
+          try {
+            var opened = openOrderPdfPrintWindow_(built.html);
+            if (!opened) {
+              alert("無法開啟列印視窗。請在瀏覽器允許此網站的「彈出視窗」後，再按一次。");
+              showOrderMessage("請允許彈出視窗後再產生 PDF", true);
+              return;
+            }
+          } catch (err) {
+            alert("產生 PDF 失敗：" + (err && err.message ? err.message : "未知錯誤"));
+            showOrderMessage("產生 PDF 失敗", true);
+            return;
+          }
+          var prevShip = [];
+          var touchedOrders = [];
+          itemsByOrder.forEach(function(entry) {
+            var ord = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === normalizeOrderIdToken_(entry.ord && entry.ord.id); });
+            if (!ord) return;
+            touchedOrders.push(ord);
+            (entry.items || []).forEach(function(it) {
+              prevShip.push({ ref: it, shipStatus: it.shipStatus, shipBatch: it.shipBatch });
+              it.shipStatus = "已出貨";
+              it.shipBatch = shipmentBatch;
+            });
+          });
+          saveOrders();
+          var chain = Promise.resolve();
+          touchedOrders.forEach(function(ord) {
+            chain = chain.then(function() {
+              return upsertOrderToSheet(ord).catch(function() { return null; });
+            });
+          });
+          chain.then(function() {
+            renderOrders();
+            var idList = orderGroup.map(function(o) { return normalizeOrderIdToken_(o.id); }).join("、");
+            showOrderMessage("已產生併箱 PDF（" + idList + "，出貨第 " + shipmentBatch + " 次）");
+          }).catch(function(err) {
+            prevShip.forEach(function(x) {
+              if (x && x.ref) {
+                x.ref.shipStatus = x.shipStatus;
+                x.ref.shipBatch = x.shipBatch;
+              }
+            });
+            saveOrders();
+            renderOrders();
+            showOrderMessage("PDF 已開啟，但寫入試算表失敗：" + (err && err.message ? err.message : "網路錯誤"), true);
+          });
+        }
+
         function sanitizePdfFileName_(s) {
           return String(s || "").replace(/[\\/:*?\"<>|]/g, "_").replace(/\s+/g, "_").trim();
         }
@@ -6334,6 +6619,24 @@
 
         function generateOrderPdf(ord) {
           if (!ord) return;
+          var pdfGroup = resolveCombineShipPdfOrders_(ord).filter(function(o) { return o.status !== "已取消"; });
+          if (pdfGroup.length > 1) {
+            var pendingCombine = collectCombineShipPendingItems_(pdfGroup);
+            if (pendingCombine.length > 0) {
+              var idList = pdfGroup.map(function(o) { return normalizeOrderIdToken_(o.id); }).join("、");
+              if (confirm(
+                "此訂單與其他訂單已設定併箱關聯：\n" + idList + "\n\n" +
+                "是否產生「併箱 PDF」？\n" +
+                "· 合併所有「待出貨」品項\n" +
+                "· 金額加總，運費只列 1 次\n" +
+                "· 各單品項會標記為已出貨\n\n" +
+                "按「取消」則只產生本單 PDF。"
+              )) {
+                runCombineShipPdf_(ord, pdfGroup, pendingCombine);
+                return;
+              }
+            }
+          }
           var itemsAll = normalizeOrderItems_(ord.items || []);
           var hasItemList = itemsAll.length > 0;
           var itemsToShip = hasItemList ? itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "待出貨"; }) : [];
