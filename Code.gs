@@ -1606,6 +1606,16 @@ function ensurePointsHeaderRow_(sheet) {
 
 function normalizePointRecordForSheet_(rec) {
   var r = rec || {};
+  var type = normalizePointLedgerType_((r.type != null) ? String(r.type) : "");
+  var ptsNum = (r.points != null && r.points !== "") ? Number(r.points) : NaN;
+  var remainingVal = "";
+  if (r.remaining != null && r.remaining !== "") {
+    remainingVal = Number(r.remaining);
+  } else if ((type === "發放" || type === "調整") && !isNaN(ptsNum) && ptsNum > 0) {
+    remainingVal = ptsNum;
+  } else if (type === "折抵" || type === "失效") {
+    remainingVal = 0;
+  }
   return {
     id: (r.id != null) ? String(r.id).trim() : "",
     date: (r.date != null) ? String(r.date) : "",
@@ -1613,9 +1623,9 @@ function normalizePointRecordForSheet_(rec) {
     lineId: (r.lineId != null) ? String(r.lineId) : "",
     customerName: (r.customerName != null) ? String(r.customerName) : "",
     memberCardNo: normalizeMemberCardNo_(r.memberCardNo != null ? r.memberCardNo : ""),
-    type: (r.type != null) ? String(r.type) : "",
+    type: type,
     points: (r.points != null && r.points !== "") ? Number(r.points) : "",
-    remaining: (r.remaining != null && r.remaining !== "") ? Number(r.remaining) : "",
+    remaining: remainingVal,
     expireDate: (r.expireDate != null) ? String(r.expireDate) : "",
     orderId: (r.orderId != null) ? String(r.orderId) : "",
     note: (r.note != null) ? String(r.note) : ""
@@ -1687,16 +1697,56 @@ function normalizeSheetDateValue_(val) {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+function normalizePointLedgerType_(type) {
+  var t = String(type || "").trim();
+  if (t === "发放" || t.indexOf("發放") >= 0 || t === "earn") return "發放";
+  if (t === "折抵" || t === "扣除" || t === "使用" || t === "redeem") return "折抵";
+  if (t === "失效" || t === "过期" || t === "expire") return "失效";
+  if (t === "调整" || t.indexOf("調整") >= 0 || t === "adjust") return "調整";
+  return t;
+}
+
+function isPointRemainingUnset_(rec) {
+  return rec.remaining === undefined || rec.remaining === null || rec.remaining === "";
+}
+
+/** 發放列若「剩餘」空白，以「點數」作為可用餘額（試算表常只填點數欄） */
+function repairPointLedgerRecordInPlace_(rec) {
+  if (!rec) return rec;
+  rec.type = normalizePointLedgerType_(rec.type);
+  var pts = Number(rec.points) || 0;
+  var type = String(rec.type || "").trim();
+  if ((type === "發放" || type === "調整") && pts > 0 && isPointRemainingUnset_(rec)) {
+    rec.remaining = pts;
+  }
+  if ((type === "折抵" || type === "失效") && isPointRemainingUnset_(rec)) {
+    rec.remaining = 0;
+  }
+  return rec;
+}
+
+function getEffectivePointRemaining_(rec) {
+  if (!rec) return 0;
+  var type = normalizePointLedgerType_(rec.type);
+  if (type !== "發放" && type !== "調整") return 0;
+  if (!isPointRemainingUnset_(rec)) {
+    var rem = Number(rec.remaining);
+    if (!isNaN(rem) && rem >= 0) return rem;
+  }
+  var pts = Number(rec.points) || 0;
+  return pts > 0 ? pts : 0;
+}
+
 function normalizePointLedgerRecord_(obj) {
   if (!obj) return obj;
   if (obj.date != null && obj.date !== "") obj.date = normalizeSheetDateValue_(obj.date);
   if (obj.expireDate != null && obj.expireDate !== "") obj.expireDate = normalizeSheetDateValue_(obj.expireDate);
   if (obj.customerName != null) obj.customerName = String(obj.customerName).trim();
   if (obj.memberCardNo != null && obj.memberCardNo !== "") obj.memberCardNo = normalizeMemberCardNo_(obj.memberCardNo);
-  if (obj.type != null) obj.type = String(obj.type).trim();
-  if (obj.remaining != null && obj.remaining !== "") obj.remaining = Number(obj.remaining);
+  if (obj.type != null) obj.type = normalizePointLedgerType_(obj.type);
   if (obj.points != null && obj.points !== "") obj.points = Number(obj.points);
-  return obj;
+  if (obj.remaining != null && obj.remaining !== "") obj.remaining = Number(obj.remaining);
+  return repairPointLedgerRecordInPlace_(obj);
 }
 
 function getPointsLedger(sheet) {
@@ -1724,7 +1774,10 @@ function getPointsLedger(sheet) {
       var dispCard = normalizeMemberCardNo_((display[r] && display[r][cardCol]) || row[cardCol]);
       if (dispCard) obj.memberCardNo = dispCard;
     }
-    if (empty || !obj.id) continue;
+    if (!obj.id) {
+      obj.id = "PTROW" + (r + 1);
+    }
+    if (empty) continue;
     list.push(normalizePointLedgerRecord_(obj));
   }
   return list;
@@ -1748,6 +1801,9 @@ function pickRicherPointRecord_(a, b) {
   if (!b) return a;
   var sa = scorePointRecordCompleteness_(a);
   var sb = scorePointRecordCompleteness_(b);
+  var ra = getEffectivePointRemaining_(a);
+  var rb = getEffectivePointRemaining_(b);
+  if (ra !== rb) return rb > ra ? b : a;
   if (sa === sb && isValidMemberCardNo_(normalizeMemberCardNo_(b.memberCardNo)) &&
       !isValidMemberCardNo_(normalizeMemberCardNo_(a.memberCardNo))) {
     return b;
@@ -1862,6 +1918,9 @@ function syncPointsLedger(sheet, ledger, orders) {
   if (orders && orders.length) {
     merged = enrichPointsLedgerMemberCardsFromOrders_(merged, orders);
   }
+  for (var m = 0; m < merged.length; m++) {
+    merged[m] = repairPointLedgerRecordInPlace_(merged[m]);
+  }
   merged.sort(function(a, b) {
     var da = String(a.date || "");
     var db = String(b.date || "");
@@ -1932,7 +1991,7 @@ function getActiveLotsForMemberCard_(ledger, memberCardNo) {
     if (!isActivePointLot_(rec, today)) continue;
     lots.push({
       date: rec.date != null ? normalizeSheetDateValue_(rec.date) : "",
-      remaining: Number(rec.remaining) || 0,
+      remaining: getEffectivePointRemaining_(rec),
       expireDate: normalizeSheetDateValue_(rec.expireDate)
     });
   }
@@ -1949,10 +2008,10 @@ function recordMatchesCustomerForPoints_(rec, customerName) {
 }
 
 function isActivePointLot_(rec, today) {
-  var type = (rec.type || "").toString().trim();
+  var type = normalizePointLedgerType_(rec.type);
   if (type !== "發放" && type !== "調整") return false;
-  var remaining = Number(rec.remaining);
-  if (!remaining || remaining <= 0 || isNaN(remaining)) return false;
+  var remaining = getEffectivePointRemaining_(rec);
+  if (!remaining || remaining <= 0) return false;
   var exp = normalizeSheetDateValue_(rec.expireDate);
   if (!exp) return true;
   return exp >= today;
@@ -1967,7 +2026,7 @@ function getActiveLotsForCustomer_(ledger, customerName) {
     if (!isActivePointLot_(rec, today)) continue;
     lots.push({
       date: rec.date != null ? normalizeSheetDateValue_(rec.date) : "",
-      remaining: Number(rec.remaining) || 0,
+      remaining: getEffectivePointRemaining_(rec),
       expireDate: normalizeSheetDateValue_(rec.expireDate)
     });
   }
@@ -2072,7 +2131,11 @@ function findOrdersForMemberCard_(allOrders, card) {
 function recordMatchesMemberCardExtended_(rec, card, linkedNames, identityIndex) {
   card = normalizeMemberCardNo_(card);
   if (recordMatchesMemberCardForPoints_(rec, card)) return true;
-  if (getPointRecordMemberCard_(rec)) return false;
+  var recCard = getPointRecordMemberCard_(rec);
+  if (recCard && recCard !== card) {
+    if (identityIndex && identityIndex.resolveCard(rec) === card) return true;
+    return false;
+  }
   if (identityIndex && identityIndex.resolveCard(rec) === card) return true;
   if (!linkedNames || !linkedNames.length) return false;
   var n = normalizeCustomerNameForPoints_(getPointRecordCustomerName_(rec));
@@ -2090,7 +2153,7 @@ function getActiveLotsForMemberCardExtended_(ledger, allOrders, card) {
     if (!isActivePointLot_(rec, today)) continue;
     lots.push({
       date: rec.date != null ? normalizeSheetDateValue_(rec.date) : "",
-      remaining: Number(rec.remaining) || 0,
+      remaining: getEffectivePointRemaining_(rec),
       expireDate: normalizeSheetDateValue_(rec.expireDate)
     });
   }
@@ -2251,6 +2314,11 @@ function getPointsHistoryForMemberCard_(ledger, card, allOrders) {
 }
 
 function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet) {
+  ledger = (ledger || []).map(function(rec) {
+    var copy = {};
+    for (var k in rec) { if (rec.hasOwnProperty(k)) copy[k] = rec[k]; }
+    return repairPointLedgerRecordInPlace_(copy);
+  });
   var lots = getActiveLotsForMemberCardExtended_(ledger, allOrders || [], card);
   var balance = 0;
   for (var j = 0; j < lots.length; j++) {
