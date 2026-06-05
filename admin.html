@@ -1074,7 +1074,7 @@
                 <button type="button" id="btnGenerateVariantCombos" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700">自動生成規格組合</button>
                 <span id="variantComboPreview" class="text-xs text-slate-500"></span>
               </div>
-              <p class="text-[11px] text-slate-500 leading-relaxed">每個維度用逗號分隔選項。例：品項「吊飾娃,手機鍊」+ 款式「酷洛米,美樂蒂」→ 產生 4 筆；再於各規格列填不同台幣售價（吊飾娃 350、手機鍊 280）。重新生成會保留同名規格的圖片、售價與庫存。</p>
+              <p class="text-[11px] text-slate-500 leading-relaxed">① 第一列維度名稱填 <strong>品項</strong>，選項例：<code class="text-indigo-700">吊飾娃,手機鍊</code>　② 第二列填 <strong>規格</strong>，選項例：<code class="text-indigo-700">S,M,L</code>　③ 按「自動生成規格組合」→ 儲存商品（儲存時也會自動生成）。</p>
             </div>
             <div class="variant-list-head">
               <span>規格名稱</span>
@@ -2666,6 +2666,10 @@
         if (Object.prototype.hasOwnProperty.call(patch, "status")) patch.狀態 = patch.status;
         if (patch.stockType) { patch.貨況 = patch.stockType; patch.現貨預購 = patch.stockType; }
         if (patch.variantPrices != null && String(patch.variantPrices).trim() !== "") patch.規格售價 = patch.variantPrices;
+        if (patch.variantDim1Label != null) patch["規格維度1名稱"] = patch.variantDim1Label;
+        if (patch.variantDim1Options != null) patch["規格維度1選項"] = patch.variantDim1Options;
+        if (patch.variantDim2Label != null) patch["規格維度2名稱"] = patch.variantDim2Label;
+        if (patch.variantDim2Options != null) patch["規格維度2選項"] = patch.variantDim2Options;
         return normalizeProductRecord(patch);
       }
 
@@ -3157,7 +3161,8 @@
         var container = document.getElementById("variantDimContainer");
         if (!container) return;
         container.innerHTML = "";
-        container.appendChild(createVariantDimRow_("", ""));
+        container.appendChild(createVariantDimRow_("品項", ""));
+        container.appendChild(createVariantDimRow_("規格", ""));
         updateVariantComboPreview_();
         updateVariantDimPricePanel_();
       }
@@ -3180,7 +3185,7 @@
               var v = t[i];
               if (v && !seen[v]) { seen[v] = true; opts.push(v); }
             });
-            var label = len === 2 ? (i === 0 ? "品項" : "角色") : ("規格" + (i + 1));
+            var label = len === 2 ? (i === 0 ? "品項" : "規格") : ("規格" + (i + 1));
             container.appendChild(createVariantDimRow_(label, opts.join(",")));
           }
         } else if (parts.length >= 1 && parts.every(function(p) { return p.indexOf(" ") < 0; })) {
@@ -3917,6 +3922,11 @@
         e.preventDefault();
         if (productFormSubmitting) return;
         syncVariantToHidden();
+        var dimsForSave = collectVariantDims_();
+        if (dimsForSave.length >= 2 && dimsForSave.every(function(d) { return d.options && d.options.length; })) {
+          generateVariantCombinationsFromDims_({ silent: true, force: true });
+          syncVariantToHidden();
+        }
         var formProduct = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
         if (hiddenStock) formProduct.variantStock = sanitizeVariantStockString(String(hiddenStock.value != null ? hiddenStock.value : "").trim());
@@ -3941,6 +3951,10 @@
         var rowIndexNum = parseInt(rowIndexInput, 10);
         var action = (rowIndexInput && !isNaN(rowIndexNum) && rowIndexNum >= 2) ? "update" : "append";
         var product = action === "update" ? buildSaveProduct(rowIndexNum, formProduct) : finalizeStockForSave(formProduct);
+        product.variantDim1Label = formProduct.variantDim1Label || "";
+        product.variantDim1Options = formProduct.variantDim1Options || "";
+        product.variantDim2Label = formProduct.variantDim2Label || "";
+        product.variantDim2Options = formProduct.variantDim2Options || "";
         var body = { action: action, product: product };
         if (action === "update") body.rowIndex = rowIndexNum;
         var submitBtn = document.querySelector("#productForm button[type=\"submit\"]");
