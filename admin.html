@@ -4453,6 +4453,12 @@
             });
         }
 
+        function repairOrderSheetOnServer_() {
+          return fetchWrite({ action: "order_sheet_repair" })
+            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return {}; } }); })
+            .catch(function() { return {}; });
+        }
+
         function syncAllLocalOrdersToSheet() {
           if (ORDER_LOCAL_ONLY) {
             showOrderMessage("目前為本機模式，無法同步試算表", true);
@@ -4462,6 +4468,12 @@
             showOrderMessage("沒有訂單可同步", true);
             return Promise.resolve();
           }
+          showOrderMessage("修復試算表欄位並同步 " + orders.length + " 筆訂單至「歷史訂單」…");
+          return repairOrderSheetOnServer_().then(function(repairRes) {
+            if (repairRes && repairRes.repaired) {
+              showOrderMessage("已修復「歷史訂單」表頭（原表頭混用紅利欄位），開始寫入訂單…");
+            }
+          }).then(function() {
           showOrderMessage("同步 " + orders.length + " 筆訂單至試算表「歷史訂單」…");
           var chain = Promise.resolve();
           var ok = 0;
@@ -4483,6 +4495,7 @@
             } else {
               showOrderMessage("已同步 " + ok + " 筆訂單至試算表「歷史訂單」");
             }
+          });
           });
         }
 

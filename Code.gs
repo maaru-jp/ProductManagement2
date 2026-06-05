@@ -51,7 +51,7 @@ function doGet(e) {
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"],
-        postRoutes: ["order_list", "order_upsert", "order_delete", "points_sync", "append", "update", "delete"]
+        postRoutes: ["order_list", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "append", "update", "delete"]
       });
     }
     if (action === "points_balance") {
@@ -167,6 +167,19 @@ function doPost(e) {
         }
         var deleted = deleteOrderById(orderSheet, delId);
         out.message = deleted ? ("已刪除訂單 " + delId) : ("找不到訂單 " + delId);
+        return jsonOutput(out);
+      }
+      if (action === "order_sheet_repair") {
+        var repaired = repairOrderSheetLayout_(orderSheet, ss);
+        if (!repaired) ensureOrderHeaderRow_(orderSheet);
+        var list = parseOrdersFromSheetData_(orderSheet);
+        list = enrichOrdersMemberCardFromLedger_(list, ss);
+        out.message = repaired
+          ? ("已修復「" + orderSheet.getName() + "」表頭，共 " + list.length + " 筆訂單")
+          : ("表頭正常，共 " + list.length + " 筆訂單");
+        out.sheetName = orderSheet.getName();
+        out.orderCount = list.length;
+        out.repaired = repaired;
         return jsonOutput(out);
       }
       var order = body.order;
@@ -342,6 +355,7 @@ function getOrderSheet(ss) {
     seen[pname] = true;
     var hit = ss.getSheetByName(pname);
     if (hit && scoreOrderSheetCandidate_(hit) >= 0) {
+      repairOrderSheetLayout_(hit, ss);
       ensureOrderHeaderRow_(hit);
       return hit;
     }
@@ -358,6 +372,7 @@ function getOrderSheet(ss) {
     }
   }
   if (best) {
+    repairOrderSheetLayout_(best, ss);
     ensureOrderHeaderRow_(best);
     return best;
   }
@@ -367,8 +382,8 @@ function getOrderSheet(ss) {
   return sheet;
 }
 
-function ensureOrderHeaderRow_(sheet) {
-  var headers = [
+function getStandardOrderHeaders_() {
+  return [
     "訂單編號",
     "狀態",
     "日期",
@@ -399,6 +414,191 @@ function ensureOrderHeaderRow_(sheet) {
     "配送歷程",
     "更新時間"
   ];
+}
+
+/** 歷史訂單表頭被紅利紀錄欄位污染（B 欄為紀錄ID、缺會員卡號） */
+function isCorruptedOrderSheetHeaders_(headers) {
+  headers = headers || [];
+  if (String(headers[1] || "").trim() === "紀錄ID") return true;
+  var hasMemberCard = false;
+  var hasLedgerMix = false;
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").trim();
+    if (h === "會員卡號" || h === "会员卡号") hasMemberCard = true;
+    if (h === "類型" || h === "點數" || h === "剩餘") hasLedgerMix = true;
+  }
+  return !hasMemberCard && hasLedgerMix && String(headers[0] || "").trim() === "訂單編號";
+}
+
+function isOrderIdLike_(id) {
+  var s = String(id || "").trim();
+  if (!s) return false;
+  if (/^ORD\d+$/i.test(s)) return true;
+  var digits = s.replace(/\D/g, "");
+  return digits.length >= 1 && digits.length <= 6;
+}
+
+function isPointsLedgerRow_(obj) {
+  var t = String((obj && obj.ledgerType) || (obj && obj.type) || "").trim();
+  if (/^(發放|調整|使用|過期|扣除)$/.test(t)) return true;
+  var pts = obj && obj.points;
+  var rem = obj && obj.remaining;
+  if ((pts !== "" && pts != null && pts !== undefined) || (rem !== "" && rem != null && rem !== undefined)) {
+    if (!isOrderIdLike_(obj && obj.id)) return true;
+  }
+  return false;
+}
+
+function findMemberCardColumnIndex_(headers) {
+  for (var c = 0; c < (headers || []).length; c++) {
+    var h = String(headers[c] || "").trim();
+    if (!h) continue;
+    if (h === "會員卡號" || h === "会员卡号" || /會員.*卡/.test(h) || /member\s*card/i.test(h)) {
+      return c;
+    }
+  }
+  return -1;
+}
+
+function extractMemberCardFromRowCells_(row, displayRow) {
+  var len = Math.max((row || []).length, (displayRow || []).length);
+  for (var c = 0; c < len; c++) {
+    var vals = [];
+    if (displayRow && displayRow[c] != null && displayRow[c] !== "") vals.push(displayRow[c]);
+    if (row && row[c] != null && row[c] !== "") vals.push(row[c]);
+    for (var i = 0; i < vals.length; i++) {
+      var card = normalizeMemberCardNo_(vals[i]);
+      if (isValidMemberCardNo_(card)) return card;
+    }
+  }
+  return "";
+}
+
+function extractOrderIdFromRowCells_(row, displayRow) {
+  var len = Math.min(Math.max((row || []).length, (displayRow || []).length), 12);
+  for (var c = 0; c < len; c++) {
+    var vals = [];
+    if (displayRow && displayRow[c] != null && displayRow[c] !== "") vals.push(displayRow[c]);
+    if (row && row[c] != null && row[c] !== "") vals.push(row[c]);
+    for (var i = 0; i < vals.length; i++) {
+      var raw = String(vals[i] || "").trim();
+      if (isOrderIdLike_(raw)) return raw;
+      var norm = normalizeOrderId_(raw);
+      if (isOrderIdLike_(norm)) return norm;
+    }
+  }
+  return "";
+}
+
+/** 從「紅利紀錄」依姓名／訂單編號補齊歷史訂單的會員卡號 */
+function enrichOrdersMemberCardFromLedger_(orders, ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = getPointsSheet(ss);
+  if (!sheet) return orders;
+  var ledger = getPointsLedger(sheet);
+  var byName = {};
+  var byOrderId = {};
+  for (var i = 0; i < ledger.length; i++) {
+    var rec = ledger[i];
+    var card = normalizeMemberCardNo_(getPointRecordMemberCard_(rec));
+    if (!isValidMemberCardNo_(card)) continue;
+    var name = normalizeCustomerNameForPoints_(rec.customerName);
+    if (name) byName[name] = card;
+    var oid = normalizeOrderId_(rec.orderId);
+    if (oid) byOrderId[oid] = card;
+  }
+  for (var j = 0; j < (orders || []).length; j++) {
+    var ord = orders[j];
+    if (isValidMemberCardNo_(ord && ord.memberCardNo)) continue;
+    var nid = normalizeOrderId_(ord && ord.id);
+    if (nid && byOrderId[nid]) {
+      ord.memberCardNo = byOrderId[nid];
+      continue;
+    }
+    var n = normalizeCustomerNameForPoints_(ord && ord.customerName);
+    if (n && byName[n]) ord.memberCardNo = byName[n];
+  }
+  return orders;
+}
+
+function parseOrdersFromSheetData_(sheet) {
+  if (!sheet) return [];
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+  var display = sheet.getDataRange().getDisplayValues();
+  var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
+  var keyMap = orderKeyMap_(headers);
+  var cardCol = findMemberCardColumnIndex_(headers);
+  var list = [];
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var obj = {};
+    for (var c = 0; c < headers.length; c++) {
+      var key = keyMap[c];
+      if (!key) continue;
+      var val = row[c];
+      if (val === "" || val === null || val === undefined) continue;
+      if (key === "items") key = "itemsJson";
+      obj[key] = val;
+    }
+    if (cardCol >= 0) {
+      var dispCard = normalizeMemberCardNo_((display[r] && display[r][cardCol]) || row[cardCol]);
+      if (dispCard) obj.memberCardNo = dispCard;
+    }
+    if (!isValidMemberCardNo_(obj.memberCardNo)) {
+      var scanned = extractMemberCardFromRowCells_(row, display[r]);
+      if (scanned) obj.memberCardNo = scanned;
+    }
+    var id = (obj.id != null) ? String(obj.id).trim() : "";
+    if (!id) {
+      id = extractOrderIdFromRowCells_(row, display[r]);
+      if (id) obj.id = id;
+    }
+    if (!id) continue;
+    if (isPointsLedgerRow_(obj)) continue;
+    if (obj.itemsJson != null && String(obj.itemsJson).trim() !== "") {
+      try {
+        var parsed = JSON.parse(String(obj.itemsJson));
+        if (parsed && typeof parsed === "object") obj.items = parsed;
+      } catch (e) { /* ignore */ }
+    }
+    delete obj.itemsJson;
+    if (obj.id != null) obj.id = normalizeOrderId_(obj.id);
+    if (obj.memberCardNo != null && obj.memberCardNo !== "") {
+      obj.memberCardNo = normalizeMemberCardNo_(obj.memberCardNo);
+    }
+    list.push(obj);
+  }
+  list.sort(function(a, b) {
+    var ad = a.date ? new Date(a.date).getTime() : 0;
+    var bd = b.date ? new Date(b.date).getTime() : 0;
+    if (!isFinite(ad)) ad = 0;
+    if (!isFinite(bd)) bd = 0;
+    return bd - ad;
+  });
+  return list;
+}
+
+/** 將錯誤表頭的歷史訂單重整為標準欄位並保留資料 */
+function repairOrderSheetLayout_(sheet, ss) {
+  if (!sheet) return false;
+  var headers = getOrderHeaders_(sheet);
+  if (!isCorruptedOrderSheetHeaders_(headers)) return false;
+  var orders = parseOrdersFromSheetData_(sheet);
+  orders = enrichOrdersMemberCardFromLedger_(orders, ss);
+  var stdHeaders = getStandardOrderHeaders_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
+  sheet.getRange(1, 1, 1, stdHeaders.length).setValues([stdHeaders]);
+  for (var i = 0; i < orders.length; i++) {
+    upsertOrder(sheet, orders[i]);
+  }
+  Logger.log("[repairOrderSheetLayout_] repaired " + orders.length + " orders on「" + sheet.getName() + "」");
+  return true;
+}
+
+function ensureOrderHeaderRow_(sheet) {
+  var headers = getStandardOrderHeaders_();
   var lastRow = sheet.getLastRow();
   if (lastRow < 1) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -654,49 +854,8 @@ function deleteOrderById(sheet, id) {
 
 function getOrders(sheet) {
   ensureOrderHeaderRow_(sheet);
-  var data = sheet.getDataRange().getValues();
-  if (!data || data.length < 2) return [];
-  var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
-  var keyMap = orderKeyMap_(headers);
-  var list = [];
-  for (var r = 1; r < data.length; r++) {
-    var row = data[r];
-    var obj = {};
-    for (var c = 0; c < headers.length; c++) {
-      var key = keyMap[c];
-      if (!key) continue;
-      var val = row[c];
-      if (val === "" || val === null || val === undefined) continue;
-      if (key === "items") key = "itemsJson";
-      obj[key] = val;
-    }
-    var id = (obj.id != null) ? String(obj.id).trim() : "";
-    if (!id) continue;
-    // itemsJson → items
-    if (obj.itemsJson != null && String(obj.itemsJson).trim() !== "") {
-      try {
-        var parsed = JSON.parse(String(obj.itemsJson));
-        if (parsed && typeof parsed === "object") obj.items = parsed;
-      } catch (e) {
-        // ignore parse error
-      }
-    }
-    delete obj.itemsJson;
-    if (obj.id != null) obj.id = normalizeOrderId_(obj.id);
-    if (obj.memberCardNo != null && obj.memberCardNo !== "") {
-      obj.memberCardNo = normalizeMemberCardNo_(obj.memberCardNo);
-    }
-    list.push(obj);
-  }
-  // 依日期由新到舊（無日期則置底）
-  list.sort(function(a, b) {
-    var ad = a.date ? new Date(a.date).getTime() : 0;
-    var bd = b.date ? new Date(b.date).getTime() : 0;
-    if (!isFinite(ad)) ad = 0;
-    if (!isFinite(bd)) bd = 0;
-    return bd - ad;
-  });
-  return list;
+  var list = parseOrdersFromSheetData_(sheet);
+  return enrichOrdersMemberCardFromLedger_(list, SpreadsheetApp.getActiveSpreadsheet());
 }
 
 function jsonOutput(obj) {
@@ -1657,6 +1816,7 @@ function sanitizePublicOrder_(ord) {
     id: String(ord && ord.id != null ? ord.id : "").trim(),
     status: String(ord && ord.status != null ? ord.status : "").trim() || "待處理",
     date: ord && ord.date != null ? String(ord.date) : "",
+    product: String(ord && ord.product != null ? ord.product : "").trim(),
     subtotal: Number(ord && ord.subtotal) || 0,
     discount: Number(ord && ord.discount) || 0,
     pointsUsed: Math.floor(Number(ord && ord.pointsUsed) || 0),
@@ -1743,15 +1903,31 @@ function findOrderById_(orders, id) {
 function listOrderSourceSheets_(ss) {
   var result = [];
   var seen = {};
-  var preferred = ["訂單", "工作表1"];
+  var preferred = [
+    (CONFIG.orderSheetName || "歷史訂單").toString().trim(),
+    "歷史訂單",
+    "历史订单",
+    "訂單",
+    "工作表1"
+  ];
+  var fallbacks = CONFIG.orderSheetFallbackNames || ["訂單", "订单"];
+  for (var f = 0; f < fallbacks.length; f++) {
+    preferred.push(String(fallbacks[f] || "").trim());
+  }
   for (var i = 0; i < preferred.length; i++) {
-    var s = ss.getSheetByName(preferred[i]);
-    if (s) {
-      var sid = s.getSheetId();
-      if (!seen[sid]) {
-        seen[sid] = true;
-        result.push(s);
-      }
+    var pname = preferred[i];
+    if (!pname) continue;
+    var s = ss.getSheetByName(pname);
+    if (!s) continue;
+    var sname = String(s.getName() || "").trim();
+    if (isPointsLedgerSheetName_(sname)) continue;
+    var headers = getOrderHeaders_(s);
+    if (isPointsLedgerHeaders_(headers)) continue;
+    if (!sheetHasOrderIdHeader_(headers) && !isLikelyOrderSheetHeaders_(headers)) continue;
+    var sid = s.getSheetId();
+    if (!seen[sid]) {
+      seen[sid] = true;
+      result.push(s);
     }
   }
   var all = ss.getSheets();
@@ -1759,18 +1935,13 @@ function listOrderSourceSheets_(ss) {
     var cand = all[j];
     var sid2 = cand.getSheetId();
     if (seen[sid2]) continue;
-    var headers = getOrderHeaders_(cand);
-    var hasOrderId = false;
-    for (var h = 0; h < headers.length; h++) {
-      if (headers[h] === "訂單編號") {
-        hasOrderId = true;
-        break;
-      }
-    }
-    if (hasOrderId) {
-      seen[sid2] = true;
-      result.push(cand);
-    }
+    var cname = String(cand.getName() || "").trim();
+    if (isPointsLedgerSheetName_(cname)) continue;
+    var headers2 = getOrderHeaders_(cand);
+    if (isPointsLedgerHeaders_(headers2)) continue;
+    if (!sheetHasOrderIdHeader_(headers2) && !isLikelyOrderSheetHeaders_(headers2)) continue;
+    seen[sid2] = true;
+    result.push(cand);
   }
   return result;
 }
