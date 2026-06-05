@@ -459,7 +459,7 @@
           <p class="text-sm text-slate-600 mt-2"><strong>備用：</strong>若從未改過「已確認」、直接改 <strong>已完成</strong>，也會發點一次，但不會重複發放。</p>
           <p class="text-sm text-slate-600 mt-2"><strong>不發點：</strong>「產生 PDF」、狀態「出貨中」本身<strong>不會</strong>觸發紅利；「已完成」僅作結案，若已在「已確認」發過點則不再發。</p>
           <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-            <strong>顧客查詢中心</strong>讀取試算表「紅利紀錄」。訂單改「已確認」並寫入試算表後，系統會<strong>自動同步紅利</strong>；若仍查不到，請至本頁按「同步至試算表」。
+            <strong>顧客查詢中心</strong>讀取試算表「紅利點數」。訂單改「已確認」並寫入試算表後，系統會<strong>自動同步紅利</strong>；若仍查不到，請至本頁按「同步至試算表」。
           </p>
           <div class="flex flex-wrap gap-2 mt-3">
             <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理未發點訂單</button>
@@ -4391,7 +4391,7 @@
               if (res && res.skipped) {
                 showLoyaltyMessage("尚無紅利紀錄可同步");
               } else {
-                showLoyaltyMessage("已同步至試算表「紅利紀錄」，會員餘額已重新整理");
+                showLoyaltyMessage("已同步至試算表「紅利點數」，會員餘額已重新整理");
               }
             });
           }).catch(function(err) {

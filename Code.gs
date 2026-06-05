@@ -32,7 +32,7 @@ var CONFIG = {
   // 顧客訂單進度查詢（五碼編號）優先讀此分頁，搭配「歷程」
   legacyProgressSheetName: "工作表1",
   legacyHistorySheetName: "歷程",
-  pointsSheetName: "紅利紀錄"
+  pointsSheetName: "紅利點數"
 };
 
 /**
@@ -126,7 +126,7 @@ function doPost(e) {
       var pointsSheet = getPointsSheet(ss);
       if (!pointsSheet) {
         out.error = true;
-        out.message = "找不到紅利紀錄工作表";
+        out.message = "找不到紅利點數工作表";
         return jsonOutput(out);
       }
       if (action === "points_list") {
@@ -141,7 +141,7 @@ function doPost(e) {
         return jsonOutput(out);
       }
       syncPointsLedger(pointsSheet, ledger);
-      out.message = "已同步 " + ledger.length + " 筆紅利紀錄";
+      out.message = "已同步 " + ledger.length + " 筆至「紅利點數」";
       return jsonOutput(out);
     }
 
@@ -200,12 +200,12 @@ function doPost(e) {
         var pointsSheetSync = getPointsSheet(ss);
         syncPointsLedger(pointsSheetSync, body.ledger);
         out.pointsSynced = body.ledger.length;
-        pointsNote = "；紅利紀錄 " + body.ledger.length + " 筆";
+        pointsNote = "；紅利點數 " + body.ledger.length + " 筆";
       } else {
         var pointsAppended = ensurePointsLedgerEntriesFromOrder_(ss, order);
         if (pointsAppended > 0) {
           out.pointsAppended = pointsAppended;
-          pointsNote = "；已補寫 " + pointsAppended + " 筆紅利至「紅利紀錄」";
+          pointsNote = "；已補寫 " + pointsAppended + " 筆紅利至「紅利點數」";
         }
       }
       out.message = "已寫入訂單 " + upId + " →「" + orderSheet.getName() + "」" + pointsNote;
@@ -1346,13 +1346,16 @@ function buildKeyMap(headers) {
 }
 
 function getPointsSheet(ss) {
-  var name = (CONFIG.pointsSheetName || "紅利紀錄").toString().trim();
+  var name = (CONFIG.pointsSheetName || "紅利點數").toString().trim();
   var sheet = ss.getSheetByName(name);
+  if (!sheet && name !== "紅利紀錄") {
+    sheet = ss.getSheetByName("紅利紀錄");
+  }
   if (!sheet) {
     var all = ss.getSheets();
     for (var i = 0; i < all.length; i++) {
       var n = (all[i].getName() || "").toString().trim();
-      if (n === name || n.indexOf("紅利") >= 0) {
+      if (n === name || n === "紅利紀錄" || n.indexOf("紅利") >= 0) {
         sheet = all[i];
         break;
       }
@@ -1527,7 +1530,7 @@ function syncPointsLedger(sheet, ledger) {
     var width = rows[0].length;
     for (var r = 1; r < rows.length; r++) {
       if (rows[r].length !== width) {
-        throw new Error("紅利紀錄第 " + (r + 1) + " 列欄位數不一致（" + rows[r].length + " vs " + width + "）");
+        throw new Error("紅利點數第 " + (r + 1) + " 列欄位數不一致（" + rows[r].length + " vs " + width + "）");
       }
     }
     sheet.getRange(2, 1, endRow, width).setValues(rows);
@@ -1906,7 +1909,7 @@ function getPointsBalancePublic_(params) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pointsSheet = getPointsSheet(ss);
   if (!pointsSheet) {
-    return { error: true, message: "找不到紅利紀錄工作表" };
+    return { error: true, message: "找不到紅利點數工作表" };
   }
   var ledger = getPointsLedger(pointsSheet);
   var orderSheet = getOrderSheet(ss);
