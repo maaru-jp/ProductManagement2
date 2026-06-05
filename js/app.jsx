@@ -1610,12 +1610,12 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
       to={`/product/${encodedName}`}
       className="product-card group block w-full"
     >
-      <div className="product-image-wrap relative aspect-square bg-white border border-neutral-200 overflow-hidden rounded-md">
+      <div className="product-image-wrap relative aspect-[5/6] bg-white border border-neutral-200 overflow-hidden rounded-md">
         {imgSrc ? (
           <img
             src={imgSrc}
             alt={product.name}
-            className="product-card-image w-full h-full object-contain p-3 sm:p-4"
+            className="product-card-image w-full h-full object-contain p-2 sm:p-2.5"
             loading="lazy"
           />
         ) : (
@@ -1632,7 +1632,7 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
             if (onToggleWishlist) onToggleWishlist(productKey);
           }}
           className={[
-            "absolute top-2.5 right-2.5 w-8 h-8 sm:w-9 sm:h-9 rounded-md flex items-center justify-center transition-colors",
+            "absolute top-1.5 right-1.5 w-7 h-7 sm:w-8 sm:h-8 rounded-md flex items-center justify-center transition-colors",
             isWishlisted ? "bg-neutral-800 text-white" : "bg-white/90 text-neutral-500 border border-neutral-200 hover:text-neutral-800",
           ].join(" ")}
           aria-label={isWishlisted ? "取消收藏" : "加入收藏"}
@@ -1641,7 +1641,7 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
         </button>
 
         {(product.isHot || product.isNewListing) ? (
-          <div className="absolute top-2.5 left-2.5 z-[2] flex flex-col items-start gap-1.5 max-w-[calc(100%-3.5rem)]">
+          <div className="absolute top-1.5 left-1.5 z-[2] flex flex-col items-start gap-1 max-w-[calc(100%-2.75rem)]">
             {product.isNewListing ? <NewListingBadge size="card" /> : null}
             {product.isHot ? (
               <span className="product-badge-hot">熱銷</span>
@@ -1649,15 +1649,15 @@ function ProductCard({ product, rate, wishlist, onToggleWishlist }) {
           </div>
         ) : null}
       </div>
-      <div className="pt-3 space-y-1.5">
-        <h2 className="text-sm sm:text-base text-neutral-800 line-clamp-2 leading-snug font-medium">
+      <div className="pt-2 space-y-0.5">
+        <h2 className="text-xs sm:text-sm text-neutral-800 line-clamp-2 leading-snug font-medium">
           {product.name}
         </h2>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           {twd ? (
-            <p className="text-sm sm:text-base font-semibold text-neutral-900">{twd}</p>
+            <p className="text-xs sm:text-sm font-semibold text-neutral-900">{twd}</p>
           ) : (
-            <p className="text-sm text-neutral-500">價格請洽詢</p>
+            <p className="text-xs text-neutral-500">價格請洽詢</p>
           )}
         </div>
       </div>
