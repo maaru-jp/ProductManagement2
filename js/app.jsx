@@ -188,23 +188,7 @@ function parseVariantStockStrict(raw) {
   return parts.filter((s) => /^\d+$/.test(s)).map((s) => Math.max(0, parseInt(s, 10)));
 }
 
-function parseVariantPriceList(raw) {
-  if (raw == null || String(raw).trim() === "") return [];
-  const parts = Array.isArray(raw)
-    ? raw.map((x) => String(x).trim())
-    : String(raw).trim().split(/[,，、]+/).map((s) => s.trim());
-  return parts.map((s) => {
-    if (!s) return null;
-    if (!/^\d+(\.\d+)?$/.test(s)) return null;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  });
-}
-
-function resolveVariantUnitPrice_(product, variantPrice) {
-  if (variantPrice != null && Number.isFinite(variantPrice)) {
-    return variantPrice;
-  }
+function resolveVariantUnitPrice_(product) {
   const customerPrice = toNumberOrNull(product?.customerDisplayPrice);
   if (customerPrice != null) return customerPrice;
   const twd = toNumberOrNull(product?.sellingPrice);
@@ -305,15 +289,8 @@ function formatTWDFromJPY(jpy, rate) {
   return "NT$" + Math.round(j * r).toLocaleString("zh-TW");
 }
 
-// 顧客頁顯示價：有各規格獨立售價時優先採用，否則顧客顯示售價／台幣售價／日幣×匯率
+// 顧客頁顯示價：優先「顧客顯示售價」（後台選建議售價時），否則台幣售價，再否則日幣×匯率
 function getDisplayPrice(product, rate) {
-  if (product?.hasVariantPrice) {
-    const variantTwd =
-      toNumberOrNull(product?.sellingPrice) ?? toNumberOrNull(product?.customerDisplayPrice);
-    if (variantTwd != null && Number.isFinite(variantTwd)) {
-      return "NT$" + Math.round(variantTwd).toLocaleString("zh-TW");
-    }
-  }
   const customerPrice = toNumberOrNull(product?.customerDisplayPrice);
   if (customerPrice != null && Number.isFinite(customerPrice)) {
     return "NT$" + Math.round(customerPrice).toLocaleString("zh-TW");
@@ -325,13 +302,8 @@ function getDisplayPrice(product, rate) {
   return formatTWDFromJPY(product?.price, rate);
 }
 
-// 每單位台幣金額（用於購物車小計／總計）：與顧客頁顯示一致
+// 每單位台幣金額（用於購物車小計／總計）：與顧客頁顯示一致，優先顧客顯示售價
 function getUnitTWD(product, rate) {
-  if (product?.hasVariantPrice) {
-    const variantTwd =
-      toNumberOrNull(product?.sellingPrice) ?? toNumberOrNull(product?.customerDisplayPrice);
-    if (variantTwd != null && Number.isFinite(variantTwd)) return variantTwd;
-  }
   const customerPrice = toNumberOrNull(product?.customerDisplayPrice);
   if (customerPrice != null && Number.isFinite(customerPrice)) return customerPrice;
   const twd = toNumberOrNull(product?.sellingPrice);
@@ -463,12 +435,6 @@ function normalizeItem(row, index) {
   const variant = Array.isArray(rawVariant)
     ? rawVariant.map((v) => String(v).trim()).filter(Boolean).join(",")
     : (rawVariant != null && rawVariant !== "" ? String(rawVariant).trim() : "");
-  const rawVariantPrices =
-    row.variantPrices ?? row.規格售價 ?? row["規格售價"] ?? row["規格台幣售價"] ?? "";
-  const variantPrices =
-    rawVariantPrices != null && String(rawVariantPrices).trim() !== ""
-      ? String(rawVariantPrices).trim()
-      : "";
   const variantDim1Label = (row.variantDim1Label ?? row["規格維度1名稱"] ?? "").toString().trim();
   const variantDim1Options = (row.variantDim1Options ?? row["規格維度1選項"] ?? "").toString().trim();
   const variantDim2Label = (row.variantDim2Label ?? row["規格維度2名稱"] ?? "").toString().trim();
@@ -498,7 +464,6 @@ function normalizeItem(row, index) {
     image,
     variantImages,
     variantStock,
-    variantPrices,
     variantDim1Label,
     variantDim1Options,
     variantDim2Label,
@@ -2201,24 +2166,16 @@ function buildFlatVariantItems_(baseGroup) {
         ? String(p0.variantImages).split(/[,，、;；\n\r\uFF0C]+/).map((s) => s.trim()).filter(Boolean)
         : [];
 
-  const priceList = parseVariantPriceList(
-    p0.variantPrices ?? p0.raw?.variantPrices ?? p0.raw?.規格售價 ?? ""
-  );
-
   if (allParts.length === 0) {
     const rawV = p0.variant ?? p0.規格 ?? "";
     const v = Array.isArray(rawV) ? rawV.join(",") : String(rawV || "").trim();
     const qty = stockList[0] != null ? stockList[0] : getProductStockNumber(p0);
-    const variantSpecific0 =
-      priceList[0] != null && Number.isFinite(priceList[0]) ? priceList[0] : null;
-    const unitPrice = resolveVariantUnitPrice_(p0, variantSpecific0);
+    const unitPrice = resolveVariantUnitPrice_(p0);
     return [{
       ...p0,
       variant: v || "單一規格",
-      hasVariantPrice: variantSpecific0 != null,
-      sellingPrice: variantSpecific0 != null ? variantSpecific0 : unitPrice ?? p0.sellingPrice,
-      customerDisplayPrice:
-        variantSpecific0 != null ? variantSpecific0 : unitPrice ?? p0.customerDisplayPrice,
+      sellingPrice: unitPrice ?? p0.sellingPrice,
+      customerDisplayPrice: unitPrice ?? p0.customerDisplayPrice,
       sku: [p0.name, v || "單一規格", unitPrice ?? p0.price ?? ""].join("||"),
       variantStockQty: qty,
     }];
@@ -2233,17 +2190,13 @@ function buildFlatVariantItems_(baseGroup) {
       stockList[i] != null
         ? stockList[i]
         : getVariantStockQty(p0, part) ?? getProductStockNumber(p0);
-    const variantSpecific =
-      priceList[i] != null && Number.isFinite(priceList[i]) ? priceList[i] : null;
-    const unitPrice = resolveVariantUnitPrice_(p0, variantSpecific);
+    const unitPrice = resolveVariantUnitPrice_(p0);
     return {
       ...p0,
       variant: part,
       image: variantImage || p0.image,
-      hasVariantPrice: variantSpecific != null,
-      sellingPrice: variantSpecific != null ? variantSpecific : unitPrice ?? p0.sellingPrice,
-      customerDisplayPrice:
-        variantSpecific != null ? variantSpecific : unitPrice ?? p0.customerDisplayPrice,
+      sellingPrice: unitPrice ?? p0.sellingPrice,
+      customerDisplayPrice: unitPrice ?? p0.customerDisplayPrice,
       sku: [p0.name, part, unitPrice ?? p0.price ?? ""].join("||"),
       variantStockQty: stock,
     };
@@ -2287,9 +2240,7 @@ function buildGroupFromVariantDims_(flatItems, variantDims) {
 
     if (existing) {
       const unitPrice =
-        existing.hasVariantPrice
-          ? existing.sellingPrice ?? existing.customerDisplayPrice
-          : existing.sellingPrice ?? existing.customerDisplayPrice ?? p0.sellingPrice;
+        existing.sellingPrice ?? existing.customerDisplayPrice ?? p0.sellingPrice;
       return {
         ...existing,
         variant: comboName,
@@ -2297,7 +2248,7 @@ function buildGroupFromVariantDims_(flatItems, variantDims) {
       };
     }
 
-    const unitPrice = resolveVariantUnitPrice_(p0, null);
+    const unitPrice = resolveVariantUnitPrice_(p0);
     return {
       ...p0,
       variant: comboName,
