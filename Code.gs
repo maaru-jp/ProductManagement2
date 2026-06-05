@@ -653,23 +653,79 @@ function isSheetDate_(val) {
 /**
  * 更新既有列：保留試算表原有欄位，只覆寫 product 物件中有帶的 key（避免未對應欄位被清空）。
  */
-function mergeRowFromProduct_(sheet, rowNum, product) {
+function normalizeHeaderName_(h) {
+  return (h || "").toString().trim().replace(/[１２]/g, function(ch) { return ch === "１" ? "1" : "2"; });
+}
+
+function getSheetHeaderMeta_(sheet) {
   var lastCol = Math.max(sheet.getLastColumn(), 1);
-  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  var headers = headerRow.map(function(h) { return (h || "").toString().trim(); });
+  var scanCol = Math.max(lastCol, 40);
+  var headerRow = sheet.getRange(1, 1, 1, scanCol).getValues()[0];
+  var maxUsed = 0;
+  for (var i = 0; i < headerRow.length; i++) {
+    if (normalizeHeaderName_(headerRow[i])) maxUsed = i + 1;
+  }
+  var colCount = Math.max(lastCol, maxUsed);
+  var headers = [];
+  for (var c = 0; c < colCount; c++) {
+    headers.push(c < headerRow.length ? normalizeHeaderName_(headerRow[c]) : "");
+  }
+  return { headers: headers, colCount: colCount };
+}
+
+var VARIANT_DIM_CN_KEYS_ = {
+  variantDim1Label: "規格維度1名稱",
+  variantDim1Options: "規格維度1選項",
+  variantDim2Label: "規格維度2名稱",
+  variantDim2Options: "規格維度2選項",
+  variantPrices: "規格售價"
+};
+
+function productHasField_(product, key) {
+  if (!product || !key) return false;
+  if (Object.prototype.hasOwnProperty.call(product, key)) return true;
+  var cn = VARIANT_DIM_CN_KEYS_[key];
+  return !!(cn && Object.prototype.hasOwnProperty.call(product, cn));
+}
+
+function productFieldValue_(product, key) {
+  if (!product) return null;
+  if (Object.prototype.hasOwnProperty.call(product, key)) return product[key];
+  var cn = VARIANT_DIM_CN_KEYS_[key];
+  if (cn && Object.prototype.hasOwnProperty.call(product, cn)) return product[cn];
+  return null;
+}
+
+function isBlankProductValue_(val) {
+  return val === undefined || val === null || String(val).trim() === "";
+}
+
+function mergeRowFromProduct_(sheet, rowNum, product) {
+  var meta = getSheetHeaderMeta_(sheet);
+  var headers = meta.headers;
+  var colCount = meta.colCount;
   var keyMap = buildKeyMap(headers);
-  var existingRow = sheet.getRange(rowNum, 1, 1, lastCol).getValues()[0];
+  var existingRow = sheet.getRange(rowNum, 1, 1, colCount).getValues()[0];
   var row = existingRow.slice();
-  var hasKey = function(k) {
-    return product && Object.prototype.hasOwnProperty.call(product, k);
+  while (row.length < colCount) row.push("");
+  var forceWrite = product && product._writeAllFields === true;
+  var preserveIfEmptyKeys = {
+    variantDim1Label: true,
+    variantDim1Options: true,
+    variantDim2Label: true,
+    variantDim2Options: true,
+    variantPrices: true
   };
 
   for (var c = 0; c < headers.length; c++) {
     var key = keyMap[c];
-    if (!key || !hasKey(key)) continue;
-    var val = product[key];
+    if (!key || !productHasField_(product, key)) continue;
+    var val = productFieldValue_(product, key);
+    if (!forceWrite && preserveIfEmptyKeys[key] && isBlankProductValue_(val)) continue;
     row[c] = (val !== undefined && val !== null) ? val : "";
   }
+
+  applyVariantDimHeadersToRow_(headers, row, product, forceWrite);
 
   var stockCols = [];
   var variantCol = -1;
@@ -711,23 +767,47 @@ function mergeRowFromProduct_(sheet, rowNum, product) {
   return row;
 }
 
+function applyVariantDimHeadersToRow_(headers, row, product, forceWrite) {
+  if (!product || !headers || !row) return;
+  var pairs = [
+    ["規格維度1名稱", "variantDim1Label"],
+    ["規格維度1選項", "variantDim1Options"],
+    ["規格維度2名稱", "variantDim2Label"],
+    ["規格維度2選項", "variantDim2Options"]
+  ];
+  for (var p = 0; p < pairs.length; p++) {
+    var headerName = pairs[p][0];
+    var fieldKey = pairs[p][1];
+    var val = productFieldValue_(product, fieldKey);
+    if (!forceWrite && isBlankProductValue_(val)) continue;
+    var target = normalizeHeaderName_(headerName);
+    for (var c = 0; c < headers.length; c++) {
+      if (headers[c] === target) {
+        row[c] = val != null ? val : "";
+        break;
+      }
+    }
+  }
+}
+
 /**
  * 依工作表第一列標題，將 product 物件轉成與欄位對應的一列陣列；並補上庫存、規格庫存。
  */
 function buildRowFromProduct(sheet, product) {
-  var data = sheet.getDataRange().getValues();
-  if (!data || data.length < 1) return [];
-  var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
+  var meta = getSheetHeaderMeta_(sheet);
+  var headers = meta.headers;
   var keyMap = buildKeyMap(headers);
   var row = [];
   for (var c = 0; c < headers.length; c++) {
     var key = keyMap[c];
     var val = "";
-    if (key && product[key] !== undefined && product[key] !== null) {
-      val = product[key];
+    if (key) {
+      var raw = productFieldValue_(product, key);
+      if (raw !== undefined && raw !== null) val = raw;
     }
     row.push(val);
   }
+  applyVariantDimHeadersToRow_(headers, row, product, true);
   // 與 getProducts 一致：用 keyMap 找欄位，試算表標題用中文或英文都能正確寫入（key 可能為 stock 或 Stock）
   var stockCols = [];
   var variantCol = -1;
@@ -917,7 +997,7 @@ function buildKeyMap(headers) {
     ["上架日期", "上架時間", "publishedAt"]
   ];
   for (var c = 0; c < headers.length; c++) {
-    var h = (headers[c] || "").toString().trim();
+    var h = normalizeHeaderName_(headers[c]);
     if (!h) continue;
     for (var a = 0; a < aliases.length; a++) {
       var group = aliases[a];
@@ -932,8 +1012,12 @@ function buildKeyMap(headers) {
   }
   for (var c = 0; c < headers.length; c++) {
     if (map[c]) continue;
-    var h = (headers[c] || "").toString().trim();
-    if (h.indexOf("成本") >= 0) map[c] = "cost";
+    var h = normalizeHeaderName_(headers[c]);
+    if (h.indexOf("規格維度") >= 0 && h.indexOf("名稱") >= 0) {
+      map[c] = (h.indexOf("2") >= 0) ? "variantDim2Label" : "variantDim1Label";
+    } else if (h.indexOf("規格維度") >= 0 && h.indexOf("選項") >= 0) {
+      map[c] = (h.indexOf("2") >= 0) ? "variantDim2Options" : "variantDim1Options";
+    } else if (h.indexOf("成本") >= 0) map[c] = "cost";
     else if (h.indexOf("利潤") >= 0) map[c] = "profit";
     else if (h.indexOf("狀態") >= 0) map[c] = "status";
     else if (h.indexOf("規格") >= 0 && h.indexOf("庫存") >= 0) map[c] = "variantStock";

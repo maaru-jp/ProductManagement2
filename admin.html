@@ -2534,8 +2534,37 @@
       }
 
       /** 讀取／儲存前正規化庫存欄位 */
+      function ensureVariantDimFieldsOnRecord_(p) {
+        if (!p || typeof p !== "object") return p;
+        if (!p.variantDim1Label && p["規格維度1名稱"]) p.variantDim1Label = String(p["規格維度1名稱"]).trim();
+        if (!p.variantDim1Options && p["規格維度1選項"]) p.variantDim1Options = String(p["規格維度1選項"]).trim();
+        if (!p.variantDim2Label && p["規格維度2名稱"]) p.variantDim2Label = String(p["規格維度2名稱"]).trim();
+        if (!p.variantDim2Options && p["規格維度2選項"]) p.variantDim2Options = String(p["規格維度2選項"]).trim();
+        if (p.variantDim1Label) p["規格維度1名稱"] = p.variantDim1Label;
+        if (p.variantDim1Options) p["規格維度1選項"] = p.variantDim1Options;
+        if (p.variantDim2Label) p["規格維度2名稱"] = p.variantDim2Label;
+        if (p.variantDim2Options) p["規格維度2選項"] = p.variantDim2Options;
+        return p;
+      }
+
+      function applyVariantDimsFromBuilderToProduct_(product) {
+        if (!product) return product;
+        syncVariantDimsToHidden_();
+        var dims = collectVariantDims_();
+        product.variantDim1Label = dims[0] ? (dims[0].label || "") : (product.variantDim1Label || "");
+        product.variantDim1Options = dims[0] && dims[0].options && dims[0].options.length ? dims[0].options.join(", ") : (product.variantDim1Options || "");
+        product.variantDim2Label = dims[1] ? (dims[1].label || "") : (product.variantDim2Label || "");
+        product.variantDim2Options = dims[1] && dims[1].options && dims[1].options.length ? dims[1].options.join(", ") : (product.variantDim2Options || "");
+        product["規格維度1名稱"] = product.variantDim1Label;
+        product["規格維度1選項"] = product.variantDim1Options;
+        product["規格維度2名稱"] = product.variantDim2Label;
+        product["規格維度2選項"] = product.variantDim2Options;
+        return product;
+      }
+
       function normalizeProductRecord(p) {
         if (!p || typeof p !== "object") return p;
+        ensureVariantDimFieldsOnRecord_(p);
         var rawStock = p.stock;
         if ((rawStock === undefined || rawStock === null || rawStock === "") && p.Stock !== undefined && p.Stock !== null && p.Stock !== "") {
           rawStock = p.Stock;
@@ -3092,6 +3121,49 @@
         return dims;
       }
 
+      function ensureSecondVariantDimFromList_() {
+        var dims = collectVariantDims_();
+        if (dims.length >= 2) return dims;
+        if (dims.length !== 1) return dims;
+        var variantStr = (document.getElementById("variantValue") && document.getElementById("variantValue").value) || "";
+        var parts = String(variantStr).split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
+        if (!parts.length) return dims;
+        var tokens = parts.map(function(p) { return p.split(/\s+/).filter(Boolean); });
+        var secondOpts = [];
+        var secondLabel = "規格";
+        if (tokens.every(function(t) { return t.length === 1; })) {
+          var dim1Set = {};
+          (dims[0].options || []).forEach(function(o) { dim1Set[o] = true; });
+          var partsLookLikeDim1 = parts.every(function(p) { return dim1Set[p]; });
+          if (!partsLookLikeDim1) {
+            var seen = {};
+            parts.forEach(function(p) {
+              if (!seen[p]) { seen[p] = true; secondOpts.push(p); }
+            });
+          }
+        } else if (tokens.every(function(t) { return t.length === 2; })) {
+          var seen2 = {};
+          tokens.forEach(function(t) {
+            if (t[1] && !seen2[t[1]]) { seen2[t[1]] = true; secondOpts.push(t[1]); }
+          });
+        }
+        if (!secondOpts.length) return dims;
+        var container = document.getElementById("variantDimContainer");
+        if (!container) return dims;
+        var rows = container.querySelectorAll(".variant-dim-row");
+        if (rows.length < 2) {
+          container.appendChild(createVariantDimRow_(secondLabel, secondOpts.join(", ")));
+        } else {
+          var row2 = rows[1];
+          var labelInp2 = row2.querySelector(".variant-dim-label");
+          var optsInp2 = row2.querySelector(".variant-dim-options");
+          if (labelInp2 && !String(labelInp2.value || "").trim()) labelInp2.value = secondLabel;
+          if (optsInp2 && !parseDimOptionList_(optsInp2.value).length) optsInp2.value = secondOpts.join(", ");
+        }
+        updateVariantComboPreview_();
+        return collectVariantDims_();
+      }
+
       function updateVariantComboPreview_() {
         var el = document.getElementById("variantComboPreview");
         if (!el) return;
@@ -3116,16 +3188,24 @@
           optsInp.addEventListener("input", function() {
             updateVariantComboPreview_();
             updateVariantDimPricePanel_();
+            syncVariantDimsToHidden_();
           });
           optsInp.addEventListener("change", function() {
             updateVariantComboPreview_();
             updateVariantDimPricePanel_();
+            syncVariantDimsToHidden_();
           });
         }
         var labelInp = row.querySelector(".variant-dim-label");
         if (labelInp) {
-          labelInp.addEventListener("input", updateVariantDimPricePanel_);
-          labelInp.addEventListener("change", updateVariantDimPricePanel_);
+          labelInp.addEventListener("input", function() {
+            updateVariantDimPricePanel_();
+            syncVariantDimsToHidden_();
+          });
+          labelInp.addEventListener("change", function() {
+            updateVariantDimPricePanel_();
+            syncVariantDimsToHidden_();
+          });
         }
         if (removeBtn) {
           removeBtn.addEventListener("click", function() {
@@ -3739,6 +3819,7 @@
       function getFormValues() {
         updateProfitDisplay();
         syncVariantToHidden();
+        syncVariantDimsToHidden_();
         var form = document.getElementById("productForm");
         var o = {};
         ["name", "category", "subcategory", "variant", "price", "sellingPrice", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "variantPrices", "variantDim1Label", "variantDim1Options", "variantDim2Label", "variantDim2Options", "description", "introduction", "publishedAt", "customerDisplayPrice"].forEach(function(key) {
@@ -3921,11 +4002,19 @@
       document.getElementById("productForm").addEventListener("submit", function(e) {
         e.preventDefault();
         if (productFormSubmitting) return;
+        var submitBtn = document.querySelector("#productForm button[type=\"submit\"]");
         syncVariantToHidden();
-        var dimsForSave = collectVariantDims_();
+        var dimsForSave = ensureSecondVariantDimFromList_();
+        syncVariantDimsToHidden_();
         if (dimsForSave.length >= 2 && dimsForSave.every(function(d) { return d.options && d.options.length; })) {
           generateVariantCombinationsFromDims_({ silent: true, force: true });
           syncVariantToHidden();
+          syncVariantDimsToHidden_();
+        } else if (dimsForSave.length === 1) {
+          showMessage("請在第二列維度填「規格」與選項（例：S,M,L），或先保留下方 S/M/L 規格列再儲存", true);
+          productFormSubmitting = false;
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "儲存"; }
+          return;
         }
         var formProduct = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
@@ -3951,13 +4040,18 @@
         var rowIndexNum = parseInt(rowIndexInput, 10);
         var action = (rowIndexInput && !isNaN(rowIndexNum) && rowIndexNum >= 2) ? "update" : "append";
         var product = action === "update" ? buildSaveProduct(rowIndexNum, formProduct) : finalizeStockForSave(formProduct);
-        product.variantDim1Label = formProduct.variantDim1Label || "";
-        product.variantDim1Options = formProduct.variantDim1Options || "";
-        product.variantDim2Label = formProduct.variantDim2Label || "";
-        product.variantDim2Options = formProduct.variantDim2Options || "";
+        applyVariantDimsFromBuilderToProduct_(product);
+        product.variantDim1Label = product.variantDim1Label || formProduct.variantDim1Label || "";
+        product.variantDim1Options = product.variantDim1Options || formProduct.variantDim1Options || "";
+        product.variantDim2Label = product.variantDim2Label || formProduct.variantDim2Label || "";
+        product.variantDim2Options = product.variantDim2Options || formProduct.variantDim2Options || "";
+        product["規格維度1名稱"] = product.variantDim1Label;
+        product["規格維度1選項"] = product.variantDim1Options;
+        product["規格維度2名稱"] = product.variantDim2Label;
+        product["規格維度2選項"] = product.variantDim2Options;
+        product._writeAllFields = true;
         var body = { action: action, product: product };
         if (action === "update") body.rowIndex = rowIndexNum;
-        var submitBtn = document.querySelector("#productForm button[type=\"submit\"]");
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "儲存中..."; }
         productFormSubmitting = true;
         fetchWrite(body)
