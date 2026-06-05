@@ -1477,7 +1477,7 @@
   </div>
 
   <script src="js/member-card.js"></script>
-  <script src="js/admin-loyalty.js"></script>
+  <script src="js/admin-loyalty.js?v=20260601-13"></script>
   <script>
     (function() {
       // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
@@ -4174,8 +4174,10 @@
               if (res && res.error) throw new Error(res.message || "載入失敗");
               var remote = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
               var merged = MaaruLoyalty.mergeLedgers(MaaruLoyalty.getLedger(), remote);
-              MaaruLoyalty.saveLedger(merged);
-              return merged;
+              var orders = loadAdminOrdersForLoyalty_();
+              var bf = MaaruLoyalty.backfillLedgerMemberCards(merged, orders, true);
+              MaaruLoyalty.saveLedger(bf.ledger);
+              return bf.ledger;
             });
         }
 
@@ -4232,7 +4234,7 @@
             "</tr></thead><tbody>" +
             rows.map(function(row) {
               var card = row.memberCardNo || "";
-              var balance = card && MaaruLoyalty ? MaaruLoyalty.getBalance(card, row.customerName, row.phone, row.lineId) : 0;
+              var balance = card && MaaruLoyalty ? MaaruLoyalty.getBalance(card, row.customerName, row.phone, row.lineId, orders) : 0;
               var cardHtml = card
                 ? "<span class=\"font-mono text-xs tracking-wider text-slate-800\">" + escapeHtmlLoyalty(card) + "</span>"
                 : "<span class=\"text-amber-700 text-xs\">尚無卡號（請至訂單編輯並儲存以自動產生）</span>";
@@ -4265,10 +4267,10 @@
         }
 
         function renderLoyaltyPanel() {
-          MaaruLoyalty.runGlobalExpiry();
+          var orders = loadAdminOrdersForLoyalty_();
+          MaaruLoyalty.runGlobalExpiry(orders);
           var q = (document.getElementById("loyaltySearchInput") && document.getElementById("loyaltySearchInput").value || "").trim().toLowerCase();
           var qDigits = q.replace(/\D/g, "");
-          var orders = loadAdminOrdersForLoyalty_();
           var customers = MaaruLoyalty.summarizeCustomersWithOrders(MaaruLoyalty.getLedger(), orders);
           if (q) {
             customers = customers.filter(function(c) {
@@ -4324,7 +4326,7 @@
         });
         var btnExpire = document.getElementById("btnLoyaltyExpireAll");
         if (btnExpire) btnExpire.addEventListener("click", function() {
-          MaaruLoyalty.runGlobalExpiry();
+          MaaruLoyalty.runGlobalExpiry(loadAdminOrdersForLoyalty_());
           renderLoyaltyPanel();
           syncPointsLedgerToSheet().catch(function() {});
           showLoyaltyMessage("已完成到期失效檢查");
@@ -4783,6 +4785,17 @@
           );
         }
 
+        function getOrdersForLoyaltyLookup_() {
+          try {
+            var saved = localStorage.getItem(ORDER_STORAGE_KEY);
+            if (saved) {
+              var list = JSON.parse(saved);
+              if (Array.isArray(list) && list.length) return list;
+            }
+          } catch (e) {}
+          return Array.isArray(orders) ? orders : [];
+        }
+
         function refreshOrderPointsPanel_(processedFlag, callback) {
           function doRefresh() {
             if (!window.MaaruLoyalty) {
@@ -4793,7 +4806,7 @@
             var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
             var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
             var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-            var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId);
+            var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId, getOrdersForLoyaltyLookup_());
             var balEl = document.getElementById("orderPointsBalance");
             if (balEl) balEl.textContent = String(balance);
             var processed = processedFlag === true || processedFlag === "Y";
@@ -4848,7 +4861,7 @@
           var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
           var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
           var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-          var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId);
+          var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId, getOrdersForLoyaltyLookup_());
           var amounts = getOrderDiscountFromForm_();
           var net = MaaruLoyalty.merchandiseNet({ subtotal: amounts.subtotal, discount: amounts.discount });
           var maxPts = getOrderPointsMaxRedeem_(balance);
@@ -5083,7 +5096,7 @@
               lineId = rows[0].lineId || "";
               memberCardNo = rows[0].memberCardNo || "";
             }
-            balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId);
+            balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId, rows);
           }
           var totalDue = 0;
           var activeCount = 0;
@@ -5402,7 +5415,7 @@
           var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
           var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
           var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-          var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId);
+          var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId, getOrdersForLoyaltyLookup_());
           var maxPts = MaaruLoyalty.calcMaxRedeemPoints(
             { subtotal: subtotal, discount: discount, pointsUsed: 0 },
             balance
