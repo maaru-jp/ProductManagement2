@@ -438,7 +438,7 @@
           <div class="rounded-xl border border-rose-200 bg-gradient-to-br from-rose-50 to-white p-5">
             <p class="text-xs font-medium text-rose-800/70 uppercase tracking-wide mb-1">折抵規則</p>
             <p class="text-2xl font-bold text-rose-900">1 點 = NT$ 1</p>
-            <p class="text-sm text-slate-600 mt-2">折抵上限為該筆商品淨額</p>
+            <p class="text-sm text-slate-600 mt-2">商品淨額須滿 NT$199 才可折抵 · 折抵上限為該筆商品淨額</p>
           </div>
           <div class="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5">
             <p class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">有效期限</p>
@@ -1275,7 +1275,7 @@
                 <span class="text-sm font-medium text-amber-900">⭐ 紅利點數</span>
                 <span class="text-xs text-amber-800">可用：<strong id="orderPointsBalance">0</strong> 點</span>
               </div>
-              <p class="text-[11px] text-amber-900/70">消費滿 NT$100 集 1 點 · 1 點折 NT$1 · 365 天內有效</p>
+              <p class="text-[11px] text-amber-900/70">消費滿 NT$100 集 1 點 · 1 點折 NT$1 · 商品淨額滿 NT$199 才可折抵 · 365 天內有效</p>
               <div class="flex flex-wrap items-center gap-2">
                 <label class="inline-flex items-center gap-2">
                   <input type="checkbox" id="orderUsePointsCheck" class="rounded border-amber-300" />
@@ -4388,6 +4388,17 @@
           return { subtotal: subtotal, discount: discount };
         }
 
+        function orderPointsRedeemBlockedReason_(balance, net) {
+          if (!window.MaaruLoyalty) return "紅利模組未載入，請重新整理頁面";
+          var minNet = MaaruLoyalty.getMinRedeemNet();
+          if (minNet > 0 && net < minNet) {
+            return "商品淨額須滿 NT$" + minNet + " 才能折抵（目前約 NT$" + net + "）";
+          }
+          if (balance <= 0) return "此客戶目前無可用紅利。請至「紅利點數」確認餘額，或按「重新載入」後再試";
+          if (net <= 0) return "商品淨額為 0，無法折抵（請確認小計與折扣）";
+          return "商品淨額不足，無法折抵紅利";
+        }
+
         function getOrderPointsMaxRedeem_(balance) {
           if (!window.MaaruLoyalty) return 0;
           var amounts = getOrderDiscountFromForm_();
@@ -4459,16 +4470,14 @@
           var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
           var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
           var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
+          var amounts = getOrderDiscountFromForm_();
+          var net = MaaruLoyalty.merchandiseNet({ subtotal: amounts.subtotal, discount: amounts.discount });
           var maxPts = getOrderPointsMaxRedeem_(balance);
           var useCheck = document.getElementById("orderUsePointsCheck");
           var ptsInput = document.getElementById("orderPointsUsed");
           if (opts.useMax) {
             if (maxPts <= 0) {
-              if (balance <= 0) {
-                showOrderPointsHint_("此客戶目前無可用紅利。請至「紅利點數」確認餘額，或按「重新載入」後再試", true);
-              } else {
-                showOrderPointsHint_("商品淨額為 0，無法折抵（請確認小計與折扣）", true);
-              }
+              showOrderPointsHint_(orderPointsRedeemBlockedReason_(balance, net), true);
               return 0;
             }
             if (useCheck) useCheck.checked = true;
@@ -4483,8 +4492,7 @@
               if (ptsInput) ptsInput.value = String(maxPts);
               showOrderPointsHint_("已自動帶入可折抵 " + maxPts + " 點", false);
             } else if (maxPts <= 0) {
-              if (balance <= 0) showOrderPointsHint_("此客戶目前無可用紅利", true);
-              else showOrderPointsHint_("商品淨額不足，無法折抵紅利", true);
+              showOrderPointsHint_(orderPointsRedeemBlockedReason_(balance, net), true);
             } else {
               showOrderPointsHint_("", false);
             }
@@ -4724,6 +4732,23 @@
           });
         }
 
+        function getValidatedOrderPointsUsed_(subtotal, discount) {
+          var usePtsCheck = document.getElementById("orderUsePointsCheck");
+          var pointsUsed = (usePtsCheck && usePtsCheck.checked)
+            ? Math.floor(Number(document.getElementById("orderPointsUsed").value) || 0)
+            : 0;
+          if (!window.MaaruLoyalty || pointsUsed <= 0) return pointsUsed;
+          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
+          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+          var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
+          var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
+          var maxPts = MaaruLoyalty.calcMaxRedeemPoints(
+            { subtotal: subtotal, discount: discount, pointsUsed: 0 },
+            balance
+          );
+          return Math.min(pointsUsed, maxPts);
+        }
+
         function getOrderFromForm() {
           var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
           var shipping = Number(document.getElementById("orderShippingFee").value) || 0;
@@ -4736,8 +4761,7 @@
           var discount = 0;
           if (rateCheck && rateVal >= 0 && rateVal <= 100) discount = Math.ceil(subtotal * (1 - rateVal / 100));
           if (fixedCheck) discount = Math.ceil(fixedVal);
-          var usePtsCheck = document.getElementById("orderUsePointsCheck");
-          var pointsUsed = (usePtsCheck && usePtsCheck.checked) ? Math.floor(Number(document.getElementById("orderPointsUsed").value) || 0) : 0;
+          var pointsUsed = getValidatedOrderPointsUsed_(subtotal, discount);
           var pointsDiscount = window.MaaruLoyalty ? MaaruLoyalty.pointsDiscountAmount(pointsUsed) : pointsUsed;
           var effectiveShipping = shipCouponOn ? 0 : shipping;
           var depEl = document.getElementById("orderDepositAmount");
@@ -4877,8 +4901,7 @@
             document.getElementById("orderDiscountRateAmount").textContent = "0";
           }
 
-          var usePtsCheck = document.getElementById("orderUsePointsCheck");
-          var pointsUsed = (usePtsCheck && usePtsCheck.checked) ? Math.floor(Number(document.getElementById("orderPointsUsed").value) || 0) : 0;
+          var pointsUsed = getValidatedOrderPointsUsed_(subtotal, discount);
           var pointsDiscount = window.MaaruLoyalty ? MaaruLoyalty.pointsDiscountAmount(pointsUsed) : pointsUsed;
 
           var total = subtotal - discount - pointsDiscount + (shipCouponOn ? 0 : shipping);
