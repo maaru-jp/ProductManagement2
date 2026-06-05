@@ -1241,6 +1241,7 @@
                   <button type="button" id="btnGenerateMemberCard" class="shrink-0 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50">自動產生</button>
                 </div>
                 <p class="text-xs text-slate-400 mt-1">每位顧客唯一卡號；同客戶或編輯原訂單時按「自動產生」會沿用原卡號，新客才產生新卡號</p>
+                <p id="orderMemberCardHint" class="text-xs mt-1 hidden"></p>
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-500 mb-1">客戶姓名</label>
@@ -4604,9 +4605,63 @@
           return String((el && el.value) || "").replace(/\D/g, "").slice(0, 13);
         }
 
+        function refreshOrderMemberCardHint_() {
+          var hintEl = document.getElementById("orderMemberCardHint");
+          var cardEl = document.getElementById("orderMemberCardNo");
+          if (!hintEl) return { ok: true, conflict: false };
+          if (!window.MaaruMemberCard || !MaaruMemberCard.validateMemberCardAssignment) {
+            hintEl.classList.add("hidden");
+            hintEl.textContent = "";
+            if (cardEl) {
+              cardEl.classList.remove("border-rose-400", "ring-1", "ring-rose-200", "border-emerald-400", "ring-emerald-200");
+            }
+            return { ok: true, conflict: false };
+          }
+          var card = getOrderMemberCardFromForm_();
+          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
+          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+          var editId = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id")) || "";
+          var ledger = window.MaaruLoyalty ? MaaruLoyalty.getLedger() : [];
+          var check = MaaruMemberCard.validateMemberCardAssignment(card, orders, ledger, customerName, phone, editId);
+          hintEl.classList.remove("text-rose-600", "text-emerald-700", "text-slate-500");
+          if (cardEl) {
+            cardEl.classList.remove("border-rose-400", "ring-1", "ring-rose-200", "border-emerald-400", "ring-emerald-200");
+          }
+          if (check.incomplete) {
+            if (card && card.length > 0) {
+              hintEl.textContent = "卡號須為 13 碼純數字（目前 " + card.length + " 碼）";
+              hintEl.className = "text-xs mt-1 text-slate-500";
+              hintEl.classList.remove("hidden");
+              if (cardEl) cardEl.classList.add("border-rose-400", "ring-1", "ring-rose-200");
+            } else {
+              hintEl.classList.add("hidden");
+              hintEl.textContent = "";
+            }
+            return check;
+          }
+          if (check.conflict) {
+            hintEl.textContent = check.message;
+            hintEl.className = "text-xs mt-1 text-rose-600 font-medium";
+            hintEl.classList.remove("hidden");
+            if (cardEl) cardEl.classList.add("border-rose-400", "ring-1", "ring-rose-200");
+            return check;
+          }
+          if (check.sameCustomerReuse && check.message) {
+            hintEl.textContent = check.message;
+            hintEl.className = "text-xs mt-1 text-emerald-700";
+            hintEl.classList.remove("hidden");
+            if (cardEl) cardEl.classList.add("border-emerald-400", "ring-emerald-200");
+            return check;
+          }
+          hintEl.classList.add("hidden");
+          hintEl.textContent = "";
+          return check;
+        }
+
         function fillOrderMemberCard_(card) {
           var el = document.getElementById("orderMemberCardNo");
           if (el) el.value = card || "";
+          refreshOrderMemberCardHint_();
           refreshOrderPointsPanel_();
         }
 
@@ -5292,6 +5347,7 @@
           renderOrderItemsEditor_(o.items || []);
           refreshOrderPointsPanel_(o.pointsProcessed === "Y" || o.pointsProcessed === true);
           updateOrderTotal();
+          refreshOrderMemberCardHint_();
         }
 
         function openOrderModal(editOrder) {
@@ -5341,6 +5397,7 @@
             renderOrderItemsEditor_(window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) ? window.__lastPastedOrderItems : []);
             refreshOrderPointsPanel_(false);
             updateOrderTotal();
+            refreshOrderMemberCardHint_();
           }
         }
 
@@ -5933,8 +5990,14 @@
           orderCardInputEl.addEventListener("input", function() {
             var v = String(this.value || "").replace(/\D/g, "").slice(0, 13);
             if (this.value !== v) this.value = v;
+            refreshOrderMemberCardHint_();
           });
+          orderCardInputEl.addEventListener("blur", refreshOrderMemberCardHint_);
         }
+        ["orderCustomerName", "orderPhone"].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) el.addEventListener("input", refreshOrderMemberCardHint_);
+        });
         var btnGenMemberCard = document.getElementById("btnGenerateMemberCard");
         if (btnGenMemberCard) {
           btnGenMemberCard.addEventListener("click", function() {
@@ -6021,11 +6084,18 @@
           if (submitBtn) submitBtn.disabled = true;
           var editId = this.getAttribute("data-edit-id") || "";
           var data = getOrderFromForm();
+          var cardCheck = refreshOrderMemberCardHint_();
+          if (cardCheck && cardCheck.conflict) {
+            showOrderMessage(cardCheck.message || "會員卡號與其他顧客重複", true);
+            if (submitBtn) submitBtn.disabled = false;
+            return;
+          }
           try {
             data.memberCardNo = resolveOrderMemberCardForSave_(data, editId);
             fillOrderMemberCard_(data.memberCardNo);
           } catch (cardErr) {
             showOrderMessage(cardErr.message || "會員卡號無效", true);
+            refreshOrderMemberCardHint_();
             if (submitBtn) submitBtn.disabled = false;
             return;
           }
