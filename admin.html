@@ -1244,6 +1244,7 @@
                 <button type="button" id="btnOrderPointsMax" class="px-2 py-1 rounded border border-amber-300 text-xs text-amber-800 hover:bg-amber-100">全部折抵</button>
               </div>
               <p class="text-xs text-slate-600">預估本次可獲得：<strong id="orderPointsEarnPreview">0</strong> 點（訂單「已確認／已完成」時發放）</p>
+              <p id="orderPointsHint" class="text-xs text-amber-800 hidden"></p>
               <p id="orderPointsProcessedHint" class="text-xs text-rose-600 hidden">此訂單紅利已處理，無法再修改折抵點數</p>
             </div>
             <div>
@@ -3586,6 +3587,7 @@
         }
         window.renderLoyaltyPanel = renderLoyaltyPanel;
         window.syncPointsLedgerToSheet = syncPointsLedgerToSheet;
+        window.loadPointsFromSheet = loadPointsFromSheet;
 
         var btnSync = document.getElementById("btnSyncPointsSheet");
         if (btnSync) btnSync.addEventListener("click", function() {
@@ -3823,23 +3825,20 @@
           return Math.max(0, Math.ceil(sub - disc - ptsDisc + ship));
         }
 
-        function refreshOrderPointsPanel_(processedFlag) {
-          if (!window.MaaruLoyalty) return;
-          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
-          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
-          var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-          var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
-          var balEl = document.getElementById("orderPointsBalance");
-          if (balEl) balEl.textContent = String(balance);
-          var processed = processedFlag === true || processedFlag === "Y";
-          var hint = document.getElementById("orderPointsProcessedHint");
-          var useCheck = document.getElementById("orderUsePointsCheck");
-          var ptsInput = document.getElementById("orderPointsUsed");
-          var maxBtn = document.getElementById("btnOrderPointsMax");
-          if (hint) hint.classList.toggle("hidden", !processed);
-          if (useCheck) useCheck.disabled = processed;
-          if (ptsInput) ptsInput.disabled = processed;
-          if (maxBtn) maxBtn.disabled = processed;
+        function showOrderPointsHint_(text, isError) {
+          var el = document.getElementById("orderPointsHint");
+          if (!el) return;
+          if (!text) {
+            el.classList.add("hidden");
+            el.textContent = "";
+            return;
+          }
+          el.textContent = text;
+          el.className = "text-xs " + (isError ? "text-rose-600" : "text-amber-800");
+          el.classList.remove("hidden");
+        }
+
+        function getOrderDiscountFromForm_() {
           var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
           var rateCheck = document.getElementById("orderDiscountRateCheck").checked;
           var fixedCheck = document.getElementById("orderFixedDiscountCheck").checked;
@@ -3848,23 +3847,113 @@
           var discount = 0;
           if (rateCheck && rateVal >= 0 && rateVal <= 100) discount = Math.ceil(subtotal * (1 - rateVal / 100));
           if (fixedCheck) discount = Math.ceil(fixedVal);
-          var draftOrder = {
-            subtotal: subtotal,
-            discount: discount,
-            pointsUsed: (useCheck && useCheck.checked) ? (Number(ptsInput && ptsInput.value) || 0) : 0
-          };
-          var maxPts = MaaruLoyalty.calcMaxRedeemPoints(draftOrder, balance);
-          if (useCheck && useCheck.checked && ptsInput) {
-            var v = Math.floor(Number(ptsInput.value) || 0);
-            if (v > maxPts) { v = maxPts; ptsInput.value = String(v); }
+          return { subtotal: subtotal, discount: discount };
+        }
+
+        function getOrderPointsMaxRedeem_(balance) {
+          if (!window.MaaruLoyalty) return 0;
+          var amounts = getOrderDiscountFromForm_();
+          return MaaruLoyalty.calcMaxRedeemPoints(
+            { subtotal: amounts.subtotal, discount: amounts.discount, pointsUsed: 0 },
+            balance
+          );
+        }
+
+        function refreshOrderPointsPanel_(processedFlag, callback) {
+          function doRefresh() {
+            if (!window.MaaruLoyalty) {
+              if (typeof callback === "function") callback();
+              return;
+            }
+            var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
+            var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+            var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
+            var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
+            var balEl = document.getElementById("orderPointsBalance");
+            if (balEl) balEl.textContent = String(balance);
+            var processed = processedFlag === true || processedFlag === "Y";
+            var hint = document.getElementById("orderPointsProcessedHint");
+            var useCheck = document.getElementById("orderUsePointsCheck");
+            var ptsInput = document.getElementById("orderPointsUsed");
+            var maxBtn = document.getElementById("btnOrderPointsMax");
+            if (hint) hint.classList.toggle("hidden", !processed);
+            if (useCheck) useCheck.disabled = processed;
+            if (ptsInput) ptsInput.disabled = processed;
+            if (maxBtn) maxBtn.disabled = processed;
+            var amounts = getOrderDiscountFromForm_();
+            var draftOrder = {
+              subtotal: amounts.subtotal,
+              discount: amounts.discount,
+              pointsUsed: (useCheck && useCheck.checked) ? (Number(ptsInput && ptsInput.value) || 0) : 0
+            };
+            var maxPts = MaaruLoyalty.calcMaxRedeemPoints(draftOrder, balance);
+            if (useCheck && useCheck.checked && ptsInput) {
+              var v = Math.floor(Number(ptsInput.value) || 0);
+              if (v > maxPts) { v = maxPts; ptsInput.value = String(v); }
+            }
+            var used = (useCheck && useCheck.checked) ? Math.floor(Number(ptsInput && ptsInput.value) || 0) : 0;
+            var discAmt = MaaruLoyalty.pointsDiscountAmount(used);
+            var discEl = document.getElementById("orderPointsDiscountAmount");
+            if (discEl) discEl.textContent = String(discAmt);
+            draftOrder.pointsUsed = used;
+            var earnEl = document.getElementById("orderPointsEarnPreview");
+            if (earnEl) earnEl.textContent = String(MaaruLoyalty.calcEarnPoints(draftOrder));
+            if (typeof callback === "function") callback({ balance: balance, maxPts: maxPts, processed: processed });
           }
-          var used = (useCheck && useCheck.checked) ? Math.floor(Number(ptsInput && ptsInput.value) || 0) : 0;
-          var discAmt = MaaruLoyalty.pointsDiscountAmount(used);
-          var discEl = document.getElementById("orderPointsDiscountAmount");
-          if (discEl) discEl.textContent = String(discAmt);
-          draftOrder.pointsUsed = used;
-          var earnEl = document.getElementById("orderPointsEarnPreview");
-          if (earnEl) earnEl.textContent = String(MaaruLoyalty.calcEarnPoints(draftOrder));
+          if (typeof window.loadPointsFromSheet === "function") {
+            window.loadPointsFromSheet().then(doRefresh).catch(doRefresh);
+          } else {
+            doRefresh();
+          }
+        }
+
+        function applyOrderPointsRedeem_(opts) {
+          opts = opts || {};
+          if (!window.MaaruLoyalty) {
+            showOrderPointsHint_("紅利模組未載入，請重新整理頁面", true);
+            return 0;
+          }
+          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
+          if (!MaaruLoyalty.normalizeCustomerName(customerName)) {
+            showOrderPointsHint_("請先填寫客戶姓名，才能查詢並折抵紅利", true);
+            return 0;
+          }
+          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+          var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
+          var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
+          var maxPts = getOrderPointsMaxRedeem_(balance);
+          var useCheck = document.getElementById("orderUsePointsCheck");
+          var ptsInput = document.getElementById("orderPointsUsed");
+          if (opts.useMax) {
+            if (maxPts <= 0) {
+              if (balance <= 0) {
+                showOrderPointsHint_("此客戶目前無可用紅利。請至「紅利點數」確認餘額，或按「重新載入」後再試", true);
+              } else {
+                showOrderPointsHint_("商品淨額為 0，無法折抵（請確認小計與折扣）", true);
+              }
+              return 0;
+            }
+            if (useCheck) useCheck.checked = true;
+            if (ptsInput) ptsInput.value = String(maxPts);
+            showOrderPointsHint_("已套用最多可折抵 " + maxPts + " 點（- NT$" + maxPts + "）", false);
+            updateOrderTotal();
+            return maxPts;
+          }
+          if (opts.autoOnCheck && useCheck && useCheck.checked) {
+            var current = Math.floor(Number(ptsInput && ptsInput.value) || 0);
+            if (current <= 0 && maxPts > 0) {
+              if (ptsInput) ptsInput.value = String(maxPts);
+              showOrderPointsHint_("已自動帶入可折抵 " + maxPts + " 點", false);
+            } else if (maxPts <= 0) {
+              if (balance <= 0) showOrderPointsHint_("此客戶目前無可用紅利", true);
+              else showOrderPointsHint_("商品淨額不足，無法折抵紅利", true);
+            } else {
+              showOrderPointsHint_("", false);
+            }
+            updateOrderTotal();
+            return Math.floor(Number(ptsInput && ptsInput.value) || 0);
+          }
+          return 0;
         }
 
         function applyLoyaltyToOrder_(ord, prevOrd) {
@@ -4180,12 +4269,14 @@
 
         function openOrderModal(editOrder) {
           if (orderModal) orderModal.classList.remove("hidden");
+          showOrderPointsHint_("", false);
           document.getElementById("orderForm").setAttribute("data-edit-id", editOrder ? editOrder.id : "");
           var submitBtn = document.querySelector("#orderForm button[type='submit']");
           if (submitBtn) submitBtn.textContent = editOrder ? "儲存訂單" : "建立訂單";
           if (editOrder) {
             document.querySelector("#orderModal h3").textContent = "編輯訂單";
             setFormFromOrder(editOrder);
+            refreshOrderPointsPanel_(editOrder.pointsProcessed === "Y" || editOrder.pointsProcessed === true);
           } else {
             document.querySelector("#orderModal h3").textContent = "訂單詳情 (新訂單)";
             var orderIdEl = document.getElementById("orderId");
@@ -4424,6 +4515,17 @@
           if (isNaN(depNum) || depNum < 0) depNum = 0;
           var grossNum = orderGrossBeforeDeposit(ord);
           var dueNum = orderAmountDue(ord);
+          var pointsUsedPdf = Math.floor(Number(ord.pointsUsed) || 0);
+          var pointsDiscountPdf = pointsUsedPdf > 0 ? orderPointsDiscountForOrder(ord) : 0;
+          if (pointsUsedPdf > 0 && pointsDiscountPdf <= 0) pointsDiscountPdf = pointsUsedPdf;
+          var pointsEarnedPdf = Math.floor(Number(ord.pointsEarned) || 0);
+          var pdfPointsRows = "";
+          if (pointsUsedPdf > 0) {
+            pdfPointsRows += "<tr><td>紅利折抵（" + pointsUsedPdf + " 點）</td><td>- NT$ " + pointsDiscountPdf + "</td></tr>";
+          }
+          if (pointsEarnedPdf > 0) {
+            pdfPointsRows += "<tr><td>本次獲得紅利</td><td>" + pointsEarnedPdf + " 點</td></tr>";
+          }
           var pdfAmountCloseRows = "";
           if (depNum > 0) {
             if (orderHasAmountBreakdown(ord)) {
@@ -4485,6 +4587,7 @@
             "<table><tr><th>項目</th><th>金額</th></tr>" +
             "<tr><td>商品小計</td><td>NT$ " + (ord.subtotal != null ? ord.subtotal : 0) + "</td></tr>" +
             "<tr><td>折扣</td><td>- NT$ " + (ord.discount != null ? ord.discount : 0) + "</td></tr>" +
+            pdfPointsRows +
             "<tr><td>運費</td><td>NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "</td></tr>" +
             ((ord.shippingStatus != null && String(ord.shippingStatus).trim() !== "") ? "<tr><td>運費折抵</td><td>- NT$ " + (ord.shippingFee != null ? ord.shippingFee : 38) + "（" + escapeHtml(String(ord.shippingStatus).trim()) + "）</td></tr>" : "") +
             pdfAmountCloseRows +
@@ -4779,23 +4882,38 @@
           if (el) { el.addEventListener("input", updateOrderTotal); el.addEventListener("change", updateOrderTotal); }
         });
         var usePtsCheckEl = document.getElementById("orderUsePointsCheck");
-        if (usePtsCheckEl) usePtsCheckEl.addEventListener("change", updateOrderTotal);
+        if (usePtsCheckEl) {
+          usePtsCheckEl.addEventListener("change", function() {
+            if (!this.checked) {
+              var ptsInputOff = document.getElementById("orderPointsUsed");
+              if (ptsInputOff) ptsInputOff.value = "0";
+              showOrderPointsHint_("", false);
+              updateOrderTotal();
+              return;
+            }
+            function afterLoad() {
+              applyOrderPointsRedeem_({ autoOnCheck: true });
+            }
+            if (typeof window.loadPointsFromSheet === "function") {
+              window.loadPointsFromSheet().then(afterLoad).catch(afterLoad);
+            } else {
+              afterLoad();
+            }
+          });
+        }
         var btnPtsMax = document.getElementById("btnOrderPointsMax");
-        if (btnPtsMax) btnPtsMax.addEventListener("click", function() {
-          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
-          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
-          var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-          if (!window.MaaruLoyalty) return;
-          var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
-          var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
-          var draft = { subtotal: subtotal, discount: 0, pointsUsed: 0 };
-          var maxPts = MaaruLoyalty.calcMaxRedeemPoints(draft, balance);
-          var useCheck = document.getElementById("orderUsePointsCheck");
-          var ptsInput = document.getElementById("orderPointsUsed");
-          if (useCheck) useCheck.checked = maxPts > 0;
-          if (ptsInput) ptsInput.value = String(maxPts);
-          updateOrderTotal();
-        });
+        if (btnPtsMax) {
+          btnPtsMax.addEventListener("click", function() {
+            function afterLoad() {
+              applyOrderPointsRedeem_({ useMax: true });
+            }
+            if (typeof window.loadPointsFromSheet === "function") {
+              window.loadPointsFromSheet().then(afterLoad).catch(afterLoad);
+            } else {
+              afterLoad();
+            }
+          });
+        }
         if (document.getElementById("orderDiscountRateCheck")) {
           document.getElementById("orderDiscountRateCheck").addEventListener("change", function() {
             document.getElementById("orderFixedDiscountCheck").checked = false;
