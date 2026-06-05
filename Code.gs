@@ -1538,8 +1538,8 @@ function getPointsSheet(ss) {
   return sheet;
 }
 
-function ensurePointsHeaderRow_(sheet) {
-  var headers = [
+function getStandardPointsHeaders_() {
+  return [
     "紀錄ID",
     "日期",
     "電話",
@@ -1553,6 +1553,10 @@ function ensurePointsHeaderRow_(sheet) {
     "訂單編號",
     "備註"
   ];
+}
+
+function ensurePointsHeaderRow_(sheet) {
+  var headers = getStandardPointsHeaders_();
   if (sheet.getLastRow() < 1) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     return;
@@ -1564,6 +1568,11 @@ function ensurePointsHeaderRow_(sheet) {
     return;
   }
   appendMissingOrderHeaders_(sheet, headers);
+  var lastCol = sheet.getLastColumn();
+  if (lastCol > headers.length) {
+    sheet.deleteColumns(headers.length + 1, lastCol - headers.length);
+  }
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 }
 
 function normalizePointRecordForSheet_(rec) {
@@ -1618,8 +1627,8 @@ function pointsKeyMap_(headers) {
 }
 
 function buildRowFromPointRecord_(sheet, rec) {
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
-    .map(function(h) { return (h || "").toString().trim(); });
+  ensurePointsHeaderRow_(sheet);
+  var headers = getStandardPointsHeaders_();
   var keyMap = pointsKeyMap_(headers);
   var norm = normalizePointRecordForSheet_(rec);
   var row = [];
@@ -1688,6 +1697,8 @@ function getPointsLedger(sheet) {
 
 function syncPointsLedger(sheet, ledger) {
   ensurePointsHeaderRow_(sheet);
+  var stdHeaders = getStandardPointsHeaders_();
+  var width = stdHeaders.length;
   var lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     sheet.deleteRows(2, lastRow - 1);
@@ -1697,16 +1708,14 @@ function syncPointsLedger(sheet, ledger) {
   for (var i = 0; i < ledger.length; i++) {
     rows.push(buildRowFromPointRecord_(sheet, ledger[i]));
   }
-  if (rows.length) {
-    var endRow = rows.length + 1;
-    var width = rows[0].length;
-    for (var r = 1; r < rows.length; r++) {
-      if (rows[r].length !== width) {
-        throw new Error("紅利點數第 " + (r + 1) + " 列欄位數不一致（" + rows[r].length + " vs " + width + "）");
-      }
+  if (!rows.length) return;
+  for (var r = 0; r < rows.length; r++) {
+    if (rows[r].length !== width) {
+      throw new Error("紅利點數第 " + (r + 1) + " 列欄位數不一致（" + rows[r].length + " vs " + width + "）");
     }
-    sheet.getRange(2, 1, endRow, width).setValues(rows);
   }
+  // getRange(row, col, numRows, numCols) — numRows 必須等於 rows.length
+  sheet.getRange(2, 1, rows.length, width).setValues(rows);
 }
 
 /** 顧客端公開查詢：依會員卡號（13 碼純數字） */
