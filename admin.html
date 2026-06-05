@@ -1017,7 +1017,7 @@
             </div>
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆，每筆可填對應圖片網址；現貨時可填各規格數量，0 則顧客頁顯示已售完）</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆；每筆可填<strong>台幣售價</strong>、圖片、數量；留空售價則沿用上方台幣售價）</label>
             <div class="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3 space-y-2">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <span class="text-xs font-medium text-indigo-900">規格維度 · 自動組合</span>
@@ -1028,11 +1028,12 @@
                 <button type="button" id="btnGenerateVariantCombos" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700">自動生成規格組合</button>
                 <span id="variantComboPreview" class="text-xs text-slate-500"></span>
               </div>
-              <p class="text-[11px] text-slate-500 leading-relaxed">每個維度用逗號分隔選項。例：角色「酷洛米,美樂蒂」+ 尺寸「S,M」→ 產生 4 筆：酷洛米 S、酷洛米 M、美樂蒂 S、美樂蒂 M。重新生成會保留同名規格的圖片與庫存。</p>
+              <p class="text-[11px] text-slate-500 leading-relaxed">每個維度用逗號分隔選項。例：品項「吊飾娃,手機鍊」+ 款式「酷洛米,美樂蒂」→ 產生 4 筆；再於各規格列填不同台幣售價（吊飾娃 350、手機鍊 280）。重新生成會保留同名規格的圖片、售價與庫存。</p>
             </div>
             <div id="variantListContainer" class="space-y-2">
               <div class="variant-item-row flex flex-wrap gap-2 items-start">
-                <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="規格名稱，例：酷洛米" />
+                <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="規格名稱，例：吊飾娃 酷洛米" />
+                <input type="number" class="variant-price w-24 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm" placeholder="台幣售價" min="0" step="1" title="留空則沿用商品台幣售價" />
                 <input type="text" class="variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="該規格圖片 URL（選填）" />
                 <input type="number" class="variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm" placeholder="數量" min="0" step="1" title="現貨時填，0＝已售完" />
                 <button type="button" class="variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" title="移除">✕</button>
@@ -1042,6 +1043,7 @@
             <input type="hidden" name="variant" id="variantValue" value="" />
             <input type="hidden" name="variantImages" id="variantImagesValue" value="" />
             <input type="hidden" name="variantStock" id="variantStockValue" value="" />
+            <input type="hidden" name="variantPrices" id="variantPricesValue" value="" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">匯率（日幣→台幣，本機儲存）</label>
@@ -2453,6 +2455,17 @@
         return nums.join(", ");
       }
 
+      function sanitizeVariantPriceString(str) {
+        if (!str || String(str).trim() === "") return "";
+        var parts = String(str).trim().split(/[,，、\s]+/);
+        var nums = [];
+        for (var i = 0; i < parts.length; i++) {
+          var t = parts[i].trim();
+          if (/^\d+(\.\d+)?$/.test(t)) nums.push(t);
+        }
+        return nums.join(", ");
+      }
+
       /** 只加總純數字規格庫存，避免子分類「2025年03月」被誤算成 2025 */
       function sumVariantStockStrict(str) {
         var clean = sanitizeVariantStockString(str);
@@ -2568,6 +2581,7 @@
           image: p.image || p.圖片 || p.商品主圖 || p.主圖 || "",
           variantImages: p.variantImages != null ? p.variantImages : (p.規格圖片 != null ? p.規格圖片 : ""),
           variantStock: p.variantStock != null ? p.variantStock : (p.規格庫存 != null ? p.規格庫存 : ""),
+          variantPrices: p.variantPrices != null ? p.variantPrices : (p.規格售價 != null ? p.規格售價 : ""),
           description: p.description || p.描述 || "",
           introduction: p.introduction || p.商品介紹 || "",
           publishedAt: p.publishedAt || p.上架日期 || "",
@@ -2737,6 +2751,7 @@
               image: p.image || p.圖片 || p.商品主圖 || p.主圖 || "",
               variantImages: (p.variantImages != null ? p.variantImages : p.規格圖片 != null ? p.規格圖片 : ""),
               variantStock: (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : ""),
+              variantPrices: (p.variantPrices != null ? p.variantPrices : p.規格售價 != null ? p.規格售價 : ""),
               description: p.description || p.描述,
               introduction: p.introduction || p.商品介紹,
               publishedAt: fmtDateLocal(p.publishedAt || p.上架日期 || ""),
@@ -2936,11 +2951,13 @@
         if (!container) return map;
         container.querySelectorAll(".variant-item-row").forEach(function(row) {
           var nameInp = row.querySelector(".variant-item");
+          var priceInp = row.querySelector(".variant-price");
           var urlInp = row.querySelector(".variant-image");
           var qtyInp = row.querySelector(".variant-qty");
           var name = (nameInp && nameInp.value) ? nameInp.value.trim() : "";
           if (!name) return;
           map[name] = {
+            price: (priceInp && priceInp.value !== "") ? priceInp.value : "",
             url: (urlInp && urlInp.value) ? urlInp.value.trim() : "",
             qty: (qtyInp && qtyInp.value !== "") ? qtyInp.value : ""
           };
@@ -3078,7 +3095,11 @@
           if (prev[n] && prev[n].qty !== "" && prev[n].qty != null) return prev[n].qty;
           return "";
         });
-        renderVariantList(names.join(", "), urls.join(", "), qtys.join(", "));
+        var prices = names.map(function(n) {
+          if (prev[n] && prev[n].price !== "" && prev[n].price != null) return prev[n].price;
+          return "";
+        });
+        renderVariantList(names.join(", "), urls.join(", "), qtys.join(", "), prices.join(", "));
         if (!opts.silent) showMessage("已自動生成 " + names.length + " 筆規格組合");
         return names.length;
       }
@@ -3089,16 +3110,21 @@
         var hiddenVariant = document.getElementById("variantValue");
         var hiddenImages = document.getElementById("variantImagesValue");
         var hiddenStock = document.getElementById("variantStockValue");
+        var hiddenPrices = document.getElementById("variantPricesValue");
         if (!container || !hiddenVariant) return;
         var rows = container.querySelectorAll(".variant-item-row");
         var names = [];
         var urls = [];
         var qtys = [];
+        var prices = [];
         rows.forEach(function(row) {
           var nameInp = row.querySelector(".variant-item");
+          var priceInp = row.querySelector(".variant-price");
           var urlInp = row.querySelector(".variant-image");
           var qtyInp = row.querySelector(".variant-qty");
           names.push((nameInp && nameInp.value) ? nameInp.value.trim() : "");
+          var pRaw = (priceInp && priceInp.value !== "" && priceInp.value != null) ? String(priceInp.value).trim() : "";
+          prices.push(/^\d+(\.\d+)?$/.test(pRaw) ? pRaw : "");
           urls.push((urlInp && urlInp.value) ? urlInp.value.trim() : "");
           var q = (qtyInp && qtyInp.value !== "" && qtyInp.value !== null) ? parseInt(qtyInp.value, 10) : "";
           qtys.push((q === "" || isNaN(q)) ? "" : Math.max(0, q));
@@ -3106,6 +3132,7 @@
         hiddenVariant.value = names.filter(Boolean).join(", ");
         if (hiddenImages) hiddenImages.value = urls.join(", ");
         if (hiddenStock) hiddenStock.value = qtys.map(function(q) { return q === "" ? "0" : q; }).join(", ");
+        if (hiddenPrices) hiddenPrices.value = sanitizeVariantPriceString(prices.join(", "));
         var total = qtys.reduce(function(sum, q) {
           if (q === "" || q === null || q === undefined) return sum + 0;
           var n = Number(q);
@@ -3119,7 +3146,15 @@
         return (s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
 
-      function renderVariantList(variantStr, variantImagesStr, variantStockStr) {
+      function bindVariantRowInputs_(row) {
+        if (!row) return;
+        row.querySelectorAll(".variant-item, .variant-price, .variant-image, .variant-qty").forEach(function(inp) {
+          inp.addEventListener("input", syncVariantToHidden);
+          inp.addEventListener("change", syncVariantToHidden);
+        });
+      }
+
+      function renderVariantList(variantStr, variantImagesStr, variantStockStr, variantPricesStr) {
         var container = document.getElementById("variantListContainer");
         var hiddenImages = document.getElementById("variantImagesValue");
         if (!container) return;
@@ -3130,28 +3165,22 @@
           if (!/^\d+$/.test(t)) return "";
           return Math.max(0, parseInt(t, 10));
         });
+        var priceParts = sanitizeVariantPriceString(variantPricesStr != null && variantPricesStr !== undefined ? String(variantPricesStr) : "").split(/[,，、\s]/).map(function(s) { return s.trim(); });
         if (parts.length === 0) parts = [""];
         container.innerHTML = parts.map(function(val, i) {
           var url = urlParts[i] != null ? urlParts[i] : "";
           var qty = stockParts[i] !== undefined && stockParts[i] !== "" ? stockParts[i] : "";
+          var price = priceParts[i] != null ? priceParts[i] : "";
           return "<div class=\"variant-item-row flex flex-wrap gap-2 items-start\">" +
-            "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：酷洛米\" value=\"" + escapeAttr(val) + "\" />" +
+            "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：吊飾娃 酷洛米\" value=\"" + escapeAttr(val) + "\" />" +
+            "<input type=\"number\" class=\"variant-price w-24 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"台幣售價\" min=\"0\" step=\"1\" title=\"留空則沿用商品台幣售價\" value=\"" + escapeAttr(String(price)) + "\" />" +
             "<input type=\"text\" class=\"variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"該規格圖片 URL（選填）\" value=\"" + escapeAttr(url) + "\" />" +
             "<input type=\"number\" class=\"variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"數量\" min=\"0\" step=\"1\" title=\"現貨時填，0＝已售完\" value=\"" + escapeAttr(String(qty)) + "\" />" +
             "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>" +
             "</div>";
         }).join("");
-        container.querySelectorAll(".variant-item").forEach(function(inp) {
-          inp.addEventListener("input", syncVariantToHidden);
-          inp.addEventListener("change", syncVariantToHidden);
-        });
-        container.querySelectorAll(".variant-image").forEach(function(inp) {
-          inp.addEventListener("input", syncVariantToHidden);
-          inp.addEventListener("change", syncVariantToHidden);
-        });
-        container.querySelectorAll(".variant-qty").forEach(function(inp) {
-          inp.addEventListener("input", syncVariantToHidden);
-          inp.addEventListener("change", syncVariantToHidden);
+        container.querySelectorAll(".variant-item-row").forEach(function(row) {
+          bindVariantRowInputs_(row);
         });
         container.querySelectorAll(".variant-item-remove").forEach(function(btn) {
           btn.addEventListener("click", function() {
@@ -3212,7 +3241,8 @@
         renderVariantList(
           variantStrEdit,
           obj && obj.variantImages != null ? obj.variantImages : "",
-          sanitizeVariantStockString(obj && obj.variantStock != null ? obj.variantStock : "")
+          sanitizeVariantStockString(obj && obj.variantStock != null ? obj.variantStock : ""),
+          sanitizeVariantPriceString(obj && obj.variantPrices != null ? obj.variantPrices : (obj && obj.規格售價 != null ? obj.規格售價 : ""))
         );
         if (fromEdit && variantStrEdit) inferVariantDimsFromExisting_(variantStrEdit);
         var mainStockVal = obj && (obj.stock !== undefined && obj.stock !== null && obj.stock !== "" ? obj.stock : (obj.Stock !== undefined && obj.Stock !== null && obj.Stock !== "" ? obj.Stock : obj.庫存));
@@ -3456,7 +3486,7 @@
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "description", "introduction", "publishedAt", "customerDisplayPrice"].forEach(function(key) {
+        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "variantPrices", "description", "introduction", "publishedAt", "customerDisplayPrice"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
@@ -3549,18 +3579,14 @@
           if (!container) return;
           var row = document.createElement("div");
           row.className = "variant-item-row flex flex-wrap gap-2 items-start";
-          row.innerHTML = "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：酷洛米\" />" +
+          row.innerHTML = "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：吊飾娃 酷洛米\" />" +
+            "<input type=\"number\" class=\"variant-price w-24 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"台幣售價\" min=\"0\" step=\"1\" title=\"留空則沿用商品台幣售價\" />" +
             "<input type=\"text\" class=\"variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"該規格圖片 URL（選填）\" />" +
             "<input type=\"number\" class=\"variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"數量\" min=\"0\" step=\"1\" title=\"現貨時填，0＝已售完\" />" +
             "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>";
           container.appendChild(row);
-          var nameInp = row.querySelector(".variant-item");
-          var urlInp = row.querySelector(".variant-image");
-          var qtyInp = row.querySelector(".variant-qty");
+          bindVariantRowInputs_(row);
           var removeBtn = row.querySelector(".variant-item-remove");
-          if (nameInp) { nameInp.addEventListener("input", syncVariantToHidden); nameInp.addEventListener("change", syncVariantToHidden); }
-          if (urlInp) { urlInp.addEventListener("input", syncVariantToHidden); urlInp.addEventListener("change", syncVariantToHidden); }
-          if (qtyInp) { qtyInp.addEventListener("input", syncVariantToHidden); qtyInp.addEventListener("change", syncVariantToHidden); }
           if (removeBtn) {
             removeBtn.addEventListener("click", function() {
               var rows = container.querySelectorAll(".variant-item-row");
@@ -3643,6 +3669,8 @@
         var formProduct = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
         if (hiddenStock) formProduct.variantStock = sanitizeVariantStockString(String(hiddenStock.value != null ? hiddenStock.value : "").trim());
+        var hiddenPrices = document.getElementById("variantPricesValue");
+        if (hiddenPrices) formProduct.variantPrices = sanitizeVariantPriceString(String(hiddenPrices.value != null ? hiddenPrices.value : "").trim());
         var stockInp = document.querySelector("#productForm input[name=\"stock\"]");
         if (stockInp) formProduct.stock = stockInp.value === "" ? "" : (Number(stockInp.value) || 0);
         finalizeStockForSave(formProduct);

@@ -904,6 +904,7 @@ function buildKeyMap(headers) {
     ["貨況", "stockType"],
     ["庫存", "庫存數量", "stock", "Stock"],
     ["規格庫存", "規格庫存數量", "variantStock"],
+    ["規格售價", "規格台幣售價", "variantPrices"],
     ["規格圖片", "variantImages"],
     ["熱銷", "hot"],
     ["推薦", "recommended"],
@@ -932,6 +933,7 @@ function buildKeyMap(headers) {
     else if (h.indexOf("利潤") >= 0) map[c] = "profit";
     else if (h.indexOf("狀態") >= 0) map[c] = "status";
     else if (h.indexOf("規格") >= 0 && h.indexOf("庫存") >= 0) map[c] = "variantStock";
+    else if (h.indexOf("規格") >= 0 && h.indexOf("售價") >= 0) map[c] = "variantPrices";
     else if (h.indexOf("庫存") >= 0) map[c] = "stock";
   }
   return map;
