@@ -300,7 +300,8 @@ function ensureOrderHeaderRow_(sheet) {
     "品項(JSON)",
     "使用紅利",
     "獲得紅利",
-    "紅利已處理"
+    "紅利已處理",
+    "關聯訂單"
   ];
   var lastRow = sheet.getLastRow();
   if (lastRow < 1) {
@@ -313,7 +314,27 @@ function ensureOrderHeaderRow_(sheet) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     return;
   }
-  // 若已有表頭，則保持不動（避免覆蓋使用者自訂欄位順序）
+  appendMissingOrderHeaders_(sheet, headers);
+}
+
+function appendMissingOrderHeaders_(sheet, requiredHeaders) {
+  if (!sheet || !requiredHeaders || !requiredHeaders.length) return;
+  var headers = getOrderHeaders_(sheet);
+  var existing = {};
+  headers.forEach(function(h) {
+    var t = (h || "").toString().trim();
+    if (t) existing[t] = true;
+  });
+  var toAdd = [];
+  for (var i = 0; i < requiredHeaders.length; i++) {
+    var name = (requiredHeaders[i] || "").toString().trim();
+    if (name && !existing[name]) toAdd.push(name);
+  }
+  if (!toAdd.length) return;
+  var startCol = Math.max(sheet.getLastColumn(), 1) + 1;
+  for (var j = 0; j < toAdd.length; j++) {
+    sheet.getRange(1, startCol + j).setValue(toAdd[j]);
+  }
 }
 
 function getOrderHeaders_(sheet) {
@@ -350,7 +371,8 @@ function orderKeyMap_(headers) {
     ["品項(JSON)", "itemsJson", "items"],
     ["使用紅利", "pointsUsed"],
     ["獲得紅利", "pointsEarned"],
-    ["紅利已處理", "pointsProcessed"]
+    ["紅利已處理", "pointsProcessed"],
+    ["關聯訂單", "linkedOrderIds", "linkedOrders"]
   ];
   for (var c = 0; c < headers.length; c++) {
     var h = (headers[c] || "").toString().trim();
@@ -397,6 +419,7 @@ function normalizeOrderForSheet_(order) {
     pointsUsed: (o.pointsUsed != null && o.pointsUsed !== "") ? Number(o.pointsUsed) : "",
     pointsEarned: (o.pointsEarned != null && o.pointsEarned !== "") ? Number(o.pointsEarned) : "",
     pointsProcessed: (o.pointsProcessed != null) ? String(o.pointsProcessed) : "",
+    linkedOrderIds: (o.linkedOrderIds != null) ? String(o.linkedOrderIds).trim() : "",
     itemsJson: ""
   };
   try {

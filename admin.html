@@ -387,6 +387,11 @@
         </div>
 
         <div id="orderMessage" class="mb-3 text-sm hidden"></div>
+        <div class="mb-4 rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
+          <p class="font-semibold text-sky-900">訂單合併與紅利點數（兩種做法）</p>
+          <p><strong>做法 A｜同一訂單編號：</strong>用「追加」把新清單併入原單，適合最後一起出貨、一張帳單結清。<span class="text-amber-800">請等全部併完再改「已確認」</span>，否則紅利已處理後再追加，不會自動補發差額點數。</p>
+          <p><strong>做法 B｜不同訂單編號：</strong>同顧客開新單（ORD00002…），適合分次下單／分次出貨。點客戶旁的 <strong>總覽</strong> 可一次查看該顧客所有訂單與紅利；編輯訂單時可填「關聯訂單」標記併箱單號。</p>
+        </div>
         <p class="mb-3 text-xs text-slate-500">每筆訂單右側「操作」欄可點 <strong>產生 PDF</strong>，列印時選擇「另存為 PDF」即可下載客人訂單 PDF。</p>
 
         <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -433,7 +438,7 @@
           <div class="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5">
             <p class="text-xs font-medium text-amber-800/70 uppercase tracking-wide mb-1">集點規則</p>
             <p class="text-2xl font-bold text-amber-900">NT$ 100 → 1 點</p>
-            <p class="text-sm text-slate-600 mt-2">依商品小計（扣除折扣與紅利折抵後）計算</p>
+            <p class="text-sm text-slate-600 mt-2">依商品小計 − 折扣 − 紅利折抵計算<br><span class="text-xs text-slate-500">不含運費、不含預購訂金（非待結清總金額）</span></p>
           </div>
           <div class="rounded-xl border border-rose-200 bg-gradient-to-br from-rose-50 to-white p-5">
             <p class="text-xs font-medium text-rose-800/70 uppercase tracking-wide mb-1">折抵規則</p>
@@ -1202,6 +1207,14 @@
             <p class="text-xs text-slate-400 mt-1">可自行輸入編號，或留空由系統自動產生下一號（ORD00001～ORD99999）</p>
           </div>
           <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">關聯訂單</label>
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="text" id="orderLinkedOrderIds" class="flex-1 min-w-[12rem] rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="例：ORD00002, ORD00003" />
+              <button type="button" id="btnOrderLinkSuggest" class="px-3 py-2 rounded-lg border border-sky-300 bg-sky-50 text-sky-800 text-xs hover:bg-sky-100 whitespace-nowrap">帶入同客戶其他單</button>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">併箱出貨或分單管理時，可填其他訂單編號（逗號分隔），方便在「顧客總覽」一次查看</p>
+          </div>
+          <div>
             <h4 class="text-sm font-medium text-slate-700 mb-3">客戶資訊 (可編輯)</h4>
             <div class="grid grid-cols-2 gap-4">
               <div>
@@ -1275,7 +1288,7 @@
                 <span class="text-sm font-medium text-amber-900">⭐ 紅利點數</span>
                 <span class="text-xs text-amber-800">可用：<strong id="orderPointsBalance">0</strong> 點</span>
               </div>
-              <p class="text-[11px] text-amber-900/70">消費滿 NT$100 集 1 點 · 1 點折 NT$1 · 商品淨額滿 NT$199 才可折抵 · 365 天內有效</p>
+              <p class="text-[11px] text-amber-900/70">集點：小計−折扣−紅利（不含運費、訂金）· 折抵滿 NT$199 · 1 點=NT$1 · 365 天有效</p>
               <div class="flex flex-wrap items-center gap-2">
                 <label class="inline-flex items-center gap-2">
                   <input type="checkbox" id="orderUsePointsCheck" class="rounded border-amber-300" />
@@ -1286,6 +1299,7 @@
                 <button type="button" id="btnOrderPointsMax" class="px-2 py-1 rounded border border-amber-300 text-xs text-amber-800 hover:bg-amber-100">全部折抵</button>
               </div>
               <p class="text-xs text-slate-600">預估本次可獲得：<strong id="orderPointsEarnPreview">0</strong> 點（訂單「已確認／已完成」時發放）</p>
+              <p class="text-[11px] text-slate-500">集點基準：<strong id="orderPointsEarnBase">NT$0</strong>（小計−折扣−紅利，不含運費與預購訂金）</p>
               <p id="orderPointsHint" class="text-xs text-amber-800 hidden"></p>
               <p id="orderPointsProcessedHint" class="text-xs text-rose-600 hidden">此訂單紅利已處理，無法再修改折抵點數</p>
             </div>
@@ -1389,6 +1403,42 @@
         <div class="p-4 border-t border-slate-200 flex justify-end gap-2 shrink-0">
           <button type="button" id="pasteOrderCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm hover:bg-slate-50">取消</button>
           <button type="button" id="pasteOrderApply" class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600">解析並帶入新增訂單</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 顧客訂單總覽 Modal -->
+  <div id="customerOverviewModal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-black/50" id="customerOverviewBackdrop" aria-hidden="true"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="p-5 border-b border-slate-200 flex items-center justify-between shrink-0">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">顧客訂單總覽</h3>
+            <p id="customerOverviewSubtitle" class="text-sm text-slate-500 mt-0.5"></p>
+          </div>
+          <button type="button" id="customerOverviewClose" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="關閉">✕</button>
+        </div>
+        <div class="p-5 overflow-y-auto flex-1 min-h-0 space-y-4">
+          <div id="customerOverviewSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+          <div class="rounded-xl border border-slate-200 overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left py-2.5 px-3 font-medium text-slate-600">訂單編號</th>
+                  <th class="text-left py-2.5 px-3 font-medium text-slate-600">狀態</th>
+                  <th class="text-left py-2.5 px-3 font-medium text-slate-600">待結清</th>
+                  <th class="text-left py-2.5 px-3 font-medium text-slate-600">關聯</th>
+                  <th class="text-left py-2.5 px-3 font-medium text-slate-600">操作</th>
+                </tr>
+              </thead>
+              <tbody id="customerOverviewTableBody">
+                <tr><td colspan="5" class="py-8 text-center text-slate-500">載入中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-xs text-slate-500">同一顧客以「客戶姓名」彙總；紅利點數共用。關聯訂單可在各單編輯畫面設定。</p>
         </div>
       </div>
     </div>
@@ -4447,6 +4497,8 @@
             draftOrder.pointsUsed = used;
             var earnEl = document.getElementById("orderPointsEarnPreview");
             if (earnEl) earnEl.textContent = String(MaaruLoyalty.calcEarnPoints(draftOrder));
+            var earnBaseEl = document.getElementById("orderPointsEarnBase");
+            if (earnBaseEl) earnBaseEl.textContent = "NT$" + MaaruLoyalty.earnPointsBase(draftOrder);
             if (typeof callback === "function") callback({ balance: balance, maxPts: maxPts, processed: processed });
           }
           if (typeof window.loadPointsFromSheet === "function") {
@@ -4560,6 +4612,233 @@
             return Math.max(0, Math.ceil(t));
           }
           return Math.max(0, orderGrossBeforeDeposit(ord) - dep);
+        }
+
+        function normalizeCustomerNameForOrders_(name) {
+          if (window.MaaruLoyalty && MaaruLoyalty.normalizeCustomerName) return MaaruLoyalty.normalizeCustomerName(name);
+          return String(name || "").trim().replace(/\s+/g, "");
+        }
+
+        function normalizeOrderIdToken_(id) {
+          var s = String(id || "").trim().replace(/\s+/g, "").toUpperCase();
+          var m = s.match(/^ORD(\d+)$/i);
+          if (m) return "ORD" + ("00000" + parseInt(m[1], 10)).slice(-5);
+          if (/^\d+$/.test(s)) return "ORD" + ("00000" + parseInt(s, 10)).slice(-5);
+          return s;
+        }
+
+        function parseLinkedOrderIds_(raw) {
+          return String(raw || "").split(/[,，\s]+/).map(function(s) { return normalizeOrderIdToken_(s); }).filter(function(id) {
+            return id && /^ORD\d+$/i.test(id);
+          }).filter(function(id, i, arr) { return arr.indexOf(id) === i; });
+        }
+
+        function formatLinkedOrderIds_(raw) {
+          return parseLinkedOrderIds_(raw).join(", ");
+        }
+
+        function sanitizeLinkedOrderIdsForOrder_(raw, selfId) {
+          var selfNorm = normalizeOrderIdToken_(selfId);
+          return parseLinkedOrderIds_(raw).filter(function(id) { return !selfNorm || id !== selfNorm; }).join(", ");
+        }
+
+        function orderMatchesCustomer_(ord, customerName, phone) {
+          var n = normalizeCustomerNameForOrders_(customerName);
+          if (n) return normalizeCustomerNameForOrders_(ord && ord.customerName) === n;
+          var p = String(phone || "").replace(/\D/g, "");
+          if (p) return String(ord && ord.phone || "").replace(/\D/g, "") === p;
+          return false;
+        }
+
+        function getOrdersByCustomer_(customerName, phone) {
+          return orders.filter(function(o) { return orderMatchesCustomer_(o, customerName, phone); }).sort(function(a, b) {
+            var ma = String((a && a.id) || "").match(/^ORD(\d+)$/i);
+            var mb = String((b && b.id) || "").match(/^ORD(\d+)$/i);
+            var na = ma ? parseInt(ma[1], 10) : Number.MAX_SAFE_INTEGER;
+            var nb = mb ? parseInt(mb[1], 10) : Number.MAX_SAFE_INTEGER;
+            return na - nb;
+          });
+        }
+
+        function resolveLinkedOrders_(ord) {
+          return parseLinkedOrderIds_(ord && ord.linkedOrderIds).map(function(id) {
+            var found = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === id; });
+            return found || { id: id, _missing: true };
+          });
+        }
+
+        function getCustomerOverviewRows_(customerName, phone, focusOrderId) {
+          var byCustomer = getOrdersByCustomer_(customerName, phone);
+          var byId = {};
+          byCustomer.forEach(function(o) {
+            var id = normalizeOrderIdToken_(o.id);
+            if (id) byId[id] = o;
+          });
+          if (focusOrderId) {
+            var focus = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === normalizeOrderIdToken_(focusOrderId); });
+            if (focus) {
+              resolveLinkedOrders_(focus).forEach(function(linked) {
+                var lid = normalizeOrderIdToken_(linked.id);
+                if (lid && !byId[lid]) {
+                  if (!linked._missing) byId[lid] = linked;
+                  else byId[lid] = linked;
+                }
+              });
+            }
+          }
+          byCustomer.forEach(function(o) {
+            resolveLinkedOrders_(o).forEach(function(linked) {
+              var lid = normalizeOrderIdToken_(linked.id);
+              if (lid && !byId[lid]) byId[lid] = linked;
+            });
+          });
+          return Object.keys(byId).map(function(k) { return byId[k]; }).sort(function(a, b) {
+            var ma = String((a && a.id) || "").match(/^ORD(\d+)$/i);
+            var mb = String((b && b.id) || "").match(/^ORD(\d+)$/i);
+            return (ma ? parseInt(ma[1], 10) : 0) - (mb ? parseInt(mb[1], 10) : 0);
+          });
+        }
+
+        function buildCustomerOverviewStats_(rows, customerName, phone) {
+          var balance = 0;
+          if (window.MaaruLoyalty) {
+            var lineId = "";
+            if (rows.length) lineId = rows[0].lineId || "";
+            balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
+          }
+          var totalDue = 0;
+          var activeCount = 0;
+          var earnedPts = 0;
+          rows.forEach(function(o) {
+            if (!o || o._missing) return;
+            if (o.status !== "已取消") {
+              totalDue += orderAmountDue(o);
+              activeCount += 1;
+            }
+            earnedPts += Math.floor(Number(o.pointsEarned) || 0);
+          });
+          return { balance: balance, totalDue: totalDue, activeCount: activeCount, earnedPts: earnedPts, orderCount: rows.length };
+        }
+
+        var customerOverviewFocusOrderId = null;
+
+        function renderCustomerOverviewModal_(customerName, phone, focusOrderId) {
+          var modal = document.getElementById("customerOverviewModal");
+          var subtitle = document.getElementById("customerOverviewSubtitle");
+          var summary = document.getElementById("customerOverviewSummary");
+          var tbody = document.getElementById("customerOverviewTableBody");
+          if (!modal || !tbody) return;
+          customerOverviewFocusOrderId = focusOrderId || null;
+          var rows = getCustomerOverviewRows_(customerName, phone, focusOrderId);
+          var stats = buildCustomerOverviewStats_(rows, customerName, phone);
+          if (subtitle) {
+            var parts = [customerName || "（未填姓名）"];
+            if (phone) parts.push(phone);
+            subtitle.textContent = parts.join(" · ") + " — 共 " + rows.length + " 筆相關訂單";
+          }
+          if (summary) {
+            summary.innerHTML =
+              "<div class=\"rounded-lg border border-amber-200 bg-amber-50 px-3 py-2\"><p class=\"text-[10px] text-amber-800/70\">紅利餘額</p><p class=\"text-lg font-bold text-amber-900\">" + stats.balance + " 點</p></div>" +
+              "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">待結清合計</p><p class=\"text-lg font-bold text-slate-800\">NT$ " + stats.totalDue + "</p></div>" +
+              "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">有效訂單</p><p class=\"text-lg font-bold text-slate-800\">" + stats.activeCount + " 筆</p></div>" +
+              "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">累計獲得紅利</p><p class=\"text-lg font-bold text-slate-800\">" + stats.earnedPts + " 點</p></div>";
+          }
+          if (!rows.length) {
+            tbody.innerHTML = "<tr><td colspan=\"5\" class=\"py-8 text-center text-slate-500\">找不到此顧客的訂單</td></tr>";
+          } else {
+            var focusNorm = normalizeOrderIdToken_(focusOrderId);
+            tbody.innerHTML = rows.map(function(o) {
+              var id = normalizeOrderIdToken_(o.id);
+              var missing = !!o._missing;
+              var linkedText = missing ? "—" : formatLinkedOrderIds_(o.linkedOrderIds);
+              if (!linkedText) linkedText = "—";
+              var rowClass = (focusNorm && id === focusNorm) ? " bg-sky-50" : (missing ? " bg-rose-50/40" : "");
+              var status = missing ? "（不存在）" : (o.status || "—");
+              var due = missing ? "—" : ("NT$ " + orderAmountDue(o));
+              return "<tr class=\"border-b border-slate-100" + rowClass + "\" data-overview-order-id=\"" + escapeHtml(id) + "\">" +
+                "<td class=\"py-2.5 px-3 font-mono text-slate-800\">" + escapeHtml(id) + (missing ? " <span class=\"text-rose-600 text-xs\">未找到</span>" : "") + "</td>" +
+                "<td class=\"py-2.5 px-3 text-slate-600\">" + escapeHtml(status) + "</td>" +
+                "<td class=\"py-2.5 px-3 font-medium text-slate-800\">" + escapeHtml(due) + "</td>" +
+                "<td class=\"py-2.5 px-3 text-xs text-slate-500\">" + escapeHtml(linkedText) + "</td>" +
+                "<td class=\"py-2.5 px-3 whitespace-nowrap\">" +
+                (missing ? "<span class=\"text-xs text-slate-400\">—</span>" :
+                  "<button type=\"button\" class=\"customer-overview-edit-btn text-rose-600 hover:underline text-xs mr-2\">編輯</button>" +
+                  "<button type=\"button\" class=\"customer-overview-filter-btn text-sky-700 hover:underline text-xs\">篩選</button>") +
+                "</td></tr>";
+            }).join("");
+            tbody.querySelectorAll(".customer-overview-edit-btn").forEach(function(btn) {
+              btn.addEventListener("click", function() {
+                var id = this.closest("tr").getAttribute("data-overview-order-id");
+                var ord = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === id; });
+                if (ord) {
+                  closeCustomerOverviewModal_();
+                  openOrderModal(ord);
+                }
+              });
+            });
+            tbody.querySelectorAll(".customer-overview-filter-btn").forEach(function(btn) {
+              btn.addEventListener("click", function() {
+                var id = this.closest("tr").getAttribute("data-overview-order-id");
+                if (orderSearchInput) orderSearchInput.value = id;
+                closeCustomerOverviewModal_();
+                renderOrders();
+              });
+            });
+          }
+          modal.classList.remove("hidden");
+        }
+
+        function openCustomerOverviewModal_(customerName, phone, focusOrderId) {
+          var name = (customerName || "").trim();
+          var ph = (phone || "").trim();
+          if (!normalizeCustomerNameForOrders_(name) && !ph) {
+            showOrderMessage("請先填寫客戶姓名或電話", true);
+            return;
+          }
+          function afterLoad() {
+            renderCustomerOverviewModal_(name, ph, focusOrderId);
+          }
+          if (typeof window.loadPointsFromSheet === "function") {
+            window.loadPointsFromSheet().then(afterLoad).catch(afterLoad);
+          } else {
+            afterLoad();
+          }
+        }
+
+        function closeCustomerOverviewModal_() {
+          var modal = document.getElementById("customerOverviewModal");
+          if (modal) modal.classList.add("hidden");
+          customerOverviewFocusOrderId = null;
+        }
+
+        function suggestLinkedOrdersForCurrentForm_() {
+          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
+          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+          var currentId = normalizeOrderIdToken_((document.getElementById("orderId") && document.getElementById("orderId").value) || "");
+          var editId = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id")) || "";
+          var selfId = currentId || normalizeOrderIdToken_(editId);
+          var others = getOrdersByCustomer_(customerName, phone).map(function(o) { return normalizeOrderIdToken_(o.id); }).filter(function(id) {
+            return id && id !== selfId;
+          });
+          var input = document.getElementById("orderLinkedOrderIds");
+          if (!input) return;
+          if (!others.length) {
+            showOrderMessage("此客戶尚無其他訂單可關聯", true);
+            return;
+          }
+          var existing = parseLinkedOrderIds_(input.value);
+          var merged = existing.slice();
+          others.forEach(function(id) {
+            if (merged.indexOf(id) < 0) merged.push(id);
+          });
+          input.value = merged.join(", ");
+          showOrderMessage("已帶入 " + others.length + " 筆同客戶訂單編號");
+        }
+
+        function renderLinkedOrderBadge_(ord) {
+          var ids = parseLinkedOrderIds_(ord.linkedOrderIds);
+          if (!ids.length) return "";
+          return "<span class=\"ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 text-sky-800\" title=\"關聯： " + escapeHtml(ids.join(", ")) + "\">↔" + ids.length + "</span>";
         }
 
         var orderItemsState = [];
@@ -4769,6 +5048,9 @@
           if (isNaN(depositNum) || depositNum < 0) depositNum = 0;
           var gross = Math.max(0, Math.ceil(subtotal - discount - pointsDiscount + effectiveShipping));
           var total = depositNum > 0 ? Math.max(0, gross - depositNum) : gross;
+          var editIdForLink = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id")) || "";
+          var selfIdForLink = editIdForLink || ((document.getElementById("orderId") && document.getElementById("orderId").value) || "");
+          var linkedRaw = (document.getElementById("orderLinkedOrderIds") && document.getElementById("orderLinkedOrderIds").value) || "";
           return {
             customerName: (document.getElementById("orderCustomerName").value || "").trim(),
             phone: (document.getElementById("orderPhone").value || "").trim(),
@@ -4791,13 +5073,16 @@
             depositRemark: (document.getElementById("orderDepositRemark").value || "").trim(),
             depositAmount: depositNum,
             preorderDate: (document.getElementById("orderPreorderDate").value || "").trim(),
-            shipDate: (document.getElementById("orderShipDate").value || "").trim()
+            shipDate: (document.getElementById("orderShipDate").value || "").trim(),
+            linkedOrderIds: sanitizeLinkedOrderIdsForOrder_(linkedRaw, selfIdForLink)
           };
         }
 
         function setFormFromOrder(o) {
           var orderIdEl = document.getElementById("orderId");
           if (orderIdEl) { orderIdEl.value = o.id || ""; orderIdEl.readOnly = true; }
+          var linkedEl = document.getElementById("orderLinkedOrderIds");
+          if (linkedEl) linkedEl.value = formatLinkedOrderIds_(o.linkedOrderIds || "");
           document.getElementById("orderCustomerName").value = o.customerName || "";
           document.getElementById("orderPhone").value = o.phone || "";
           document.getElementById("orderEmail").value = o.email || "";
@@ -4865,6 +5150,8 @@
             if (depEl) depEl.value = "0";
             document.getElementById("orderPreorderDate").value = "";
             document.getElementById("orderShipDate").value = "";
+            var linkedElNew = document.getElementById("orderLinkedOrderIds");
+            if (linkedElNew) linkedElNew.value = "";
             var usePtsCheckNew = document.getElementById("orderUsePointsCheck");
             var ptsInputNew = document.getElementById("orderPointsUsed");
             if (usePtsCheckNew) usePtsCheckNew.checked = false;
@@ -4927,7 +5214,7 @@
           var list = orders.filter(function(ord) {
             if (filterStatus && ord.status !== filterStatus) return false;
             if (searchQ) {
-              var text = (ord.id || "") + (ord.customerName || "") + (ord.phone || "") + (ord.email || "");
+              var text = (ord.id || "") + (ord.customerName || "") + (ord.phone || "") + (ord.email || "") + (ord.linkedOrderIds || "");
               if (text.toLowerCase().indexOf(searchQ) < 0) return false;
             }
             return true;
@@ -4948,9 +5235,10 @@
           }
           orderTableBody.innerHTML = list.map(function(ord) {
             var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-            var customer = (ord.customerName || "-") + (ord.phone ? " / " + ord.phone : "");
+            var customerNameOnly = (ord.customerName || "").trim() || "—";
+            var customerSub = ord.phone ? ("<span class=\"block text-xs text-slate-500\">" + escapeHtml(ord.phone) + "</span>") : "";
             return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\" data-order-id=\"" + escapeHtml(ord.id) + "\">" +
-              "<td class=\"py-3 px-4 font-medium text-slate-800\">" + escapeHtml(ord.id) + "</td>" +
+              "<td class=\"py-3 px-4 font-medium text-slate-800\"><span class=\"font-mono\">" + escapeHtml(ord.id) + "</span>" + renderLinkedOrderBadge_(ord) + "</td>" +
               "<td class=\"py-3 px-4\"><select class=\"order-status-select rounded border border-slate-300 px-2 py-1 text-sm bg-white\" data-order-id=\"" + escapeHtml(ord.id) + "\">" +
               "<option value=\"待處理\"" + (ord.status === "待處理" ? " selected" : "") + ">待處理</option>" +
               "<option value=\"已確認\"" + (ord.status === "已確認" ? " selected" : "") + ">已確認</option>" +
@@ -4959,7 +5247,11 @@
               "<option value=\"已取消\"" + (ord.status === "已取消" ? " selected" : "") + ">已取消</option>" +
               "</select></td>" +
               "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(dateStr) + "</td>" +
-              "<td class=\"py-3 px-4 text-slate-700\">" + escapeHtml(customer) + "</td>" +
+              "<td class=\"py-3 px-4 text-slate-700\">" +
+              "<div class=\"flex flex-wrap items-center gap-2\">" +
+              "<span>" + escapeHtml(customerNameOnly) + "</span>" +
+              "<button type=\"button\" class=\"order-customer-overview-btn px-2 py-0.5 rounded border border-sky-200 bg-sky-50 text-sky-800 text-[11px] hover:bg-sky-100\" data-customer-name=\"" + escapeHtml(ord.customerName || "") + "\" data-customer-phone=\"" + escapeHtml(ord.phone || "") + "\" data-order-id=\"" + escapeHtml(ord.id) + "\">總覽</button>" +
+              "</div>" + customerSub + "</td>" +
               "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(ord.shippingMethod || "-") + "</td>" +
               "<td class=\"py-3 px-4 font-medium text-slate-800\">NT$ " + orderAmountDue(ord) + "</td>" +
               "<td class=\"py-3 px-4\"><button type=\"button\" class=\"order-pdf-btn px-2 py-1 rounded bg-slate-700 text-white text-xs hover:bg-slate-800 mr-1\">產生 PDF</button>" +
@@ -5026,6 +5318,15 @@
             btn.addEventListener("click", function() {
               var id = this.getAttribute("data-order-id");
               if (id) openPasteOrderModal(id);
+            });
+          });
+          orderTableBody.querySelectorAll(".order-customer-overview-btn").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+              openCustomerOverviewModal_(
+                this.getAttribute("data-customer-name") || "",
+                this.getAttribute("data-customer-phone") || "",
+                this.getAttribute("data-order-id") || ""
+              );
             });
           });
         }
@@ -5394,6 +5695,9 @@
             if (pasteOrderAppendOrderId) {
               var ord = orders.find(function(o) { return o.id === pasteOrderAppendOrderId; });
               if (ord) {
+                if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) {
+                  if (!confirm("此訂單紅利已處理（已確認／已完成）。追加商品後不會自動補發差額點數。\n\n若需分次集點，建議改開新訂單並填相同客戶姓名；若仍要併入本單請按「確定」。")) return;
+                }
                 var newItems = window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) ? window.__lastPastedOrderItems : [];
                 ord.items = (ord.items && Array.isArray(ord.items) ? ord.items : []).concat(newItems);
                 ord.subtotal = (Number(ord.subtotal) || 0) + (parsed.subtotal || 0);
@@ -5517,6 +5821,7 @@
               ord.depositAmount = data.depositAmount != null ? data.depositAmount : 0;
               ord.preorderDate = data.preorderDate;
               ord.shipDate = data.shipDate;
+              ord.linkedOrderIds = data.linkedOrderIds || "";
               ord.items = normalizeOrderItems_(orderItemsState).filter(function(it) { return String(it.lineName || "").trim() !== ""; });
               ord = applyLoyaltyToOrder_(ord, null);
               saveOrders();
@@ -5564,7 +5869,8 @@
               depositRemark: data.depositRemark,
               depositAmount: data.depositAmount != null ? data.depositAmount : 0,
               preorderDate: data.preorderDate,
-              shipDate: data.shipDate
+              shipDate: data.shipDate,
+              linkedOrderIds: data.linkedOrderIds || ""
             };
             newOrder.items = normalizeOrderItems_(orderItemsState).filter(function(it) { return String(it.lineName || "").trim() !== ""; });
             window.__lastPastedOrderItems = null;
@@ -5584,7 +5890,7 @@
 
         function exportOrdersCsvFromCurrentList() {
           if (orders.length === 0) { showOrderMessage("目前沒有訂單可匯出", true); return; }
-          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "Line ID", "運送方式", "門市", "店號", "地址", "購買商品清單", "數量", "單價", "小計", "折扣", "運費", "運費狀態", "預購訂金", "待結清總金額", "備註", "收訂金歷程記錄", "預購日期", "出貨日期"];
+          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "Line ID", "運送方式", "門市", "店號", "地址", "購買商品清單", "數量", "單價", "小計", "折扣", "運費", "運費狀態", "預購訂金", "待結清總金額", "備註", "關聯訂單", "收訂金歷程記錄", "預購日期", "出貨日期"];
           var rows = [headers.join(",")];
           orders.forEach(function(ord) {
             var dateStr = ord.date ? new Date(ord.date).toISOString() : "";
@@ -5611,7 +5917,7 @@
               itemsNamesText, itemsQtyText, itemsPriceText,
               ord.subtotal != null ? ord.subtotal : "", ord.discount != null ? ord.discount : "", ord.shippingFee != null ? ord.shippingFee : "",
               ord.shippingStatus || "", ord.depositAmount != null ? ord.depositAmount : "",
-              orderAmountDue(ord), (ord.remark || "").replace(/"/g, '""'), (ord.depositRemark || "").replace(/"/g, '""'),
+              orderAmountDue(ord), (ord.remark || "").replace(/"/g, '""'), (ord.linkedOrderIds || "").replace(/"/g, '""'), (ord.depositRemark || "").replace(/"/g, '""'),
               ord.preorderDate || "", ord.shipDate || ""
             ];
             rows.push(row.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(","));
@@ -5641,6 +5947,12 @@
         if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { renderOrders(); });
         if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders(); } });
         if (orderStatusFilter) orderStatusFilter.addEventListener("change", function() { renderOrders(); });
+        var customerOverviewClose = document.getElementById("customerOverviewClose");
+        var customerOverviewBackdrop = document.getElementById("customerOverviewBackdrop");
+        if (customerOverviewClose) customerOverviewClose.addEventListener("click", closeCustomerOverviewModal_);
+        if (customerOverviewBackdrop) customerOverviewBackdrop.addEventListener("click", closeCustomerOverviewModal_);
+        var btnOrderLinkSuggest = document.getElementById("btnOrderLinkSuggest");
+        if (btnOrderLinkSuggest) btnOrderLinkSuggest.addEventListener("click", suggestLinkedOrdersForCurrentForm_);
         renderOrders();
         processPendingLoyaltyOrders_(true);
         if (!ORDER_LOCAL_ONLY) {
