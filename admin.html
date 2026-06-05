@@ -1061,6 +1061,8 @@
                 </div>
                 <button type="button" id="btnApplyBatchVariantPrice" class="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-medium hover:bg-amber-600 shrink-0">套用到符合規格</button>
               </div>
+              <div id="variantDimPricePanel" class="hidden space-y-1.5 pt-2 border-t border-amber-200/80"></div>
+              <p class="text-[10px] text-amber-800/70">提示：請先按下方「自動生成規格組合」，再按套用；或填好各選項售價後直接按套用（會自動生成再帶入）。</p>
             </div>
             <div class="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3 space-y-2">
               <div class="flex flex-wrap items-center justify-between gap-2">
@@ -2975,7 +2977,7 @@
 
       function parseDimOptionList_(raw) {
         return String(raw || "")
-          .split(/[,，、;；\n\r\uFF0C\u3000\s]+/)
+          .split(/[,，、;；\n\r\uFF0C\u3000]+/)
           .map(function(s) { return s.trim(); })
           .filter(Boolean);
       }
@@ -3047,6 +3049,7 @@
           return (d.label ? d.label + "：" : "") + d.options.length + " 項";
         }).join(" × ");
         el.textContent = "預覽 " + count + " 筆（" + labels + "）";
+        updateVariantDimPricePanel_();
       }
 
       function bindVariantDimRow_(row) {
@@ -3054,8 +3057,19 @@
         var optsInp = row.querySelector(".variant-dim-options");
         var removeBtn = row.querySelector(".variant-dim-remove");
         if (optsInp) {
-          optsInp.addEventListener("input", updateVariantComboPreview_);
-          optsInp.addEventListener("change", updateVariantComboPreview_);
+          optsInp.addEventListener("input", function() {
+            updateVariantComboPreview_();
+            updateVariantDimPricePanel_();
+          });
+          optsInp.addEventListener("change", function() {
+            updateVariantComboPreview_();
+            updateVariantDimPricePanel_();
+          });
+        }
+        var labelInp = row.querySelector(".variant-dim-label");
+        if (labelInp) {
+          labelInp.addEventListener("input", updateVariantDimPricePanel_);
+          labelInp.addEventListener("change", updateVariantDimPricePanel_);
         }
         if (removeBtn) {
           removeBtn.addEventListener("click", function() {
@@ -3093,6 +3107,7 @@
         container.innerHTML = "";
         container.appendChild(createVariantDimRow_("", ""));
         updateVariantComboPreview_();
+        updateVariantDimPricePanel_();
       }
 
       function inferVariantDimsFromExisting_(variantStr) {
@@ -3122,6 +3137,7 @@
           container.appendChild(createVariantDimRow_("", ""));
         }
         updateVariantComboPreview_();
+        updateVariantDimPricePanel_();
       }
 
       function generateVariantCombinationsFromDims_(opts) {
@@ -3152,7 +3168,10 @@
           return "";
         });
         renderVariantList(names.join(", "), urls.join(", "), qtys.join(", "), prices.join(", "));
-        if (!opts.silent) showMessage("已自動生成 " + names.length + " 筆規格組合");
+        var priced = applyVariantPricesFromOptionMap_(true);
+        if (!opts.silent) {
+          showMessage("已自動生成 " + names.length + " 筆規格組合" + (priced > 0 ? "，並帶入 " + priced + " 筆售價" : ""));
+        }
         return names.length;
       }
 
@@ -3214,36 +3233,139 @@
         });
       }
 
-      function applyBatchVariantPrices_() {
+      function getPricingDimension_(dims) {
+        if (!dims || !dims.length) return null;
+        var priority = /品項|類型|種類|款式|規格|類別/;
+        for (var i = 0; i < dims.length; i++) {
+          if (priority.test(dims[i].label || "")) return dims[i];
+        }
+        return dims[0];
+      }
+
+      function readDimOptionPriceMap_() {
+        var map = {};
+        var panel = document.getElementById("variantDimPricePanel");
+        if (panel) {
+          panel.querySelectorAll(".dim-option-price-row").forEach(function(row) {
+            var opt = (row.getAttribute("data-option") || "").trim();
+            var inp = row.querySelector(".dim-option-price");
+            var v = inp && inp.value !== "" && inp.value != null ? String(inp.value).trim() : "";
+            if (opt && /^\d+(\.\d+)?$/.test(v)) map[opt] = v;
+          });
+        }
+        return map;
+      }
+
+      function buildDimOptionPriceOrder_(map) {
+        var ordered = [];
+        var seen = {};
+        var dims = collectVariantDims_();
+        dims.forEach(function(dim) {
+          (dim.options || []).forEach(function(opt) {
+            if (map[opt] && !seen[opt]) {
+              seen[opt] = true;
+              ordered.push({ key: opt, price: map[opt] });
+            }
+          });
+        });
+        Object.keys(map).forEach(function(k) {
+          if (!seen[k]) ordered.push({ key: k, price: map[k] });
+        });
+        return ordered;
+      }
+
+      function updateVariantDimPricePanel_() {
+        var panel = document.getElementById("variantDimPricePanel");
+        if (!panel) return;
+        var dims = collectVariantDims_();
+        var prev = readDimOptionPriceMap_();
+        var blocks = dims.filter(function(d) { return d.options && d.options.length; }).map(function(dim) {
+          var label = dim.label || "選項";
+          var rows = dim.options.map(function(opt) {
+            var pv = prev[opt] || "";
+            return "<div class=\"dim-option-price-row flex flex-wrap items-center gap-2\" data-option=\"" + escapeAttr(opt) + "\">" +
+              "<span class=\"text-xs text-amber-900 min-w-[4.5rem] shrink-0 truncate\" title=\"" + escapeAttr(opt) + "\">" + escapeHtml(opt) + "</span>" +
+              "<span class=\"text-[10px] text-amber-700\">NT$</span>" +
+              "<input type=\"number\" class=\"dim-option-price w-24 rounded-lg border border-amber-200 bg-white px-2 py-1 text-sm variant-price\" min=\"0\" step=\"1\" placeholder=\"售價\" value=\"" + escapeAttr(pv) + "\" />" +
+              "</div>";
+          }).join("");
+          return "<div class=\"space-y-1\"><p class=\"text-[10px] font-medium text-amber-800\">「" + escapeHtml(label) + "」各選項售價</p>" + rows + "</div>";
+        });
+        if (!blocks.length) {
+          panel.innerHTML = "";
+          panel.classList.add("hidden");
+          return;
+        }
+        panel.classList.remove("hidden");
+        panel.innerHTML = "<p class=\"text-[10px] text-amber-800/80 mb-1\">填好售價後按「套用到符合規格」，會帶入所有含該選項的款式組合</p>" + blocks.join("");
+      }
+
+      function variantNameMatchesOption_(name, optionKey) {
+        if (!name || !optionKey) return false;
+        if (name.indexOf(optionKey) >= 0) return true;
+        var tokens = name.split(/\s+/).filter(Boolean);
+        return tokens.indexOf(optionKey) >= 0;
+      }
+
+      function applyVariantPricesFromOptionMap_(silent) {
+        var map = readDimOptionPriceMap_();
         var keywordInp = document.getElementById("variantBatchKeyword");
         var priceInp = document.getElementById("variantBatchPrice");
-        var keyword = (keywordInp && keywordInp.value) ? keywordInp.value.trim() : "";
-        var price = (priceInp && priceInp.value !== "" && priceInp.value != null) ? String(priceInp.value).trim() : "";
-        if (!keyword) {
-          showMessage("請輸入規格關鍵字，例如：吊飾娃 或 手機鍊", true);
-          return;
+        var keyword = keywordInp && keywordInp.value ? keywordInp.value.trim() : "";
+        var price = priceInp && priceInp.value !== "" && priceInp.value != null ? String(priceInp.value).trim() : "";
+        if (keyword && /^\d+(\.\d+)?$/.test(price)) map[keyword] = price;
+
+        var matchOrder = buildDimOptionPriceOrder_(map);
+        if (!matchOrder.length) {
+          if (!silent) showMessage("請在「各選項定價」填寫售價，或於上方批次欄輸入關鍵字與售價", true);
+          return 0;
         }
-        if (!/^\d+(\.\d+)?$/.test(price)) {
-          showMessage("請輸入有效的台幣售價", true);
-          return;
-        }
+
         var container = document.getElementById("variantListContainer");
-        if (!container) return;
+        if (!container) return 0;
+
+        function hasNamedVariantRows_() {
+          var found = false;
+          container.querySelectorAll(".variant-item-row").forEach(function(row) {
+            var nameInp = row.querySelector(".variant-item");
+            if (nameInp && nameInp.value.trim()) found = true;
+          });
+          return found;
+        }
+
+        if (!hasNamedVariantRows_()) {
+          var n = generateVariantCombinationsFromDims_({ silent: true, force: true });
+          if (!n) {
+            if (!silent) showMessage("請先在「規格維度」填寫選項（逗號分隔），例如品項：吊飾娃,手機鍊", true);
+            return 0;
+          }
+        }
+
         var count = 0;
         container.querySelectorAll(".variant-item-row").forEach(function(row) {
           var nameInp = row.querySelector(".variant-item");
           var priceField = row.querySelector(".variant-price");
           var name = (nameInp && nameInp.value) ? nameInp.value.trim() : "";
-          if (name && name.indexOf(keyword) >= 0 && priceField) {
-            priceField.value = price;
-            count++;
+          if (!name || !priceField) return;
+          for (var i = 0; i < matchOrder.length; i++) {
+            var entry = matchOrder[i];
+            if (variantNameMatchesOption_(name, entry.key)) {
+              priceField.value = entry.price;
+              count++;
+              break;
+            }
           }
         });
         syncVariantToHidden();
+        return count;
+      }
+
+      function applyBatchVariantPrices_() {
+        var count = applyVariantPricesFromOptionMap_(false);
         if (count > 0) {
-          showMessage("已將含「" + keyword + "」的 " + count + " 筆規格設為 NT$" + price);
+          showMessage("已套用售價至 " + count + " 筆規格（含各款式組合）");
         } else {
-          showMessage("找不到規格名稱含「" + keyword + "」的品項，請先新增或自動生成規格", true);
+          showMessage("找不到可套用的規格。請確認：① 維度選項已填 ② 選項名稱與規格文字一致（例：吊飾娃 酷洛米）", true);
         }
       }
 
