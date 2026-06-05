@@ -78,6 +78,35 @@
     }
     .product-status-track.on .product-status-knob { transform: translateX(22px); }
     .product-status-track.off .product-status-knob { transform: translateX(0); }
+    /* 規格列：各款式獨立售價 */
+    .variant-list-head {
+      display: none;
+      grid-template-columns: minmax(120px, 1.4fr) 88px minmax(100px, 1fr) 72px 36px;
+      gap: 0.5rem;
+      padding: 0 0 0.25rem;
+      font-size: 10px;
+      font-weight: 600;
+      color: #b45309;
+      letter-spacing: 0.02em;
+    }
+    @media (min-width: 640px) {
+      .variant-list-head { display: grid; }
+      .variant-item-row {
+        display: grid !important;
+        grid-template-columns: minmax(120px, 1.4fr) 88px minmax(100px, 1fr) 72px 36px;
+        gap: 0.5rem;
+        align-items: start;
+      }
+    }
+    .variant-price {
+      border-color: #fcd34d !important;
+      background-color: #fffbeb !important;
+    }
+    .variant-price:focus {
+      border-color: #f59e0b !important;
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+    }
     /* KPI 卡片浮動效果 */
     .kpi-card {
       transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.2s ease;
@@ -975,7 +1004,7 @@
   <div id="modal" class="fixed inset-0 z-50 hidden">
     <div class="absolute inset-0 bg-black/50" id="modalBackdrop"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4">
-      <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+      <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div class="p-6 border-b border-slate-200 flex items-center justify-between">
           <h3 class="text-lg font-semibold" id="modalTitle">新增商品</h3>
           <button type="button" id="modalCloseBtn" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" aria-label="關閉">✕</button>
@@ -1017,7 +1046,22 @@
             </div>
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆；每筆可填<strong>台幣售價</strong>、圖片、數量；留空售價則沿用上方台幣售價）</label>
+            <label class="block text-xs font-medium text-slate-700 mb-1">規格與款式</label>
+            <div class="rounded-lg border border-amber-200 bg-amber-50/70 p-3 mb-3 space-y-2">
+              <p class="text-xs font-semibold text-amber-900">各規格可設不同台幣售價</p>
+              <p class="text-[11px] text-amber-900/80 leading-relaxed">例：吊飾娃 350 元、手機鍊 280 元。在下方每列<strong>黃色「台幣售價」</strong>欄填寫；留空則沿用本表單的台幣售價。</p>
+              <div class="flex flex-wrap gap-2 items-end pt-1">
+                <div class="min-w-[120px] flex-1">
+                  <label class="text-[10px] font-medium text-amber-800 block mb-0.5">批次：規格名稱含</label>
+                  <input type="text" id="variantBatchKeyword" class="w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-sm" placeholder="例：吊飾娃" />
+                </div>
+                <div class="w-28">
+                  <label class="text-[10px] font-medium text-amber-800 block mb-0.5">售價 NT$</label>
+                  <input type="number" id="variantBatchPrice" min="0" step="1" class="w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-sm variant-price" placeholder="350" />
+                </div>
+                <button type="button" id="btnApplyBatchVariantPrice" class="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-medium hover:bg-amber-600 shrink-0">套用到符合規格</button>
+              </div>
+            </div>
             <div class="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3 space-y-2">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <span class="text-xs font-medium text-indigo-900">規格維度 · 自動組合</span>
@@ -1030,13 +1074,20 @@
               </div>
               <p class="text-[11px] text-slate-500 leading-relaxed">每個維度用逗號分隔選項。例：品項「吊飾娃,手機鍊」+ 款式「酷洛米,美樂蒂」→ 產生 4 筆；再於各規格列填不同台幣售價（吊飾娃 350、手機鍊 280）。重新生成會保留同名規格的圖片、售價與庫存。</p>
             </div>
+            <div class="variant-list-head">
+              <span>規格名稱</span>
+              <span>台幣售價</span>
+              <span>規格圖片</span>
+              <span>庫存</span>
+              <span></span>
+            </div>
             <div id="variantListContainer" class="space-y-2">
               <div class="variant-item-row flex flex-wrap gap-2 items-start">
-                <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="規格名稱，例：吊飾娃 酷洛米" />
-                <input type="number" class="variant-price w-24 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm" placeholder="台幣售價" min="0" step="1" title="留空則沿用商品台幣售價" />
-                <input type="text" class="variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="該規格圖片 URL（選填）" />
-                <input type="number" class="variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm" placeholder="數量" min="0" step="1" title="現貨時填，0＝已售完" />
-                <button type="button" class="variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" title="移除">✕</button>
+                <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：吊飾娃 酷洛米" />
+                <input type="number" class="variant-price w-full min-w-0 rounded-lg border border-amber-300 px-2 py-2 text-sm" placeholder="售價" min="0" step="1" title="各款式獨立售價；留空沿用上方台幣售價" />
+                <input type="text" class="variant-image flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="圖片 URL（選填）" />
+                <input type="number" class="variant-qty w-full min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm" placeholder="數" min="0" step="1" title="現貨時填，0＝已售完" />
+                <button type="button" class="variant-item-remove shrink-0 px-2 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" title="移除">✕</button>
               </div>
             </div>
             <button type="button" id="btnAddVariant" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50">+ 新增規格品項</button>
@@ -2604,6 +2655,7 @@
         if (patch.image) { patch.圖片 = patch.image; patch.商品主圖 = patch.image; }
         if (Object.prototype.hasOwnProperty.call(patch, "status")) patch.狀態 = patch.status;
         if (patch.stockType) { patch.貨況 = patch.stockType; patch.現貨預購 = patch.stockType; }
+        if (patch.variantPrices != null && String(patch.variantPrices).trim() !== "") patch.規格售價 = patch.variantPrices;
         return normalizeProductRecord(patch);
       }
 
@@ -3146,12 +3198,53 @@
         return (s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
 
+      function variantRowInnerHtml_(val, price, url, qty) {
+        return "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"例：吊飾娃 酷洛米\" value=\"" + escapeAttr(val || "") + "\" />" +
+          "<input type=\"number\" class=\"variant-price w-full min-w-0 rounded-lg border border-amber-300 px-2 py-2 text-sm\" placeholder=\"售價\" min=\"0\" step=\"1\" title=\"各款式獨立售價；留空沿用上方台幣售價\" value=\"" + escapeAttr(price != null && price !== "" ? String(price) : "") + "\" />" +
+          "<input type=\"text\" class=\"variant-image flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"圖片 URL（選填）\" value=\"" + escapeAttr(url || "") + "\" />" +
+          "<input type=\"number\" class=\"variant-qty w-full min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"數\" min=\"0\" step=\"1\" title=\"現貨時填，0＝已售完\" value=\"" + escapeAttr(qty !== undefined && qty !== "" ? String(qty) : "") + "\" />" +
+          "<button type=\"button\" class=\"variant-item-remove shrink-0 px-2 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>";
+      }
+
       function bindVariantRowInputs_(row) {
         if (!row) return;
         row.querySelectorAll(".variant-item, .variant-price, .variant-image, .variant-qty").forEach(function(inp) {
           inp.addEventListener("input", syncVariantToHidden);
           inp.addEventListener("change", syncVariantToHidden);
         });
+      }
+
+      function applyBatchVariantPrices_() {
+        var keywordInp = document.getElementById("variantBatchKeyword");
+        var priceInp = document.getElementById("variantBatchPrice");
+        var keyword = (keywordInp && keywordInp.value) ? keywordInp.value.trim() : "";
+        var price = (priceInp && priceInp.value !== "" && priceInp.value != null) ? String(priceInp.value).trim() : "";
+        if (!keyword) {
+          showMessage("請輸入規格關鍵字，例如：吊飾娃 或 手機鍊", true);
+          return;
+        }
+        if (!/^\d+(\.\d+)?$/.test(price)) {
+          showMessage("請輸入有效的台幣售價", true);
+          return;
+        }
+        var container = document.getElementById("variantListContainer");
+        if (!container) return;
+        var count = 0;
+        container.querySelectorAll(".variant-item-row").forEach(function(row) {
+          var nameInp = row.querySelector(".variant-item");
+          var priceField = row.querySelector(".variant-price");
+          var name = (nameInp && nameInp.value) ? nameInp.value.trim() : "";
+          if (name && name.indexOf(keyword) >= 0 && priceField) {
+            priceField.value = price;
+            count++;
+          }
+        });
+        syncVariantToHidden();
+        if (count > 0) {
+          showMessage("已將含「" + keyword + "」的 " + count + " 筆規格設為 NT$" + price);
+        } else {
+          showMessage("找不到規格名稱含「" + keyword + "」的品項，請先新增或自動生成規格", true);
+        }
       }
 
       function renderVariantList(variantStr, variantImagesStr, variantStockStr, variantPricesStr) {
@@ -3171,13 +3264,7 @@
           var url = urlParts[i] != null ? urlParts[i] : "";
           var qty = stockParts[i] !== undefined && stockParts[i] !== "" ? stockParts[i] : "";
           var price = priceParts[i] != null ? priceParts[i] : "";
-          return "<div class=\"variant-item-row flex flex-wrap gap-2 items-start\">" +
-            "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：吊飾娃 酷洛米\" value=\"" + escapeAttr(val) + "\" />" +
-            "<input type=\"number\" class=\"variant-price w-24 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"台幣售價\" min=\"0\" step=\"1\" title=\"留空則沿用商品台幣售價\" value=\"" + escapeAttr(String(price)) + "\" />" +
-            "<input type=\"text\" class=\"variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"該規格圖片 URL（選填）\" value=\"" + escapeAttr(url) + "\" />" +
-            "<input type=\"number\" class=\"variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"數量\" min=\"0\" step=\"1\" title=\"現貨時填，0＝已售完\" value=\"" + escapeAttr(String(qty)) + "\" />" +
-            "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>" +
-            "</div>";
+          return "<div class=\"variant-item-row flex flex-wrap gap-2 items-start\">" + variantRowInnerHtml_(val, price, url, qty) + "</div>";
         }).join("");
         container.querySelectorAll(".variant-item-row").forEach(function(row) {
           bindVariantRowInputs_(row);
@@ -3572,6 +3659,11 @@
         });
       }
 
+      var btnApplyBatchVariantPrice = document.getElementById("btnApplyBatchVariantPrice");
+      if (btnApplyBatchVariantPrice) {
+        btnApplyBatchVariantPrice.addEventListener("click", applyBatchVariantPrices_);
+      }
+
       var btnAddVariant = document.getElementById("btnAddVariant");
       if (btnAddVariant) {
         btnAddVariant.addEventListener("click", function() {
@@ -3579,11 +3671,7 @@
           if (!container) return;
           var row = document.createElement("div");
           row.className = "variant-item-row flex flex-wrap gap-2 items-start";
-          row.innerHTML = "<input type=\"text\" class=\"variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"規格名稱，例：吊飾娃 酷洛米\" />" +
-            "<input type=\"number\" class=\"variant-price w-24 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"台幣售價\" min=\"0\" step=\"1\" title=\"留空則沿用商品台幣售價\" />" +
-            "<input type=\"text\" class=\"variant-image flex-1 min-w-[120px] rounded-lg border border-slate-300 px-3 py-2 text-sm\" placeholder=\"該規格圖片 URL（選填）\" />" +
-            "<input type=\"number\" class=\"variant-qty w-20 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm\" placeholder=\"數量\" min=\"0\" step=\"1\" title=\"現貨時填，0＝已售完\" />" +
-            "<button type=\"button\" class=\"variant-item-remove shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50\" title=\"移除\">✕</button>";
+          row.innerHTML = variantRowInnerHtml_("", "", "", "");
           container.appendChild(row);
           bindVariantRowInputs_(row);
           var removeBtn = row.querySelector(".variant-item-remove");
