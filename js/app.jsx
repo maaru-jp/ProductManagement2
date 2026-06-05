@@ -1418,21 +1418,30 @@ function Navbar({ cartCount, onOpenCart, onOpenMenu, onLogoClick, searchKeyword,
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-1 shrink-0">
+        <div className="flex items-center justify-end gap-2 shrink-0">
           <Link
             to="/points"
-            className="relative inline-flex items-center justify-center gap-1 min-w-[2.25rem] h-9 px-2 rounded-md hover:bg-amber-50 text-amber-800 transition-colors"
+            className="shop-loyalty-btn group"
             aria-label="我的紅利點數"
             title="我的紅利點數"
           >
-            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-            {loyaltyBalance != null && loyaltyBalance > 0 ? (
-              <span className="text-[11px] font-semibold leading-none">{loyaltyBalance > 99 ? "99+" : loyaltyBalance}</span>
-            ) : (
-              <span className="hidden sm:inline text-[11px] font-medium leading-none">點數</span>
-            )}
+            <span className="shop-loyalty-btn-icon" aria-hidden="true">
+              <svg className="w-[1.125rem] h-[1.125rem]" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l2.39 4.84L20 8.27l-4 3.9.94 5.5L12 15.77l-4.94 2.9.94-5.5-4-3.9 5.61-.43L12 2z" />
+              </svg>
+            </span>
+            <span className="shop-loyalty-btn-label">
+              <span className="shop-loyalty-btn-title">紅利點數</span>
+              <span className="shop-loyalty-btn-sub">
+                {loyaltyBalance != null && loyaltyBalance > 0 ? "可用餘額" : "查詢餘額"}
+              </span>
+            </span>
+            <span className="shop-loyalty-btn-mobile-label sm:hidden">點數</span>
+            <span className="shop-loyalty-btn-badge" aria-hidden="true">
+              {loyaltyBalance != null && loyaltyBalance > 0
+                ? (loyaltyBalance > 99 ? "99+" : String(loyaltyBalance))
+                : "查"}
+            </span>
           </Link>
           <button
             type="button"
@@ -2994,7 +3003,7 @@ function PointsPage() {
           ← 回首頁
         </Link>
         <h1 className="mt-3 text-xl font-semibold text-neutral-900 tracking-tight">我的紅利點數</h1>
-        <p className="mt-1 text-sm text-neutral-500">輸入與訂單相同的客戶姓名，即可查詢可用點數</p>
+        <p className="mt-1 text-sm text-neutral-500">請輸入您在社群的暱稱，即可查詢可用點數</p>
       </div>
 
       <form onSubmit={handleSubmit} className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
