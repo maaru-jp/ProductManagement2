@@ -2089,11 +2089,8 @@ function VariantTwoTierPicker({ variantDims, group, selectedDims, onPickDim, rat
             {dim.options.map((opt) => {
               const available = isDimOptionAvailable_(dimIndex, opt, selectedDims, group);
               const active = selectedDims[dimIndex] === opt;
-              const previewItem =
-                dimIndex === 0
-                  ? group.find((g) => variantNameTokens_(g.variant)[0] === opt)
-                  : findGroupItemByCombo_(group, [selectedDims[0], opt]);
-              const previewPrice = previewItem ? getDisplayPrice(previewItem, rate) : "";
+              const isItemTier =
+                /品項|類型|種類|類別/.test(String(dim.label || "").trim()) || dimIndex === 0;
               return (
                 <button
                   key={opt}
@@ -2101,7 +2098,8 @@ function VariantTwoTierPicker({ variantDims, group, selectedDims, onPickDim, rat
                   disabled={!available}
                   onClick={() => onPickDim(dimIndex, opt)}
                   className={[
-                    "variant-dim-chip min-w-[4.5rem] px-3 py-2 rounded-xl border text-sm text-left transition-colors",
+                    "variant-dim-chip min-w-[4.5rem] px-3 py-2 rounded-xl border text-sm transition-colors",
+                    isItemTier ? "text-center" : "text-left",
                     active
                       ? "border-slate-900 bg-slate-900 text-white"
                       : available
@@ -2110,11 +2108,6 @@ function VariantTwoTierPicker({ variantDims, group, selectedDims, onPickDim, rat
                   ].join(" ")}
                 >
                   <span className="block font-medium leading-tight">{opt}</span>
-                  {dimIndex === 0 && previewPrice ? (
-                    <span className={`block text-[10px] mt-0.5 ${active ? "text-slate-200" : "text-slate-500"}`}>
-                      {previewPrice}
-                    </span>
-                  ) : null}
                 </button>
               );
             })}
