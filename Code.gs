@@ -216,20 +216,27 @@ function doPost(e) {
         return jsonOutput(out);
       }
       order = enrichOrderForSheetWrite_(order, ss);
+      order = resolveOrderPointsFields_(order, ss);
       upsertOrder(orderSheet, order);
       var pointsNote = "";
+      var pointsAppended = 0;
+      var pointsSyncedCount = 0;
       if (body.ledger && Array.isArray(body.ledger) && body.ledger.length) {
         var pointsSheetSync = getPointsSheet(ss);
-        var ordersForLedger = getOrders(orderSheet);
+        var ordersForLedger = getAllOrdersMerged_(ss);
         syncPointsLedger(pointsSheetSync, body.ledger, ordersForLedger);
-        out.pointsSynced = getPointsLedger(pointsSheetSync).length;
-        pointsNote = "；紅利點數 " + out.pointsSynced + " 筆";
-      } else {
-        var pointsAppended = ensurePointsLedgerEntriesFromOrder_(ss, order);
-        if (pointsAppended > 0) {
-          out.pointsAppended = pointsAppended;
-          pointsNote = "；已補寫 " + pointsAppended + " 筆紅利至「紅利點數」";
-        }
+        pointsSyncedCount = getPointsLedger(pointsSheetSync).length;
+        pointsNote = "；紅利點數 " + pointsSyncedCount + " 筆";
+        out.pointsSynced = pointsSyncedCount;
+      }
+      pointsAppended = ensurePointsLedgerEntriesFromOrder_(ss, order);
+      var cardForSync = normalizeMemberCardNo_(order.memberCardNo);
+      if (isValidMemberCardNo_(cardForSync)) {
+        pointsAppended += syncMissingLedgerEntriesForMemberCard_(ss, cardForSync, getAllOrdersMerged_(ss));
+      }
+      if (pointsAppended > 0) {
+        out.pointsAppended = pointsAppended;
+        pointsNote += (pointsNote ? "；另補寫 " : "；已補寫 ") + pointsAppended + " 筆紅利至「紅利點數」";
       }
       out.message = "已寫入訂單 " + upId + " →「" + orderSheet.getName() + "」" + pointsNote;
       out.sheetName = orderSheet.getName();
@@ -2194,9 +2201,83 @@ function orderHasPointsLedgerEntries_(ledger, orderId) {
   return false;
 }
 
+function getLoyaltyConfigForServer_() {
+  return {
+    spendPerPoint: 100,
+    pointValue: 1,
+    minRedeemNet: 199,
+    expireDays: 365,
+    earnStatuses: ["已確認", "已完成"]
+  };
+}
+
+function merchandiseNetForPoints_(order) {
+  var sub = Number(order && order.subtotal) || 0;
+  var disc = Number(order && order.discount) || 0;
+  if (isNaN(disc)) disc = 0;
+  return Math.max(0, Math.ceil(sub - disc));
+}
+
+function earnPointsBaseForOrder_(order) {
+  var used = Math.max(0, Math.floor(Number(order && order.pointsUsed) || 0));
+  return Math.max(0, merchandiseNetForPoints_(order) - used);
+}
+
+function calcEarnPointsForOrder_(order, cfg) {
+  cfg = cfg || getLoyaltyConfigForServer_();
+  var base = earnPointsBaseForOrder_(order);
+  var spend = Number(cfg.spendPerPoint) || 100;
+  if (spend <= 0) return 0;
+  return Math.floor(base / spend);
+}
+
+function orderStatusQualifiesForEarn_(order, cfg) {
+  cfg = cfg || getLoyaltyConfigForServer_();
+  var st = String(order && order.status || "").trim();
+  for (var i = 0; i < cfg.earnStatuses.length; i++) {
+    if (st === cfg.earnStatuses[i]) return true;
+  }
+  return false;
+}
+
+/** 伺服器端補算獲得紅利（後台未帶 pointsEarned 時，改「已確認」仍自動入帳） */
+function resolveOrderPointsFields_(order, ss) {
+  if (!order) return order;
+  var copy = {};
+  for (var k in order) {
+    if (Object.prototype.hasOwnProperty.call(order, k)) copy[k] = order[k];
+  }
+  if (ss) copy = enrichOrderForSheetWrite_(copy, ss);
+  var card = normalizeMemberCardNo_(copy.memberCardNo);
+  if (!isValidMemberCardNo_(card)) return copy;
+  copy.memberCardNo = card;
+
+  var processed = String(copy.pointsProcessed || "").trim().toUpperCase();
+  var alreadyProcessed = processed === "Y" || processed === "TRUE";
+  var earned = Math.max(0, Math.floor(Number(copy.pointsEarned) || 0));
+  var used = Math.max(0, Math.floor(Number(copy.pointsUsed) || 0));
+
+  if (!orderStatusQualifiesForEarn_(copy)) return copy;
+
+  if (earned <= 0) {
+    var calcEarned = calcEarnPointsForOrder_(copy);
+    if (calcEarned > 0) {
+      copy.pointsEarned = calcEarned;
+      earned = calcEarned;
+    }
+  }
+  if (!alreadyProcessed && (earned > 0 || used > 0)) {
+    copy.pointsProcessed = "Y";
+  } else if (alreadyProcessed && earned > 0 && !copy.pointsProcessed) {
+    copy.pointsProcessed = "Y";
+  }
+  return copy;
+}
+
 /** 歷史訂單是否應產生紅利紀錄（已確認／已完成，或有獲得／折抵點數） */
-function orderQualifiesForPointsLedger_(order) {
+function orderQualifiesForPointsLedger_(order, ss) {
   if (!order) return false;
+  order = resolveOrderPointsFields_(order, ss || null);
   var earned = Math.max(0, Math.floor(Number(order.pointsEarned) || 0));
   var used = Math.max(0, Math.floor(Number(order.pointsUsed) || 0));
   if (earned <= 0 && used <= 0) return false;
@@ -2216,12 +2297,13 @@ function augmentLedgerFromOrders_(ledger, card, allOrders) {
   for (var i = 0; i < (allOrders || []).length; i++) {
     var ord = allOrders[i];
     if (!ord || !orderMatchesMemberCardExtended_(ord, card, linkedNames)) continue;
-    if (!orderQualifiesForPointsLedger_(ord)) continue;
-    var oid = normalizeOrderId_(ord.id);
+    var resolvedOrd = resolveOrderPointsFields_(ord, null);
+    if (!orderQualifiesForPointsLedger_(resolvedOrd, null)) continue;
+    var oid = normalizeOrderId_(resolvedOrd.id);
     if (!oid) continue;
     if (orderHasPointsLedgerEntries_(ledger, oid)) continue;
-    var pe = Math.max(0, Math.floor(Number(ord.pointsEarned) || 0));
-    var pu = Math.max(0, Math.floor(Number(ord.pointsUsed) || 0));
+    var pe = Math.max(0, Math.floor(Number(resolvedOrd.pointsEarned) || 0));
+    var pu = Math.max(0, Math.floor(Number(resolvedOrd.pointsUsed) || 0));
     var exp = addDaysStrForPoints_(normalizeSheetDateValue_(ord.date) || today, 365);
     if (pe > 0) {
       ledger.push(repairPointLedgerRecordInPlace_({
@@ -2292,9 +2374,7 @@ function syncMissingLedgerEntriesForMemberCard_(ss, card, allOrders) {
       if (Object.prototype.hasOwnProperty.call(ord, k)) copy[k] = ord[k];
     }
     copy.memberCardNo = normalizeMemberCardNo_(copy.memberCardNo) || card;
-    if (String(copy.pointsProcessed || "").trim().toUpperCase() !== "Y") {
-      copy.pointsProcessed = "Y";
-    }
+    copy = resolveOrderPointsFields_(copy, ss);
     appended += ensurePointsLedgerEntriesFromOrder_(ss, copy);
   }
   return appended;
@@ -2303,9 +2383,9 @@ function syncMissingLedgerEntriesForMemberCard_(ss, card, allOrders) {
 /** 訂單寫入試算表時，若本機未同步完整 ledger，至少補寫發放／折抵列（供顧客查詢） */
 function ensurePointsLedgerEntriesFromOrder_(ss, order) {
   if (!order) return 0;
-  if (!orderQualifiesForPointsLedger_(order)) return 0;
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  order = enrichOrderForSheetWrite_(order, ss);
+  order = resolveOrderPointsFields_(order, ss);
+  if (!orderQualifiesForPointsLedger_(order, ss)) return 0;
   var card = normalizeMemberCardNo_(order.memberCardNo);
   if (!isValidMemberCardNo_(card)) return 0;
   var orderId = normalizeOrderId_(order.id);
@@ -2356,6 +2436,10 @@ function ensurePointsLedgerEntriesFromOrder_(ss, order) {
       note: "訂單折抵（order_upsert 自動寫入）"
     });
     appended++;
+  }
+  if (appended > 0) {
+    var orderSheet = getOrderSheet(ss);
+    if (orderSheet) upsertOrder(orderSheet, order);
   }
   return appended;
 }

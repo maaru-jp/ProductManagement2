@@ -5109,8 +5109,17 @@
           }
         }
 
+        function orderNeedsPointsSheetSync_(ord) {
+          if (!ord) return false;
+          var st = String(ord.status || "").trim();
+          if (st !== "已確認" && st !== "已完成") return false;
+          if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) return true;
+          return Math.floor(Number(ord.pointsEarned) || 0) > 0 || Math.floor(Number(ord.pointsUsed) || 0) > 0;
+        }
+
         function upsertOrderWithPointsSync_(ord, pointsChanged, successMsg) {
-          return upsertOrderToSheet(ord, { syncPoints: !!pointsChanged }).then(function(res) {
+          var syncPoints = !!(pointsChanged || orderNeedsPointsSheetSync_(ord));
+          return upsertOrderToSheet(ord, { syncPoints: syncPoints }).then(function(res) {
             var sheetHint = (res && res.sheetName) ? ("「" + res.sheetName + "」") : "試算表";
             var msg = successMsg || ("訂單已寫入 " + sheetHint);
             if (pointsChanged) {
