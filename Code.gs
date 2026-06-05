@@ -1765,12 +1765,17 @@ function normalizePointLedgerRecord_(obj) {
 
 function getPointsLedger(sheet) {
   ensurePointsHeaderRow_(sheet);
-  var data = sheet.getDataRange().getValues();
-  if (!data || data.length < 2) return [];
-  var display = sheet.getDataRange().getDisplayValues();
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+  var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
   var keyMap = pointsKeyMap_(headers);
   var cardCol = findMemberCardColumnIndex_(headers);
+  var cardDisplay = null;
+  if (cardCol >= 0) {
+    cardDisplay = sheet.getRange(2, cardCol + 1, lastRow - 1, 1).getDisplayValues();
+  }
   var list = [];
   for (var r = 1; r < data.length; r++) {
     var row = data[r];
@@ -1785,7 +1790,9 @@ function getPointsLedger(sheet) {
       empty = false;
     }
     if (cardCol >= 0) {
-      var dispCard = normalizeMemberCardNo_((display[r] && display[r][cardCol]) || row[cardCol]);
+      var dispCard = normalizeMemberCardNo_(
+        (cardDisplay && cardDisplay[r - 1] && cardDisplay[r - 1][0]) || row[cardCol]
+      );
       if (dispCard) obj.memberCardNo = dispCard;
     }
     if (!obj.id) {
@@ -2453,8 +2460,9 @@ function ensurePointsLedgerEntriesFromOrder_(ss, order) {
   if (!orderId) return 0;
 
   var pointsSheet = getPointsSheet(ss);
+  var allOrders = parsePublicOrdersFast_(ss);
   var ledger = getPointsLedger(pointsSheet);
-  ledger = backfillLedgerMemberCardsFromOrdersByOrderId_(ledger, getAllOrdersMerged_(ss));
+  ledger = backfillLedgerMemberCardsFromOrdersByOrderId_(ledger, allOrders);
   var pointsUsed = Math.max(0, Math.floor(Number(order.pointsUsed) || 0));
   var pointsEarned = Math.max(0, Math.floor(Number(order.pointsEarned) || 0));
   if (pointsUsed <= 0 && pointsEarned <= 0) return 0;
@@ -2462,7 +2470,6 @@ function ensurePointsLedgerEntriesFromOrder_(ss, order) {
   var today = todayStrForPoints_();
   var exp = addDaysStrForPoints_(today, 365);
   var appended = 0;
-  var allOrders = getAllOrdersMerged_(ss);
 
   if (pointsEarned > 0 && !orderHasEarnLedgerEntryForCard_(ledger, orderId, card, allOrders)) {
     appendPointRecordRow_(pointsSheet, {
@@ -2725,19 +2732,15 @@ function getPointsBalancePublic_(params) {
   if (!pointsSheet) {
     return { error: true, message: "找不到紅利點數工作表" };
   }
-  var allOrders = getAllOrdersMerged_(ss);
   if (isValidMemberCardNo_(card)) {
-    var synced = syncMissingLedgerEntriesForMemberCard_(ss, card, allOrders);
+    var allOrders = parsePublicOrdersFast_(ss);
     var ledger = getPointsLedger(pointsSheet);
     return buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet, {
-      ledgerSyncedFromOrders: synced
+      ledgerSyncedFromOrders: 0
     });
   }
   var ledger = getPointsLedger(pointsSheet);
-  var orderSheet = getOrderSheet(ss);
-  if (!allOrders.length && orderSheet) {
-    allOrders = getOrders(orderSheet);
-  }
+  var allOrders = parsePublicOrdersFast_(ss);
   // 舊版相容：僅姓名查詢（無卡號的舊紀錄）
   var legacyName = normalizeCustomerNameForPoints_(
     params.name || params.customerName || params["姓名"] || ""
@@ -2859,7 +2862,7 @@ function getCustomerOrdersPublic_(params) {
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var orderSheet = getOrderSheet(ss);
-  var all = getAllOrdersMerged_(ss);
+  var all = parsePublicOrdersFast_(ss);
   var matched = findOrdersForMemberCard_(all, card);
   var ordersWithCard = 0;
   for (var c = 0; c < all.length; c++) {
@@ -2983,6 +2986,24 @@ function getAllOrdersMerged_(ss) {
   var seenIds = {};
   for (var i = 0; i < sheets.length; i++) {
     var list = getOrders(sheets[i]);
+    for (var j = 0; j < list.length; j++) {
+      var nid = normalizeOrderId_(list[j].id);
+      if (!nid || seenIds[nid]) continue;
+      seenIds[nid] = true;
+      merged.push(list[j]);
+    }
+  }
+  return merged;
+}
+
+/** 顧客查詢用：只讀訂單列，不載入紅利分頁補卡（避免每次查詢重讀 ledger） */
+function parsePublicOrdersFast_(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = listOrderSourceSheets_(ss);
+  var merged = [];
+  var seenIds = {};
+  for (var i = 0; i < sheets.length; i++) {
+    var list = parseOrdersFromSheetData_(sheets[i]);
     for (var j = 0; j < list.length; j++) {
       var nid = normalizeOrderId_(list[j].id);
       if (!nid || seenIds[nid]) continue;
