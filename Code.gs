@@ -1853,7 +1853,18 @@ function resolvePublicMemberCardParam_(params) {
   return "";
 }
 
-function buildPointsBalanceResult_(ledger, card, allOrders) {
+function countLedgerRowsForMemberCard_(ledger, card, allOrders) {
+  if (!isValidMemberCardNo_(card)) return 0;
+  var identityIndex = buildMemberCardIdentityIndex_(allOrders, ledger);
+  var linkedNames = collectCustomerNamesForMemberCard_(allOrders, card, ledger);
+  var count = 0;
+  for (var i = 0; i < (ledger || []).length; i++) {
+    if (recordMatchesMemberCardExtended_(ledger[i], card, linkedNames, identityIndex)) count++;
+  }
+  return count;
+}
+
+function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet) {
   var lots = getActiveLotsForMemberCardExtended_(ledger, allOrders || [], card);
   var balance = 0;
   for (var j = 0; j < lots.length; j++) {
@@ -1873,11 +1884,17 @@ function buildPointsBalanceResult_(ledger, card, allOrders) {
     discountAmount: balance,
     nextExpireDate: nextExpireDate,
     nextExpirePoints: nextExpirePoints,
+    lots: lots,
     rules: {
       spendPerPoint: 100,
       pointValue: 1,
       expireDays: 365,
       minRedeemNet: 199
+    },
+    debug: {
+      pointsSheetName: pointsSheet ? pointsSheet.getName() : "",
+      ledgerRowCount: (ledger || []).length,
+      ledgerForCard: countLedgerRowsForMemberCard_(ledger, card, allOrders || [])
     },
     message: balance > 0 ? "OK" : "目前尚無可用紅利點數"
   };
@@ -1895,7 +1912,7 @@ function getPointsBalancePublic_(params) {
   var orderSheet = getOrderSheet(ss);
   var allOrders = orderSheet ? getOrders(orderSheet) : [];
   if (isValidMemberCardNo_(card)) {
-    return buildPointsBalanceResult_(ledger, card, allOrders);
+    return buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet);
   }
   // 舊版相容：僅姓名查詢（無卡號的舊紀錄）
   var legacyName = normalizeCustomerNameForPoints_(
@@ -2017,8 +2034,13 @@ function getCustomerOrdersPublic_(params) {
     return { error: true, message: "請輸入 13 碼會員卡號" };
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var orderSheet = getOrderSheet(ss);
   var all = getAllOrdersMerged_(ss);
   var matched = findOrdersForMemberCard_(all, card);
+  var ordersWithCard = 0;
+  for (var c = 0; c < all.length; c++) {
+    if (orderMatchesMemberCard_(all[c], card)) ordersWithCard++;
+  }
   matched.sort(function(a, b) {
     var ma = String(a.id || "").match(/^ORD(\d+)$/i);
     var mb = String(b.id || "").match(/^ORD(\d+)$/i);
@@ -2045,6 +2067,12 @@ function getCustomerOrdersPublic_(params) {
     orderCount: publicOrders.length,
     activeCount: activeCount,
     totalDue: totalDue,
+    debug: {
+      orderSheetName: orderSheet ? orderSheet.getName() : "",
+      orderSheetRows: all.length,
+      ordersWithMemberCard: ordersWithCard,
+      orderSourceSheets: listOrderSourceSheets_(ss)
+    },
     message: publicOrders.length ? "OK" : "目前尚無訂單紀錄"
   };
 }
