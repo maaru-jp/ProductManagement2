@@ -1367,7 +1367,15 @@ function ensurePointsHeaderRow_(sheet) {
   ];
   if (sheet.getLastRow() < 1) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return;
   }
+  var row1 = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+  var hasHeader = row1.some(function(h) { return (h || "").toString().trim() !== ""; });
+  if (!hasHeader) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return;
+  }
+  appendMissingOrderHeaders_(sheet, headers);
 }
 
 function normalizePointRecordForSheet_(rec) {
@@ -1492,9 +1500,6 @@ function getPointsLedger(sheet) {
 
 function syncPointsLedger(sheet, ledger) {
   ensurePointsHeaderRow_(sheet);
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
-    .map(function(h) { return (h || "").toString().trim(); });
-  var colCount = headers.length;
   var lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     sheet.deleteRows(2, lastRow - 1);
@@ -1505,7 +1510,14 @@ function syncPointsLedger(sheet, ledger) {
     rows.push(buildRowFromPointRecord_(sheet, ledger[i]));
   }
   if (rows.length) {
-    sheet.getRange(2, 1, rows.length, colCount).setValues(rows);
+    var endRow = rows.length + 1;
+    var width = rows[0].length;
+    for (var r = 1; r < rows.length; r++) {
+      if (rows[r].length !== width) {
+        throw new Error("紅利紀錄第 " + (r + 1) + " 列欄位數不一致（" + rows[r].length + " vs " + width + "）");
+      }
+    }
+    sheet.getRange(2, 1, endRow, width).setValues(rows);
   }
 }
 

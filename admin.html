@@ -4140,11 +4140,26 @@
         }
         window.showLoyaltyMessage = showLoyaltyMessage;
 
+        function parseWriteApiResponse_(r) {
+          return r.text().then(function(t) {
+            if (!t || !String(t).trim()) return { error: true, message: "API 回傳空白" };
+            try {
+              return JSON.parse(t);
+            } catch (e) {
+              var preview = String(t).trim().slice(0, 240);
+              if (/^<!DOCTYPE|^<html/i.test(preview)) {
+                return { error: true, message: "API 回傳 HTML，請確認 Code.gs 已重新部署" };
+              }
+              return { error: true, message: "API 回傳非 JSON：" + preview };
+            }
+          });
+        }
+
         function syncPointsLedgerToSheet() {
           if (typeof fetchWrite !== "function") return Promise.resolve();
           var ledger = MaaruLoyalty.getLedger();
           return fetchWrite({ action: "points_sync", ledger: ledger })
-            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true }; } }); })
+            .then(parseWriteApiResponse_)
             .then(function(res) {
               if (res && res.error) throw new Error(res.message || "同步失敗");
               return res;
@@ -4154,7 +4169,7 @@
         function loadPointsFromSheet() {
           if (typeof fetchWrite !== "function") return Promise.resolve();
           return fetchWrite({ action: "points_list" })
-            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true }; } }); })
+            .then(parseWriteApiResponse_)
             .then(function(res) {
               if (res && res.error) throw new Error(res.message || "載入失敗");
               var remote = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
