@@ -1097,6 +1097,10 @@
             <input type="hidden" name="variantImages" id="variantImagesValue" value="" />
             <input type="hidden" name="variantStock" id="variantStockValue" value="" />
             <input type="hidden" name="variantPrices" id="variantPricesValue" value="" />
+            <input type="hidden" name="variantDim1Label" id="variantDim1LabelValue" value="" />
+            <input type="hidden" name="variantDim1Options" id="variantDim1OptionsValue" value="" />
+            <input type="hidden" name="variantDim2Label" id="variantDim2LabelValue" value="" />
+            <input type="hidden" name="variantDim2Options" id="variantDim2OptionsValue" value="" />
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">匯率（日幣→台幣，本機儲存）</label>
@@ -2635,6 +2639,10 @@
           variantImages: p.variantImages != null ? p.variantImages : (p.規格圖片 != null ? p.規格圖片 : ""),
           variantStock: p.variantStock != null ? p.variantStock : (p.規格庫存 != null ? p.規格庫存 : ""),
           variantPrices: p.variantPrices != null ? p.variantPrices : (p.規格售價 != null ? p.規格售價 : ""),
+          variantDim1Label: p.variantDim1Label || p["規格維度1名稱"] || "",
+          variantDim1Options: p.variantDim1Options || p["規格維度1選項"] || "",
+          variantDim2Label: p.variantDim2Label || p["規格維度2名稱"] || "",
+          variantDim2Options: p.variantDim2Options || p["規格維度2選項"] || "",
           description: p.description || p.描述 || "",
           introduction: p.introduction || p.商品介紹 || "",
           publishedAt: p.publishedAt || p.上架日期 || "",
@@ -2806,6 +2814,10 @@
               variantImages: (p.variantImages != null ? p.variantImages : p.規格圖片 != null ? p.規格圖片 : ""),
               variantStock: (p.variantStock != null ? p.variantStock : p.規格庫存 != null ? p.規格庫存 : ""),
               variantPrices: (p.variantPrices != null ? p.variantPrices : p.規格售價 != null ? p.規格售價 : ""),
+              variantDim1Label: p.variantDim1Label || p["規格維度1名稱"] || "",
+              variantDim1Options: p.variantDim1Options || p["規格維度1選項"] || "",
+              variantDim2Label: p.variantDim2Label || p["規格維度2名稱"] || "",
+              variantDim2Options: p.variantDim2Options || p["規格維度2選項"] || "",
               description: p.description || p.描述,
               introduction: p.introduction || p.商品介紹,
               publishedAt: fmtDateLocal(p.publishedAt || p.上架日期 || ""),
@@ -3019,6 +3031,46 @@
         return map;
       }
 
+      function syncVariantDimsToHidden_() {
+        var dims = collectVariantDims_();
+        var pairs = [
+          ["variantDim1Label", "variantDim1Options"],
+          ["variantDim2Label", "variantDim2Options"]
+        ];
+        pairs.forEach(function(pair, i) {
+          var labelEl = document.getElementById(pair[0] + "Value") || document.querySelector('[name="' + pair[0] + '"]');
+          var optsEl = document.getElementById(pair[1] + "Value") || document.querySelector('[name="' + pair[1] + '"]');
+          var d = dims[i];
+          if (labelEl) labelEl.value = d ? (d.label || "") : "";
+          if (optsEl) optsEl.value = d && d.options && d.options.length ? d.options.join(", ") : "";
+        });
+      }
+
+      function loadVariantDimsToBuilder_(obj) {
+        if (!obj) return false;
+        var dims = [];
+        for (var i = 1; i <= 2; i++) {
+          var label = obj["variantDim" + i + "Label"] || obj["規格維度" + i + "名稱"] || "";
+          var opts = obj["variantDim" + i + "Options"] || obj["規格維度" + i + "選項"] || "";
+          if (label || opts) {
+            dims.push({
+              label: String(label || "").trim(),
+              options: parseDimOptionList_(opts)
+            });
+          }
+        }
+        if (!dims.length) return false;
+        var container = document.getElementById("variantDimContainer");
+        if (!container) return false;
+        container.innerHTML = "";
+        dims.forEach(function(d) {
+          container.appendChild(createVariantDimRow_(d.label, (d.options || []).join(", ")));
+        });
+        updateVariantComboPreview_();
+        updateVariantDimPricePanel_();
+        return true;
+      }
+
       function collectVariantDims_() {
         var container = document.getElementById("variantDimContainer");
         if (!container) return [];
@@ -3128,7 +3180,7 @@
               var v = t[i];
               if (v && !seen[v]) { seen[v] = true; opts.push(v); }
             });
-            var label = len === 2 ? (i === 0 ? "規格1" : "規格2") : ("規格" + (i + 1));
+            var label = len === 2 ? (i === 0 ? "品項" : "角色") : ("規格" + (i + 1));
             container.appendChild(createVariantDimRow_(label, opts.join(",")));
           }
         } else if (parts.length >= 1 && parts.every(function(p) { return p.indexOf(" ") < 0; })) {
@@ -3204,6 +3256,7 @@
         if (hiddenImages) hiddenImages.value = urls.join(", ");
         if (hiddenStock) hiddenStock.value = qtys.map(function(q) { return q === "" ? "0" : q; }).join(", ");
         if (hiddenPrices) hiddenPrices.value = sanitizeVariantPriceString(prices.join(", "));
+        syncVariantDimsToHidden_();
         var total = qtys.reduce(function(sum, q) {
           if (q === "" || q === null || q === undefined) return sum + 0;
           var n = Number(q);
@@ -3453,7 +3506,9 @@
           sanitizeVariantStockString(obj && obj.variantStock != null ? obj.variantStock : ""),
           sanitizeVariantPriceString(obj && obj.variantPrices != null ? obj.variantPrices : (obj && obj.規格售價 != null ? obj.規格售價 : ""))
         );
-        if (fromEdit && variantStrEdit) inferVariantDimsFromExisting_(variantStrEdit);
+        if (!loadVariantDimsToBuilder_(obj) && fromEdit && variantStrEdit) {
+          inferVariantDimsFromExisting_(variantStrEdit);
+        }
         var mainStockVal = obj && (obj.stock !== undefined && obj.stock !== null && obj.stock !== "" ? obj.stock : (obj.Stock !== undefined && obj.Stock !== null && obj.Stock !== "" ? obj.Stock : obj.庫存));
         var hasVariantStock = obj && sanitizeVariantStockString(obj.variantStock || "") !== "";
         if (mainStockVal !== undefined && mainStockVal !== null && mainStockVal !== "" && !hasVariantStock) {
@@ -3695,7 +3750,7 @@
         syncVariantToHidden();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "variantPrices", "description", "introduction", "publishedAt", "customerDisplayPrice"].forEach(function(key) {
+        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "variantPrices", "variantDim1Label", "variantDim1Options", "variantDim2Label", "variantDim2Options", "description", "introduction", "publishedAt", "customerDisplayPrice"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
