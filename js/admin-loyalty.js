@@ -469,7 +469,7 @@
       remaining: pts,
       expireDate: exp,
       orderId: order.id || "",
-      note: "消費滿 " + cfg.spendPerPoint + " 元集點（不含運費、訂金）",
+      note: "消費滿 " + cfg.spendPerPoint + " 元集點（不含運費）",
       lotId: "",
     });
     return ledger;
