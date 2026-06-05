@@ -26,6 +26,9 @@ var CONFIG = {
   adminWriteToken: "CHANGE_ME_TO_A_STRONG_TOKEN_2026",
   // 訂單工作表名稱（不存在會自動建立）
   orderSheetName: "訂單",
+  // 顧客訂單進度查詢（五碼編號）優先讀此分頁，搭配「歷程」
+  legacyProgressSheetName: "工作表1",
+  legacyHistorySheetName: "歷程",
   pointsSheetName: "紅利紀錄"
 };
 
@@ -36,11 +39,14 @@ function doGet(e) {
   try {
     var params = (e && e.parameter) ? e.parameter : {};
     var action = (params.action || "").toString().toLowerCase().trim();
-    if (action === "api_meta") {
+    if (action === "api_meta" || action === "spreadsheet_info") {
+      var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-06-04",
-        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy"]
+        apiVersion: "2026-06-04-sheet1",
+        spreadsheetId: ssMeta.getId(),
+        spreadsheetName: ssMeta.getName(),
+        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"]
       });
     }
     if (action === "points_balance") {
@@ -376,6 +382,12 @@ function orderKeyMap_(headers) {
   var aliases = [
     ["訂單編號", "id", "ID"],
     ["狀態", "status"],
+    ["出貨狀態", "status"],
+    ["商品內容", "product"],
+    ["商品圖", "productImage"],
+    ["圖片網址", "productImage"],
+    ["商品狀態", "productItemStatus"],
+    ["最後更新", "updated", "updatedAt", "lastUpdated"],
     ["日期", "date"],
     ["客戶姓名", "customerName", "姓名", "name"],
     ["會員卡號", "memberCardNo", "memberCard"],
@@ -1603,11 +1615,7 @@ function getCustomerOrdersPublic_(params) {
     return { error: true, message: "請輸入 13 碼會員卡號" };
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var orderSheet = getOrderSheet(ss);
-  if (!orderSheet) {
-    return { error: true, message: "找不到訂單工作表" };
-  }
-  var all = getOrders(orderSheet);
+  var all = getAllOrdersMerged_(ss);
   var matched = findOrdersForMemberCard_(all, card);
   matched.sort(function(a, b) {
     var ma = String(a.id || "").match(/^ORD(\d+)$/i);
@@ -1644,13 +1652,313 @@ function resolvePublicOrderIdParam_(params) {
   return normalizeOrderId_(params.orderId || params.id || params["訂單編號"] || "");
 }
 
+function orderIdsEquivalent_(a, b) {
+  if (!a || !b) return false;
+  if (normalizeOrderId_(a) === normalizeOrderId_(b)) return true;
+  var da = String(a).replace(/\D/g, "");
+  var db = String(b).replace(/\D/g, "");
+  if (!da || !db) return false;
+  var na = parseInt(da, 10);
+  var nb = parseInt(db, 10);
+  return !isNaN(na) && !isNaN(nb) && na === nb;
+}
+
 function findOrderById_(orders, id) {
-  var safeId = normalizeOrderId_(id);
-  if (!safeId) return null;
+  if (!id) return null;
   for (var i = 0; i < (orders || []).length; i++) {
-    if (normalizeOrderId_(orders[i].id) === safeId) return orders[i];
+    if (orderIdsEquivalent_(orders[i].id, id)) return orders[i];
   }
   return null;
+}
+
+function listOrderSourceSheets_(ss) {
+  var result = [];
+  var seen = {};
+  var preferred = ["訂單", "工作表1"];
+  for (var i = 0; i < preferred.length; i++) {
+    var s = ss.getSheetByName(preferred[i]);
+    if (s) {
+      var sid = s.getSheetId();
+      if (!seen[sid]) {
+        seen[sid] = true;
+        result.push(s);
+      }
+    }
+  }
+  var all = ss.getSheets();
+  for (var j = 0; j < all.length; j++) {
+    var cand = all[j];
+    var sid2 = cand.getSheetId();
+    if (seen[sid2]) continue;
+    var headers = getOrderHeaders_(cand);
+    var hasOrderId = false;
+    for (var h = 0; h < headers.length; h++) {
+      if (headers[h] === "訂單編號") {
+        hasOrderId = true;
+        break;
+      }
+    }
+    if (hasOrderId) {
+      seen[sid2] = true;
+      result.push(cand);
+    }
+  }
+  return result;
+}
+
+function getAllOrdersMerged_(ss) {
+  var sheets = listOrderSourceSheets_(ss);
+  var merged = [];
+  var seenIds = {};
+  for (var i = 0; i < sheets.length; i++) {
+    var list = getOrders(sheets[i]);
+    for (var j = 0; j < list.length; j++) {
+      var nid = normalizeOrderId_(list[j].id);
+      if (!nid || seenIds[nid]) continue;
+      seenIds[nid] = true;
+      merged.push(list[j]);
+    }
+  }
+  return merged;
+}
+
+function isPublicUrlLike_(text) {
+  var v = String(text || "").trim();
+  return /^https?:\/\//i.test(v) || /res\.cloudinary\.com/i.test(v);
+}
+
+function sanitizePublicHistoryStep_(step) {
+  var status = String((step && step.status) || "").trim();
+  var note = String((step && step.note) || "").trim();
+  var time = String((step && step.time) || "").trim();
+  if (isPublicUrlLike_(status) && note && !isPublicUrlLike_(note)) {
+    status = note;
+    note = "";
+  }
+  if (isPublicUrlLike_(status)) status = "狀態更新";
+  return {
+    status: cleanStatusLabel_(status),
+    note: note,
+    time: time
+  };
+}
+
+function cleanStatusLabel_(text) {
+  return String(text || "")
+    .trim()
+    .replace(/^[\uD800-\uDBFF][\uDC00-\uDFFF]\s*/g, "")
+    .replace(/^[^\u4e00-\u9fffA-Za-z0-9]+/, "")
+    .trim();
+}
+
+function parseSheet1ProductLines_(text) {
+  return String(text || "")
+    .trim()
+    .split(/\n|；|;/)
+    .map(function(part) {
+      return String(part || "")
+        .replace(/^\d+[、.．)\]]\s*/, "")
+        .trim();
+    })
+    .filter(Boolean);
+}
+
+function parseSheet1ImageLines_(text) {
+  return String(text || "")
+    .trim()
+    .split(/\n|；|;/)
+    .map(function(part) { return String(part || "").trim(); })
+    .filter(function(part) { return isPublicUrlLike_(part); });
+}
+
+function getSheet1OrderColumns_(sheet) {
+  var lastCol = Math.max(sheet.getLastColumn(), 5);
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var cols = {
+    orderId: 1,
+    product: 2,
+    productImage: 0,
+    productItemStatus: 0,
+    shipStatus: 0,
+    note: 0,
+    updated: 0
+  };
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").trim();
+    var col = i + 1;
+    if (/訂單編號/.test(h)) cols.orderId = col;
+    else if (/商品內容/.test(h)) cols.product = col;
+    else if (/商品圖|圖片網址|cloudinary/i.test(h)) cols.productImage = col;
+    else if (/商品狀態|品項狀態/.test(h)) cols.productItemStatus = col;
+    else if (/出貨狀態/.test(h)) cols.shipStatus = col;
+    else if (/備註/.test(h)) cols.note = col;
+    else if (/最後更新|更新時間/.test(h)) cols.updated = col;
+  }
+  return cols;
+}
+
+function buildSheet1ProductItems_(productText, imageText, itemStatusText, shipStatusFallback) {
+  var names = parseSheet1ProductLines_(productText);
+  if (!names.length) return [];
+  var images = parseSheet1ImageLines_(imageText);
+  var statuses = parseSheet1ProductLines_(itemStatusText).map(cleanStatusLabel_);
+  var fallback = cleanStatusLabel_(shipStatusFallback);
+  var items = [];
+  for (var i = 0; i < names.length; i++) {
+    var name = names[i];
+    if (isPublicUrlLike_(name)) name = "商品";
+    var image = images[i] || "";
+    if (!image && images.length === 1) image = images[0];
+    var label = statuses[i] || "";
+    if (!label && statuses.length === 1) label = statuses[0];
+    if (!label && names.length === 1) label = fallback;
+    if (!label) label = "待出貨";
+    items.push(mapPublicStatusItem_({
+      lineName: name,
+      image: image,
+      shipStatus: label
+    }));
+  }
+  return items;
+}
+
+/**
+ * 顧客五碼查詢：讀「工作表1」+「歷程」（MAARU 訂單進度試算表格式）
+ * 欄位：訂單編號｜商品內容｜圖片網址｜商品狀態｜出貨狀態
+ */
+function getSheet1OrderStatusPublic_(ss, id) {
+  var sheetName = (CONFIG.legacyProgressSheetName || "工作表1").toString().trim();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return null;
+
+  var cols = getSheet1OrderColumns_(sheet);
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) {
+    return { error: true, message: "查無此訂單編號", notFound: true };
+  }
+
+  var foundRow = null;
+  var displayOrderId = "";
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var rowOrderId = String(row[cols.orderId - 1] || "").trim();
+    if (!rowOrderId) continue;
+    if (orderIdsEquivalent_(rowOrderId, id)) {
+      foundRow = row;
+      displayOrderId = rowOrderId;
+      break;
+    }
+  }
+  if (!foundRow) {
+    return { error: true, message: "查無此訂單編號", notFound: true };
+  }
+
+  var product = String(foundRow[cols.product - 1] || "").trim();
+  var productImages = cols.productImage
+    ? String(foundRow[cols.productImage - 1] || "").trim()
+    : "";
+  var productItemStatus = cols.productItemStatus
+    ? String(foundRow[cols.productItemStatus - 1] || "").trim()
+    : "";
+  var shipStatus = cols.shipStatus
+    ? cleanStatusLabel_(foundRow[cols.shipStatus - 1])
+    : "";
+  var note = cols.note ? String(foundRow[cols.note - 1] || "").trim() : "";
+  var updated = cols.updated
+    ? normalizeSheetDateValue_(foundRow[cols.updated - 1])
+    : "";
+
+  var items = buildSheet1ProductItems_(product, productImages, productItemStatus, shipStatus);
+  var itemSummary = buildPublicItemSummary_(items);
+  var history = getLegacyTrackingHistory_(ss, displayOrderId);
+  var trackingStatus = shipStatus || derivePublicTrackingStatus_({ status: shipStatus }, items);
+
+  if ((!history || !history.length) && (trackingStatus || updated)) {
+    history = [{
+      time: updated || "",
+      status: trackingStatus || "狀態更新",
+      note: ""
+    }];
+  }
+
+  return {
+    error: false,
+    orderId: orderStatusQueryDisplayId_(displayOrderId),
+    orderIdFull: normalizeOrderId_(displayOrderId),
+    memberCardNo: "",
+    product: product,
+    items: items,
+    itemSummary: itemSummary,
+    note: sanitizePublicOrderNote_({ remark: note }),
+    history: history,
+    status: trackingStatus,
+    updated: updated
+  };
+}
+
+function getLegacyTrackingHistory_(ss, orderId) {
+  var names = [
+    (CONFIG.legacyHistorySheetName || "歷程"),
+    "歷程",
+    "配送歷程",
+    "狀態"
+  ];
+  var seen = {};
+  for (var n = 0; n < names.length; n++) {
+    var sheetName = String(names[n] || "").trim();
+    if (!sheetName || seen[sheetName]) continue;
+    seen[sheetName] = true;
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) continue;
+    var values = sheet.getDataRange().getValues();
+    if (!values || values.length < 2) continue;
+    var list = [];
+    for (var i = 1; i < values.length; i++) {
+      var row = values[i];
+      var rowOrderId = String(row[0] || "").trim();
+      if (!orderIdsEquivalent_(rowOrderId, orderId)) continue;
+      var step = sanitizePublicHistoryStep_(normalizeHistoryEntry_({
+        status: row[1],
+        note: row[2],
+        time: row[3]
+      }));
+      if (step && (step.status || step.time)) list.push(step);
+    }
+    if (list.length) {
+      list.sort(function(a, b) {
+        var ta = new Date(a.time || 0).getTime();
+        var tb = new Date(b.time || 0).getTime();
+        return (isNaN(tb) ? 0 : tb) - (isNaN(ta) ? 0 : ta);
+      });
+      return list;
+    }
+  }
+  return [];
+}
+
+function buildItemsFromProductFields_(ord) {
+  var product = String((ord && ord.product) || "").trim();
+  if (!product) return [];
+  var names = product.split(/\n|；|;/).map(function(s) {
+    return String(s || "").trim();
+  }).filter(Boolean);
+  var images = String((ord && ord.productImage) || "").split(/\n|；|;/).map(function(s) {
+    return String(s || "").trim();
+  }).filter(Boolean);
+  var statuses = String((ord && ord.productItemStatus) || "").split(/\n|；|;/).map(function(s) {
+    return String(s || "").trim();
+  }).filter(Boolean);
+  var fallbackStatus = String((ord && ord.status) || "").trim();
+  var items = [];
+  for (var i = 0; i < names.length; i++) {
+    var label = statuses[i] || (statuses.length === 1 ? statuses[0] : "") || fallbackStatus || "待出貨";
+    items.push(mapPublicStatusItem_({
+      lineName: names[i],
+      image: images[i] || (images.length === 1 ? images[0] : ""),
+      shipStatus: label
+    }));
+  }
+  return items;
 }
 
 function orderStatusQueryDisplayId_(id) {
@@ -1846,14 +2154,20 @@ function getOrderStatusPublic_(params) {
     return { error: true, message: "請輸入訂單編號" };
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var orderSheet = getOrderSheet(ss);
-  if (!orderSheet) {
-    return { error: true, message: "找不到訂單工作表" };
+
+  // 優先：MAARU 訂單進度試算表「工作表1」+「歷程」
+  var sheet1Result = getSheet1OrderStatusPublic_(ss, id);
+  if (sheet1Result && sheet1Result.error === false) {
+    return sheet1Result;
   }
-  var all = getOrders(orderSheet);
+
+  var all = getAllOrdersMerged_(ss);
   var ord = findOrderById_(all, id);
   if (!ord) {
-    return { error: true, message: "查無此訂單編號" };
+    if (sheet1Result && sheet1Result.notFound) {
+      return { error: true, message: "查無此訂單編號" };
+    }
+    return { error: true, message: "查無此訂單編號（請確認「工作表1」A 欄訂單編號）" };
   }
 
   var rawItems = Array.isArray(ord.items) ? ord.items : [];
@@ -1862,9 +2176,15 @@ function getOrderStatusPublic_(params) {
     var mapped = mapPublicStatusItem_(rawItems[i]);
     if (mapped.name) items.push(mapped);
   }
+  if (!items.length) {
+    items = buildItemsFromProductFields_(ord);
+  }
   var itemSummary = buildPublicItemSummary_(items);
 
   var history = parsePublicTrackingHistory_(ord);
+  if (!history || (Array.isArray(history) && history.length === 0)) {
+    history = getLegacyTrackingHistory_(ss, id);
+  }
   if (!history || (Array.isArray(history) && history.length === 0)) {
     history = buildSyntheticTrackingHistory_(ord, items);
   }
