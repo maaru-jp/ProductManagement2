@@ -170,16 +170,18 @@ function doPost(e) {
         return jsonOutput(out);
       }
       if (action === "order_sheet_repair") {
-        var repaired = repairOrderSheetLayout_(orderSheet, ss);
-        if (!repaired) ensureOrderHeaderRow_(orderSheet);
+        var repairResult = realignOrderSheetToStandard_(orderSheet, ss);
+        if (!repairResult.realigned) ensureOrderHeaderRow_(orderSheet);
         var list = parseOrdersFromSheetData_(orderSheet);
         list = enrichOrdersMemberCardFromLedger_(list, ss);
-        out.message = repaired
-          ? ("已修復「" + orderSheet.getName() + "」表頭，共 " + list.length + " 筆訂單")
-          : ("表頭正常，共 " + list.length + " 筆訂單");
+        out.message = repairResult.realigned
+          ? (repairResult.trimmed
+            ? ("已刪除「" + repairResult.sheetName + "」第 30 欄起的重複欄位，保留 " + repairResult.orderCount + " 筆訂單")
+            : ("已重整「" + repairResult.sheetName + "」為標準 29 欄，共 " + repairResult.orderCount + " 筆訂單"))
+          : ("表頭已符合標準，共 " + list.length + " 筆訂單");
         out.sheetName = orderSheet.getName();
-        out.orderCount = list.length;
-        out.repaired = repaired;
+        out.orderCount = repairResult.realigned ? repairResult.orderCount : list.length;
+        out.repaired = repairResult.realigned;
         return jsonOutput(out);
       }
       var order = body.order;
@@ -429,7 +431,75 @@ function getStandardOrderHeaders_() {
   ];
 }
 
-/** 歷史訂單表頭被紅利紀錄欄位污染（B 欄為紀錄ID、缺會員卡號） */
+/** 歷史訂單表頭是否已符合標準順序（恰好 29 欄、無重複） */
+function headersMatchStandardOrderLayout_(headers) {
+  var std = getStandardOrderHeaders_();
+  headers = (headers || []).map(function(h) { return String(h || "").trim(); });
+  if (headers.length !== std.length) return false;
+  for (var i = 0; i < std.length; i++) {
+    if (headers[i] !== std[i]) return false;
+  }
+  return true;
+}
+
+/** 前 N 欄是否與標準表頭一致 */
+function orderHeadersMatchStandardPrefix_(headers, count) {
+  var std = getStandardOrderHeaders_();
+  headers = (headers || []).map(function(h) { return String(h || "").trim(); });
+  count = Math.min(count || std.length, std.length);
+  if (headers.length < count) return false;
+  for (var i = 0; i < count; i++) {
+    if (headers[i] !== std[i]) return false;
+  }
+  return true;
+}
+
+/** 表頭是否有重複欄位名稱（常見於 append 後又寫入標準 29 欄） */
+function hasDuplicateOrderHeaders_(headers) {
+  var seen = {};
+  headers = headers || [];
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i] || "").trim();
+    if (!h) continue;
+    if (seen[h]) return true;
+    seen[h] = true;
+  }
+  return false;
+}
+
+/** 表頭為標準欄位的前綴（僅缺右側欄位，順序正確） */
+function isOrderHeadersPrefixOfStandard_(headers) {
+  var std = getStandardOrderHeaders_();
+  headers = (headers || []).map(function(h) { return String(h || "").trim(); });
+  if (!headers.length || headers.length > std.length) return false;
+  for (var i = 0; i < headers.length; i++) {
+    if (headers[i] !== std[i]) return false;
+  }
+  return true;
+}
+
+/** 歷史訂單表頭被紅利點數欄位污染（B 欄為紀錄ID、缺會員卡號）或欄位順序錯誤 */
+function needsOrderSheetRealign_(headers) {
+  headers = headers || [];
+  var std = getStandardOrderHeaders_();
+  if (isCorruptedOrderSheetHeaders_(headers)) return true;
+  if (headersMatchStandardOrderLayout_(headers)) return false;
+  if (orderHeadersMatchStandardPrefix_(headers, std.length) && headers.length > std.length) return true;
+  if (hasDuplicateOrderHeaders_(headers)) return true;
+  if (headers.length < 5) return true;
+  if (String(headers[0] || "").trim() !== "訂單編號") return true;
+  for (var i = 0; i < Math.min(headers.length, 12); i++) {
+    var h = String(headers[i] || "").trim();
+    if (h === "紀錄ID" || h === "類型" || h === "點數" || h === "剩餘" || h === "到期日") return true;
+  }
+  if (isOrderHeadersPrefixOfStandard_(headers)) return false;
+  if (findMemberCardColumnIndex_(headers) < 0) return true;
+  if (String(headers[3] || "").trim() !== std[3]) return true;
+  if (String(headers[4] || "").trim() !== std[4]) return true;
+  return true;
+}
+
+/** 歷史訂單表頭被紅利點數欄位污染（B 欄為紀錄ID、缺會員卡號） */
 function isCorruptedOrderSheetHeaders_(headers) {
   headers = headers || [];
   if (String(headers[1] || "").trim() === "紀錄ID") return true;
@@ -503,7 +573,7 @@ function extractOrderIdFromRowCells_(row, displayRow) {
   return "";
 }
 
-/** 從「紅利紀錄」依姓名／訂單編號補齊歷史訂單的會員卡號 */
+/** 從「紅利點數」依姓名／訂單編號補齊歷史訂單的會員卡號 */
 function enrichOrdersMemberCardFromLedger_(orders, ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sheet = getPointsSheet(ss);
@@ -592,43 +662,117 @@ function parseOrdersFromSheetData_(sheet) {
   return list;
 }
 
-/** 將錯誤表頭的歷史訂單重整為標準欄位並保留資料 */
-function repairOrderSheetLayout_(sheet, ss) {
+/** 刪除標準 29 欄之後的重複欄，並把右側有值資料併回標準欄 */
+function mergeDuplicateOrderColumnData_(sheet, stdColCount, lastCol) {
+  if (!sheet || lastCol <= stdColCount) return;
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) return;
+  var headers = data[0].map(function(h) { return String(h || "").trim(); });
+  var keyMap = orderKeyMap_(headers);
+  var stdKeyCol = {};
+  for (var c = 0; c < stdColCount && c < headers.length; c++) {
+    var k = keyMap[c];
+    if (k && stdKeyCol[k] === undefined) stdKeyCol[k] = c;
+  }
+  for (var r = 1; r < data.length; r++) {
+    for (var c = stdColCount; c < lastCol; c++) {
+      var key = keyMap[c];
+      if (!key) continue;
+      var stdC = stdKeyCol[key];
+      if (stdC === undefined) continue;
+      var dupVal = data[r][c];
+      var stdVal = data[r][stdC];
+      if ((stdVal === "" || stdVal == null) && dupVal !== "" && dupVal != null) {
+        sheet.getRange(r + 1, stdC + 1).setValue(dupVal);
+      }
+    }
+  }
+}
+
+/** 僅刪除第 30 欄起的重複表頭（前 29 欄已正確時） */
+function trimExtraOrderSheetColumns_(sheet) {
   if (!sheet) return false;
+  var stdHeaders = getStandardOrderHeaders_();
   var headers = getOrderHeaders_(sheet);
-  if (!isCorruptedOrderSheetHeaders_(headers)) return false;
+  if (headers.length <= stdHeaders.length) return false;
+  if (!orderHeadersMatchStandardPrefix_(headers, stdHeaders.length)) return false;
+  mergeDuplicateOrderColumnData_(sheet, stdHeaders.length, headers.length);
+  sheet.deleteColumns(stdHeaders.length + 1, headers.length - stdHeaders.length);
+  sheet.getRange(1, 1, 1, stdHeaders.length).setValues([stdHeaders]);
+  Logger.log("[trimExtraOrderSheetColumns_] removed " + (headers.length - stdHeaders.length) + " extra columns on「" + sheet.getName() + "」");
+  return true;
+}
+
+/** 將歷史訂單重整為標準 29 欄並保留資料 */
+function realignOrderSheetToStandard_(sheet, ss) {
+  if (!sheet) return { realigned: false, orderCount: 0, sheetName: "" };
+  var headers = getOrderHeaders_(sheet);
+  var stdHeaders = getStandardOrderHeaders_();
+  if (orderHeadersMatchStandardPrefix_(headers, stdHeaders.length) && headers.length > stdHeaders.length) {
+    mergeDuplicateOrderColumnData_(sheet, stdHeaders.length, headers.length);
+    sheet.deleteColumns(stdHeaders.length + 1, headers.length - stdHeaders.length);
+    sheet.getRange(1, 1, 1, stdHeaders.length).setValues([stdHeaders]);
+    var trimmedCount = Math.max(sheet.getLastRow() - 1, 0);
+    Logger.log("[realignOrderSheetToStandard_] trimmed to 29 columns, " + trimmedCount + " orders on「" + sheet.getName() + "」");
+    return { realigned: true, orderCount: trimmedCount, sheetName: sheet.getName(), trimmed: true };
+  }
+  if (!needsOrderSheetRealign_(headers)) {
+    trimExtraOrderSheetColumns_(sheet);
+    ensureOrderHeaderRow_(sheet);
+    return { realigned: false, orderCount: 0, sheetName: sheet.getName() };
+  }
   var orders = parseOrdersFromSheetData_(sheet);
   orders = enrichOrdersMemberCardFromLedger_(orders, ss);
-  var stdHeaders = getStandardOrderHeaders_();
   var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
   if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
+  if (lastCol > stdHeaders.length) {
+    sheet.deleteColumns(stdHeaders.length + 1, lastCol - stdHeaders.length);
+  }
   sheet.getRange(1, 1, 1, stdHeaders.length).setValues([stdHeaders]);
   for (var i = 0; i < orders.length; i++) {
     upsertOrder(sheet, orders[i]);
   }
-  Logger.log("[repairOrderSheetLayout_] repaired " + orders.length + " orders on「" + sheet.getName() + "」");
-  return true;
+  Logger.log("[realignOrderSheetToStandard_] " + orders.length + " orders on「" + sheet.getName() + "」");
+  return { realigned: true, orderCount: orders.length, sheetName: sheet.getName() };
+}
+
+/** 將錯誤表頭的歷史訂單重整為標準欄位並保留資料（相容舊函式名） */
+function repairOrderSheetLayout_(sheet, ss) {
+  var result = realignOrderSheetToStandard_(sheet, ss);
+  return result.realigned;
 }
 
 function ensureOrderHeaderRow_(sheet) {
-  var headers = getStandardOrderHeaders_();
+  var stdHeaders = getStandardOrderHeaders_();
   var lastRow = sheet.getLastRow();
   if (lastRow < 1) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, stdHeaders.length).setValues([stdHeaders]);
     return;
   }
-  var row1 = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length)).getValues()[0];
+  trimExtraOrderSheetColumns_(sheet);
+  var headers = getOrderHeaders_(sheet);
+  if (headersMatchStandardOrderLayout_(headers)) return;
+  var row1 = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), stdHeaders.length)).getValues()[0];
   var existing = row1.map(function(h) { return (h || "").toString().trim(); }).filter(Boolean);
   if (!existing.length) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, stdHeaders.length).setValues([stdHeaders]);
     return;
   }
-  appendMissingOrderHeaders_(sheet, headers);
+  if (isOrderHeadersPrefixOfStandard_(headers)) {
+    for (var i = headers.length; i < stdHeaders.length; i++) {
+      sheet.getRange(1, i + 1).setValue(stdHeaders[i]);
+    }
+    return;
+  }
+  appendMissingOrderHeaders_(sheet, stdHeaders);
 }
 
 function appendMissingOrderHeaders_(sheet, requiredHeaders) {
   if (!sheet || !requiredHeaders || !requiredHeaders.length) return;
+  var stdHeaders = getStandardOrderHeaders_();
   var headers = getOrderHeaders_(sheet);
+  if (orderHeadersMatchStandardPrefix_(headers, stdHeaders.length) && headers.length >= stdHeaders.length) return;
   var existing = {};
   headers.forEach(function(h) {
     var t = (h || "").toString().trim();
@@ -640,9 +784,16 @@ function appendMissingOrderHeaders_(sheet, requiredHeaders) {
     if (name && !existing[name]) toAdd.push(name);
   }
   if (!toAdd.length) return;
+  if (isOrderHeadersPrefixOfStandard_(headers)) {
+    var startIdx = headers.length;
+    for (var j = 0; j < toAdd.length && startIdx + j < stdHeaders.length; j++) {
+      sheet.getRange(1, startIdx + j + 1).setValue(stdHeaders[startIdx + j]);
+    }
+    return;
+  }
   var startCol = Math.max(sheet.getLastColumn(), 1) + 1;
-  for (var j = 0; j < toAdd.length; j++) {
-    sheet.getRange(1, startCol + j).setValue(toAdd[j]);
+  for (var k = 0; k < toAdd.length; k++) {
+    sheet.getRange(1, startCol + k).setValue(toAdd[k]);
   }
 }
 
@@ -746,12 +897,32 @@ function normalizeOrderForSheet_(order) {
     pointsEarned: (o.pointsEarned != null && o.pointsEarned !== "") ? Number(o.pointsEarned) : "",
     pointsProcessed: (o.pointsProcessed != null) ? String(o.pointsProcessed) : "",
     linkedOrderIds: (o.linkedOrderIds != null) ? String(o.linkedOrderIds).trim() : "",
+    trackingHistory: "",
+    updated: "",
     itemsJson: ""
   };
   try {
     if (o.items != null) out.itemsJson = JSON.stringify(o.items);
   } catch (e) {
     out.itemsJson = "";
+  }
+  try {
+    if (o.trackingHistory != null && o.trackingHistory !== "") {
+      out.trackingHistory = (typeof o.trackingHistory === "string")
+        ? String(o.trackingHistory)
+        : JSON.stringify(o.trackingHistory);
+    } else if (o.deliveryHistory != null && o.deliveryHistory !== "") {
+      out.trackingHistory = (typeof o.deliveryHistory === "string")
+        ? String(o.deliveryHistory)
+        : JSON.stringify(o.deliveryHistory);
+    }
+  } catch (e2) {
+    out.trackingHistory = "";
+  }
+  if (o.updated != null && String(o.updated).trim() !== "") {
+    out.updated = String(o.updated);
+  } else if (o.updatedAt != null && String(o.updatedAt).trim() !== "") {
+    out.updated = String(o.updatedAt);
   }
   return out;
 }
