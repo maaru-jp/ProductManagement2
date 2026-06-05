@@ -2033,12 +2033,79 @@ function inferVariantDimensionsFromParts_(parts) {
   return dims.length >= 2 ? dims : null;
 }
 
+function readProductDimField_(product, index, kind) {
+  const keys =
+    kind === "label"
+      ? [`variantDim${index}Label`, `規格維度${index}名稱`]
+      : [`variantDim${index}Options`, `規格維度${index}選項`];
+  for (const key of keys) {
+    const fromProduct = product?.[key];
+    if (fromProduct != null && String(fromProduct).trim() !== "") {
+      return String(fromProduct).trim();
+    }
+    const fromRaw = product?.raw?.[key];
+    if (fromRaw != null && String(fromRaw).trim() !== "") {
+      return String(fromRaw).trim();
+    }
+  }
+  return "";
+}
+
+function completeVariantDimsFromParts_(dims, variantParts) {
+  const result = Array.isArray(dims) ? dims.slice() : [];
+  const parts = (variantParts || []).map((p) => String(p || "").trim()).filter(Boolean);
+  if (result.length >= 2) return result;
+  if (!parts.length) return result.length >= 2 ? result : null;
+
+  if (result.length === 1) {
+    const dim1Opts = new Set(result[0].options || []);
+    const tokens = parts.map((p) => variantNameTokens_(p));
+    const allSingle = tokens.every((t) => t.length === 1);
+    if (allSingle) {
+      const partsLookLikeDim1 =
+        dim1Opts.size > 0 && parts.every((p) => dim1Opts.has(p));
+      if (!partsLookLikeDim1) {
+        const opts = [];
+        const seen = new Set();
+        parts.forEach((p) => {
+          if (!seen.has(p)) {
+            seen.add(p);
+            opts.push(p);
+          }
+        });
+        result.push({ label: "規格", options: opts });
+        return result;
+      }
+    }
+    const allDouble = tokens.every((t) => t.length === 2);
+    if (allDouble) {
+      const seen2 = new Set();
+      const opts2 = [];
+      tokens.forEach((t) => {
+        if (t[1] && !seen2.has(t[1])) {
+          seen2.add(t[1]);
+          opts2.push(t[1]);
+        }
+      });
+      if (opts2.length) {
+        result.push({ label: "規格", options: opts2 });
+        return result;
+      }
+    }
+  }
+
+  if (result.length === 0) {
+    const inferred = inferVariantDimensionsFromParts_(parts);
+    return inferred && inferred.length >= 2 ? inferred : null;
+  }
+  return result.length >= 2 ? result : null;
+}
+
 function getVariantDimensionConfig_(product, variantParts) {
-  const src = product?.raw ?? product ?? {};
   const dims = [];
   for (let i = 1; i <= 2; i++) {
-    const label = (src[`variantDim${i}Label`] ?? src[`規格維度${i}名稱`] ?? "").toString().trim();
-    const options = parseDimOptionsFromSheet_(src[`variantDim${i}Options`] ?? src[`規格維度${i}選項`]);
+    const label = readProductDimField_(product, i, "label");
+    const options = parseDimOptionsFromSheet_(readProductDimField_(product, i, "options"));
     if (options.length) {
       dims.push({
         label: label || (i === 1 ? "品項" : "規格"),
@@ -2046,19 +2113,11 @@ function getVariantDimensionConfig_(product, variantParts) {
       });
     }
   }
-  if (dims.length >= 2) return dims;
-  if (product) {
-    const fromProduct = [];
-    for (let i = 1; i <= 2; i++) {
-      const label = (product[`variantDim${i}Label`] ?? "").toString().trim();
-      const options = parseDimOptionsFromSheet_(product[`variantDim${i}Options`]);
-      if (options.length) {
-        fromProduct.push({ label: label || (i === 1 ? "品項" : "角色"), options });
-      }
-    }
-    if (fromProduct.length >= 2) return fromProduct;
-  }
-  return inferVariantDimensionsFromParts_(variantParts);
+  const completed = completeVariantDimsFromParts_(dims, variantParts);
+  if (completed && completed.length >= 2) return completed;
+  if (dims.length >= 1) return dims;
+  const inferred = inferVariantDimensionsFromParts_(variantParts);
+  return inferred && inferred.length >= 2 ? inferred : null;
 }
 
 function normalizeVariantKey_(v) {
@@ -2229,15 +2288,23 @@ function resolveProductVariantLayout_(baseGroup) {
   }
   const flatItems = buildFlatVariantItems_(baseGroup);
   const parts = flatItems.map((g) => String(g.variant || "").trim()).filter(Boolean);
-  const variantDims = getVariantDimensionConfig_(baseGroup[0], parts);
+  let variantDims = getVariantDimensionConfig_(baseGroup[0], parts);
+  if (!variantDims || variantDims.length < 2) {
+    variantDims = completeVariantDimsFromParts_(variantDims || [], parts);
+  }
   const useTwoTier = !!(
     variantDims &&
     variantDims.length >= 2 &&
     variantDims[0].options?.length &&
     variantDims[1].options?.length
   );
+  const useDimPicker = !!(
+    variantDims &&
+    variantDims.length >= 1 &&
+    variantDims.every((d) => d.options?.length)
+  );
   const group = useTwoTier ? buildGroupFromVariantDims_(flatItems, variantDims) : flatItems;
-  return { group, variantDims, useTwoTier };
+  return { group, variantDims, useTwoTier, useDimPicker };
 }
 
 function isDimOptionAvailable_(dimIndex, option, selectedDims, group) {
@@ -2312,7 +2379,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
     return products.filter((p) => p.name === decodedName);
   }, [products, decodedName]);
 
-  const { group, variantDims, useTwoTier } = React.useMemo(
+  const { group, variantDims, useTwoTier, useDimPicker } = React.useMemo(
     () => resolveProductVariantLayout_(baseGroup),
     [baseGroup]
   );
@@ -2338,10 +2405,18 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
 
   React.useEffect(() => {
     if (!group?.length) return;
-    if (useTwoTier && variantDims) {
-      const initial = variantDims.map((d) => d.options[0]);
-      const item = findGroupItemByCombo_(group, initial) || group[0];
-      setSelectedDims(initial);
+    if (useDimPicker && variantDims) {
+      const initial = useTwoTier
+        ? variantDims.map((d) => d.options[0])
+        : [variantDims[0].options[0]];
+      const item =
+        (useTwoTier ? findGroupItemByCombo_(group, initial) : null) ||
+        group.find((g) => {
+          const tokens = variantNameTokens_(g.variant);
+          return tokens[0] === initial[0] || String(g.variant || "").trim() === initial[0];
+        }) ||
+        group[0];
+      setSelectedDims(useTwoTier ? initial : [initial[0], null]);
       setSelectedSku(item.sku);
       return;
     }
@@ -2350,10 +2425,19 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
       if (prev && group.some((g) => g.sku === prev)) return prev;
       return group[0].sku;
     });
-  }, [decodedName, group, useTwoTier, variantDims]);
+  }, [decodedName, group, useTwoTier, useDimPicker, variantDims]);
 
   function onPickDim(dimIndex, value) {
     setSelectedDims((prev) => {
+      if (!useTwoTier && variantDims?.length === 1) {
+        const item = group.find((g) => {
+          const v = String(g.variant || "").trim();
+          const tokens = variantNameTokens_(g.variant);
+          return v === value || tokens[0] === value;
+        });
+        if (item) setSelectedSku(item.sku);
+        return [value, null];
+      }
       const next = variantDims.map((d, i) => {
         if (i === dimIndex) return value;
         return prev[i] && d.options.includes(prev[i]) ? prev[i] : d.options[0];
@@ -2474,7 +2558,7 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
             <div className="mt-2 space-y-3">
               {group.length >= 1 ? (
                 <div>
-                  {useTwoTier && variantDims ? (
+                  {useDimPicker && variantDims ? (
                     <>
                       <h2 className="text-xs font-medium text-slate-500 tracking-[0.2em] uppercase mb-3">
                         請選擇規格
