@@ -94,6 +94,66 @@
     return false;
   }
 
+  function lookupMembersByQuery(orders, query) {
+    var q = String(query || "").trim().toLowerCase();
+    if (!q) return [];
+    var qDigits = q.replace(/\D/g, "");
+    var normalizeName = function (name) {
+      return String(name || "").trim().replace(/\s+/g, "").toLowerCase();
+    };
+    var normalizePhone = function (p) {
+      return String(p || "").replace(/\D/g, "");
+    };
+    var byKey = {};
+    (orders || []).forEach(function (ord) {
+      if (!ord) return;
+      var card = normalizeMemberCardNo(ord.memberCardNo);
+      var name = String(ord.customerName || "").trim();
+      var nameNorm = normalizeName(name);
+      var phone = normalizePhone(ord.phone);
+      var lineId = String(ord.lineId || "").trim().toLowerCase();
+      var match = false;
+      if (name && name.toLowerCase().indexOf(q) >= 0) match = true;
+      else if (nameNorm && nameNorm.indexOf(q.replace(/\s+/g, "")) >= 0) match = true;
+      else if (qDigits.length >= 4 && isValidMemberCardNo(card) && card.indexOf(qDigits) >= 0) match = true;
+      else if (qDigits.length >= 4 && phone && phone.indexOf(qDigits) >= 0) match = true;
+      else if (lineId && lineId.indexOf(q) >= 0) match = true;
+      if (!match) return;
+      var dedupeKey = isValidMemberCardNo(card) ? "C:" + card : "N:" + nameNorm + "|" + phone;
+      if (!byKey[dedupeKey]) {
+        byKey[dedupeKey] = {
+          memberCardNo: isValidMemberCardNo(card) ? card : "",
+          customerName: name,
+          phone: ord.phone || "",
+          lineId: ord.lineId || "",
+          orderCount: 0,
+          lastOrderDate: ord.date || "",
+        };
+      }
+      byKey[dedupeKey].orderCount += 1;
+      if (isValidMemberCardNo(card) && !byKey[dedupeKey].memberCardNo) {
+        byKey[dedupeKey].memberCardNo = card;
+      }
+      if (ord.date && String(ord.date) >= String(byKey[dedupeKey].lastOrderDate || "")) {
+        byKey[dedupeKey].lastOrderDate = ord.date;
+        if (name) byKey[dedupeKey].customerName = name;
+        if (ord.phone) byKey[dedupeKey].phone = ord.phone;
+        if (ord.lineId) byKey[dedupeKey].lineId = ord.lineId;
+        if (isValidMemberCardNo(card)) byKey[dedupeKey].memberCardNo = card;
+      }
+    });
+    return Object.keys(byKey)
+      .map(function (k) {
+        return byKey[k];
+      })
+      .sort(function (a, b) {
+        var na = normalizeName(a.customerName);
+        var nb = normalizeName(b.customerName);
+        if (na && nb && na !== nb) return na.localeCompare(nb, "zh-Hant");
+        return (b.orderCount || 0) - (a.orderCount || 0);
+      });
+  }
+
   function ensureOrderMemberCard(order, orders, ledger) {
     order = order || {};
     orders = orders || [];
@@ -105,6 +165,17 @@
         throw new Error("會員卡號 " + card + " 已被其他顧客使用");
       }
       return card;
+    }
+    if (editId) {
+      var editKey = String(editId).trim().toUpperCase();
+      for (var oi = 0; oi < orders.length; oi++) {
+        var editingOrd = orders[oi];
+        if (!editingOrd) continue;
+        if (String(editingOrd.id || "").trim().toUpperCase() !== editKey) continue;
+        var savedCard = normalizeMemberCardNo(editingOrd.memberCardNo);
+        if (isValidMemberCardNo(savedCard)) return savedCard;
+        break;
+      }
     }
     var existing = findMemberCardForCustomer(
       orders,
@@ -129,6 +200,7 @@
     collectUsedMemberCardsFromLedger: collectUsedMemberCardsFromLedger,
     collectUsedMemberCardsFromOrders: collectUsedMemberCardsFromOrders,
     findMemberCardForCustomer: findMemberCardForCustomer,
+    lookupMembersByQuery: lookupMembersByQuery,
     isMemberCardTaken: isMemberCardTaken,
     ensureOrderMemberCard: ensureOrderMemberCard,
   };
