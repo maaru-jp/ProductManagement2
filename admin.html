@@ -2676,6 +2676,38 @@
         return normalizeProductRecord(patch);
       }
 
+      function prepareProductForWrite_(product) {
+        if (!product) return product;
+        if (product.name) product.商品名稱 = product.name;
+        if (product.variant != null) product.規格 = product.variant;
+        if (product.sellingPrice != null && product.sellingPrice !== "") product.售價 = product.sellingPrice;
+        if (product.customerDisplayPrice != null && product.customerDisplayPrice !== "") {
+          product.顧客顯示售價 = product.customerDisplayPrice;
+        }
+        if (product.price != null && product.price !== "") product.日幣價格 = product.price;
+        if (product.image) { product.圖片 = product.image; product.商品主圖 = product.image; }
+        if (product.description) product.描述 = product.description;
+        if (product.introduction) product.商品介紹 = product.introduction;
+        if (product.variantStock != null) product.規格庫存 = product.variantStock;
+        if (product.variantImages != null) product.規格圖片 = product.variantImages;
+        if (product.stockType) { product.貨況 = product.stockType; product.現貨預購 = product.stockType; }
+        if (product.status) product.狀態 = product.status;
+        if (product.category) product.分類 = product.category;
+        if (product.subcategory) product.子分類 = product.subcategory;
+        if (product.publishedAt) product.上架日期 = product.publishedAt;
+        if ((product.cost === "" || product.cost == null) && product.price != null && product.price !== "") {
+          var rate = product.rate != null && product.rate !== "" ? Number(product.rate) : globalRate;
+          if (rate != null && rate > 0) {
+            var costTwd = Math.round(Number(product.price) * rate);
+            if (Number.isFinite(costTwd)) {
+              product.cost = costTwd;
+              product.成本 = costTwd;
+            }
+          }
+        }
+        return product;
+      }
+
       function buildSaveProduct(rowIndexNum, formProduct) {
         if (!rowIndexNum || isNaN(rowIndexNum) || rowIndexNum < 2) return finalizeStockForSave(formProduct);
         var existing = productByRowIndex(rowIndexNum);
@@ -3871,10 +3903,13 @@
           syncVariantToHidden();
           syncVariantDimsToHidden_();
         } else if (dimsForSave.length === 1) {
-          showMessage("請在第二列維度填「規格」與選項（例：S,M,L），或先保留下方 S/M/L 規格列再儲存", true);
-          productFormSubmitting = false;
-          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "儲存"; }
-          return;
+          var hiddenVariantEl = document.getElementById("variantValue");
+          var existingVariants = String(hiddenVariantEl && hiddenVariantEl.value ? hiddenVariantEl.value : "")
+            .split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
+          if (!existingVariants.length) {
+            showMessage("請在第二列維度填「規格」與選項（例：S,M,L），或先保留下方規格列再儲存", true);
+            return;
+          }
         }
         var formProduct = getFormValues();
         var hiddenStock = document.getElementById("variantStockValue");
@@ -3912,6 +3947,7 @@
         product["規格維度2名稱"] = product.variantDim2Label;
         product["規格維度2選項"] = product.variantDim2Options;
         product._writeAllFields = true;
+        prepareProductForWrite_(product);
         var body = { action: action, product: product };
         if (action === "update") body.rowIndex = rowIndexNum;
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "儲存中..."; }

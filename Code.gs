@@ -736,22 +736,22 @@ function mergeRowFromProduct_(sheet, rowNum, product) {
     if (km === "variantStock") variantCol = i;
     if (km === "status") statusCol = i;
   }
-  if (statusCol >= 0 && hasKey("status")) {
+  if (statusCol >= 0 && productHasField_(product, "status")) {
     var statusVal = (product.status !== undefined && product.status !== null && String(product.status).trim() !== "") ? String(product.status).trim() : "上架";
     row[statusCol] = (statusVal === "下架") ? "下架" : "上架";
   }
-  var cleanVariantStock = hasKey("variantStock")
+  var cleanVariantStock = productHasField_(product, "variantStock")
     ? sanitizeVariantStockString_(product.variantStock)
     : "";
-  if (variantCol >= 0 && hasKey("variantStock")) {
+  if (variantCol >= 0 && productHasField_(product, "variantStock")) {
     row[variantCol] = cleanVariantStock;
   }
-  if (stockCols.length > 0 && (hasKey("stock") || hasKey("variantStock"))) {
+  if (stockCols.length > 0 && (productHasField_(product, "stock") || productHasField_(product, "variantStock"))) {
     var total = 0;
     if (cleanVariantStock !== "") {
       var strictSum = sumVariantStockStrict_(cleanVariantStock);
       if (strictSum !== null) total = strictSum;
-    } else if (hasKey("stock")) {
+    } else if (productHasField_(product, "stock")) {
       var stockVal = product.stock !== undefined && product.stock !== null && product.stock !== ""
         ? product.stock
         : (product.Stock !== undefined && product.Stock !== null && product.Stock !== "" ? product.Stock : null);
