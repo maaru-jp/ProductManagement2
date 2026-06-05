@@ -679,9 +679,7 @@ const CATEGORY_MENU = [
   {
     label: "預購商品",
     value: "預購商品",
-    children: [
-      { label: "2026年03月", value: "2026年03月" },
-    ],
+    children: [],
   },
   {
     label: "絨毛玩偶",
@@ -885,7 +883,7 @@ function sortSubcategoryLabels(labels) {
   });
 }
 
-/** 合併試算表子分類，新增月份無需再改程式 */
+/** 依試算表「分類／子分類」動態產生選單（不顯示程式內建、試算表沒有的子分類） */
 function buildCategoryMenu(products) {
   const subsByCategory = new Map();
   for (const p of products || []) {
@@ -897,17 +895,12 @@ function buildCategoryMenu(products) {
   }
 
   return CATEGORY_MENU.map((item) => {
-    const staticSubs = (item.children || [])
-      .map((c) => (typeof c === "string" ? c : c.value || c.label || ""))
-      .filter(Boolean);
     const fromProducts = subsByCategory.has(item.value)
-      ? Array.from(subsByCategory.get(item.value))
+      ? sortSubcategoryLabels(Array.from(subsByCategory.get(item.value)))
       : [];
-    const merged = sortSubcategoryLabels(Array.from(new Set([...staticSubs, ...fromProducts])));
-    if (!merged.length) return { ...item, children: item.children || [] };
     return {
       ...item,
-      children: merged.map((v) => ({ label: v, value: v })),
+      children: fromProducts.map((v) => ({ label: v, value: v })),
     };
   });
 }
@@ -942,7 +935,7 @@ const STORE_CATEGORIES = [
   "全商品一覧",
   "新上架商品",
   "HOT預購商品",
-  { label: "預購商品", children: ["2026年03月"] },
+  { label: "預購商品", children: [] },
   { label: "絨毛玩偶", children: ["玩偶公仔", "吊飾娃"] },
   { label: "公仔玩具", children: ["食玩盲盒", "公仔吊飾"] },
   { label: "包包時尚小物", children: ["托特包", "肩包", "後背包", "購物環保袋", "皮夾", "零錢包", "票卡收納夾", "化妝包", "多功能收納包", "束口袋"] },
@@ -3071,7 +3064,7 @@ function PointsPage() {
         <p className="font-medium text-neutral-800">集點規則</p>
         <ul className="list-disc list-inside space-y-1 text-xs sm:text-sm">
           <li>消費滿 NT$100 集 1 點（依訂單完成後計算）</li>
-          <li>1 點可折抵 NT$1</li>
+          <li>1 點可折抵 NT$1（商品淨額須滿 NT$199 才可折抵）</li>
           <li>點數自發放日起 365 天內有效</li>
         </ul>
       </div>

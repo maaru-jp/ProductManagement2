@@ -1,5 +1,5 @@
 /**
- * MAARU 紅利點數 — 消費滿 100 元集 1 點，1 點折 1 元，1 年內有效
+ * MAARU 紅利點數 — 消費滿 100 元集 1 點，1 點折 1 元，商品淨額滿 199 元才可折抵，1 年內有效
  * 會員以「客戶姓名」識別（電話／Line ID 僅供備註，舊資料無姓名時仍可以電話／Line 對應）
  */
 (function (global) {
@@ -9,6 +9,7 @@
   var DEFAULT_CONFIG = {
     spendPerPoint: 100,
     pointValue: 1,
+    minRedeemNet: 199,
     expireDays: 365,
     earnStatuses: ["已確認", "已完成"],
   };
@@ -152,9 +153,23 @@
     return Math.max(0, Math.ceil(sub - disc));
   }
 
-  function calcMaxRedeemPoints(order, balance) {
+  function calcMaxRedeemPoints(order, balance, cfg) {
+    cfg = cfg || getConfig();
     var net = merchandiseNet(order);
+    var minNet = Math.max(0, Number(cfg.minRedeemNet) || 0);
+    if (minNet > 0 && net < minNet) return 0;
     return Math.max(0, Math.min(Number(balance) || 0, net));
+  }
+
+  function getMinRedeemNet(cfg) {
+    cfg = cfg || getConfig();
+    return Math.max(0, Number(cfg.minRedeemNet) || 0);
+  }
+
+  function meetsMinRedeemNet(order, cfg) {
+    var minNet = getMinRedeemNet(cfg);
+    if (minNet <= 0) return true;
+    return merchandiseNet(order) >= minNet;
   }
 
   function calcEarnPoints(order, cfg) {
@@ -288,13 +303,21 @@
 
     var cfg = getConfig();
     var ledger = getLedger();
-    var pointsUsed = Math.floor(Number(order.pointsUsed) || 0);
+    var requestedPts = Math.floor(Number(order.pointsUsed) || 0);
+    var pointsUsed = requestedPts;
     var balance = getBalance(order.customerName, order.phone, order.lineId);
+    var msg = [];
 
     if (pointsUsed > 0) {
-      var maxUse = calcMaxRedeemPoints(order, balance);
+      var maxUse = calcMaxRedeemPoints(order, balance, cfg);
       if (pointsUsed > maxUse) pointsUsed = maxUse;
       if (pointsUsed > 0) ledger = redeemPoints(ledger, order, pointsUsed);
+      else if (requestedPts > 0) {
+        var minNet = getMinRedeemNet(cfg);
+        if (minNet > 0 && merchandiseNet(order) < minNet) {
+          msg.push("商品淨額未滿 " + minNet + " 元，無法折抵紅利");
+        }
+      }
       order.pointsUsed = pointsUsed;
     }
 
@@ -309,7 +332,6 @@
       saveLedger(ledger);
     }
 
-    var msg = [];
     if (pointsUsed > 0) msg.push("折抵 " + pointsUsed + " 點");
     if (earned > 0) msg.push("發放 " + earned + " 點");
     if (!pointsUsed && !earned && normalizeCustomerName(order.customerName)) {
@@ -450,6 +472,8 @@
     getBalance: getBalance,
     merchandiseNet: merchandiseNet,
     calcMaxRedeemPoints: calcMaxRedeemPoints,
+    getMinRedeemNet: getMinRedeemNet,
+    meetsMinRedeemNet: meetsMinRedeemNet,
     calcEarnPoints: calcEarnPoints,
     pointsDiscountAmount: pointsDiscountAmount,
     processOrderPoints: processOrderPoints,
