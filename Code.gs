@@ -19,7 +19,8 @@ var CONFIG = {
   // 後台寫入驗證 token（請改成高強度字串，並與 admin.html 的 ADMIN_WRITE_TOKEN 一致）
   adminWriteToken: "CHANGE_ME_TO_A_STRONG_TOKEN_2026",
   // 訂單工作表名稱（不存在會自動建立）
-  orderSheetName: "訂單"
+  orderSheetName: "訂單",
+  pointsSheetName: "紅利紀錄"
 };
 
 /**
@@ -77,6 +78,30 @@ function doPost(e) {
       out.sheetName = info.sheetName;
       out.rowCount = info.rowCount;
       out.message = "已連線";
+      return jsonOutput(out);
+    }
+
+    // 紅利紀錄：list / sync
+    if (action === "points_list" || action === "points_sync") {
+      var pointsSheet = getPointsSheet(ss);
+      if (!pointsSheet) {
+        out.error = true;
+        out.message = "找不到紅利紀錄工作表";
+        return jsonOutput(out);
+      }
+      if (action === "points_list") {
+        out.ledger = getPointsLedger(pointsSheet);
+        out.message = "OK";
+        return jsonOutput(out);
+      }
+      var ledger = body.ledger;
+      if (!ledger || !Array.isArray(ledger)) {
+        out.error = true;
+        out.message = "缺少 ledger 陣列";
+        return jsonOutput(out);
+      }
+      syncPointsLedger(pointsSheet, ledger);
+      out.message = "已同步 " + ledger.length + " 筆紅利紀錄";
       return jsonOutput(out);
     }
 
@@ -267,7 +292,10 @@ function ensureOrderHeaderRow_(sheet) {
     "收訂金歷程記錄",
     "預購日期",
     "出貨日期",
-    "品項(JSON)"
+    "品項(JSON)",
+    "使用紅利",
+    "獲得紅利",
+    "紅利已處理"
   ];
   var lastRow = sheet.getLastRow();
   if (lastRow < 1) {
@@ -314,7 +342,10 @@ function orderKeyMap_(headers) {
     ["收訂金歷程記錄", "depositRemark"],
     ["預購日期", "preorderDate"],
     ["出貨日期", "shipDate"],
-    ["品項(JSON)", "itemsJson", "items"]
+    ["品項(JSON)", "itemsJson", "items"],
+    ["使用紅利", "pointsUsed"],
+    ["獲得紅利", "pointsEarned"],
+    ["紅利已處理", "pointsProcessed"]
   ];
   for (var c = 0; c < headers.length; c++) {
     var h = (headers[c] || "").toString().trim();
@@ -358,6 +389,9 @@ function normalizeOrderForSheet_(order) {
     depositRemark: (o.depositRemark != null) ? String(o.depositRemark) : "",
     preorderDate: (o.preorderDate != null) ? String(o.preorderDate) : "",
     shipDate: (o.shipDate != null) ? String(o.shipDate) : "",
+    pointsUsed: (o.pointsUsed != null && o.pointsUsed !== "") ? Number(o.pointsUsed) : "",
+    pointsEarned: (o.pointsEarned != null && o.pointsEarned !== "") ? Number(o.pointsEarned) : "",
+    pointsProcessed: (o.pointsProcessed != null) ? String(o.pointsProcessed) : "",
     itemsJson: ""
   };
   try {
@@ -896,4 +930,149 @@ function buildKeyMap(headers) {
     else if (h.indexOf("庫存") >= 0) map[c] = "stock";
   }
   return map;
+}
+
+function getPointsSheet(ss) {
+  var name = (CONFIG.pointsSheetName || "紅利紀錄").toString().trim();
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    var all = ss.getSheets();
+    for (var i = 0; i < all.length; i++) {
+      var n = (all[i].getName() || "").toString().trim();
+      if (n === name || n.indexOf("紅利") >= 0) {
+        sheet = all[i];
+        break;
+      }
+    }
+  }
+  if (!sheet) sheet = ss.insertSheet(name);
+  ensurePointsHeaderRow_(sheet);
+  return sheet;
+}
+
+function ensurePointsHeaderRow_(sheet) {
+  var headers = [
+    "紀錄ID",
+    "日期",
+    "電話",
+    "Line ID",
+    "姓名",
+    "類型",
+    "點數",
+    "剩餘",
+    "到期日",
+    "訂單編號",
+    "備註"
+  ];
+  if (sheet.getLastRow() < 1) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+}
+
+function normalizePointRecordForSheet_(rec) {
+  var r = rec || {};
+  return {
+    id: (r.id != null) ? String(r.id).trim() : "",
+    date: (r.date != null) ? String(r.date) : "",
+    phone: (r.phone != null) ? String(r.phone) : "",
+    lineId: (r.lineId != null) ? String(r.lineId) : "",
+    customerName: (r.customerName != null) ? String(r.customerName) : "",
+    type: (r.type != null) ? String(r.type) : "",
+    points: (r.points != null && r.points !== "") ? Number(r.points) : "",
+    remaining: (r.remaining != null && r.remaining !== "") ? Number(r.remaining) : "",
+    expireDate: (r.expireDate != null) ? String(r.expireDate) : "",
+    orderId: (r.orderId != null) ? String(r.orderId) : "",
+    note: (r.note != null) ? String(r.note) : ""
+  };
+}
+
+function pointsKeyMap_(headers) {
+  var map = {};
+  var aliases = [
+    ["紀錄ID", "id"],
+    ["日期", "date"],
+    ["電話", "phone"],
+    ["Line ID", "lineId"],
+    ["姓名", "customerName"],
+    ["類型", "type"],
+    ["點數", "points"],
+    ["剩餘", "remaining"],
+    ["到期日", "expireDate"],
+    ["訂單編號", "orderId"],
+    ["備註", "note"]
+  ];
+  for (var c = 0; c < headers.length; c++) {
+    var h = (headers[c] || "").toString().trim();
+    if (!h) continue;
+    for (var a = 0; a < aliases.length; a++) {
+      var group = aliases[a];
+      for (var g = 0; g < group.length; g++) {
+        if (h === group[g]) {
+          map[c] = group[group.length - 1];
+          break;
+        }
+      }
+      if (map[c]) break;
+    }
+  }
+  return map;
+}
+
+function buildRowFromPointRecord_(sheet, rec) {
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return (h || "").toString().trim(); });
+  var keyMap = pointsKeyMap_(headers);
+  var norm = normalizePointRecordForSheet_(rec);
+  var row = [];
+  for (var c = 0; c < headers.length; c++) {
+    var key = keyMap[c];
+    var val = "";
+    if (key && norm[key] !== undefined && norm[key] !== null && norm[key] !== "") val = norm[key];
+    row.push(val);
+  }
+  return row;
+}
+
+function getPointsLedger(sheet) {
+  ensurePointsHeaderRow_(sheet);
+  var data = sheet.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+  var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
+  var keyMap = pointsKeyMap_(headers);
+  var list = [];
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var obj = {};
+    var empty = true;
+    for (var c = 0; c < headers.length; c++) {
+      var key = keyMap[c];
+      if (!key) continue;
+      var val = row[c];
+      if (val === "" || val === null || val === undefined) continue;
+      obj[key] = val;
+      empty = false;
+    }
+    if (empty || !obj.id) continue;
+    list.push(obj);
+  }
+  return list;
+}
+
+function syncPointsLedger(sheet, ledger) {
+  ensurePointsHeaderRow_(sheet);
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return (h || "").toString().trim(); });
+  var colCount = headers.length;
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.deleteRows(2, lastRow - 1);
+  }
+  if (!ledger || !ledger.length) return;
+  var rows = [];
+  for (var i = 0; i < ledger.length; i++) {
+    rows.push(buildRowFromPointRecord_(sheet, ledger[i]));
+  }
+  if (rows.length) {
+    sheet.getRange(2, 1, rows.length, colCount).setValues(rows);
+  }
 }

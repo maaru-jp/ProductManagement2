@@ -194,6 +194,7 @@
         <nav class="p-2 flex-1 flex flex-col justify-center">
           <a href="#" id="navReports" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="總覽報表"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span><span class="nav-text">總覽報表</span></a>
           <a href="#" id="navOrders" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="訂單管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span><span class="nav-text">訂單管理</span></a>
+          <a href="#" id="navLoyalty" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="紅利點數"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></span><span class="nav-text">紅利點數</span></a>
           <a href="#" id="navProducts" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-sm bg-white/10 active" title="商品管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span><span class="nav-text">商品管理</span></a>
           <a href="#" id="navLayout" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="首頁排版"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span><span class="nav-text">首頁排版</span></a>
           <a href="#" id="navPurchases" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="採買統計"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4l-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></span><span class="nav-text">採買統計</span></a>
@@ -394,6 +395,121 @@
           <div class="text-sm text-slate-700">
             <p>狀態開關：關閉＝下架（顧客頁不顯示），開啟＝上架（顧客頁顯示）。切換開關後請按右上方「儲存所有變更」才會寫入試算表並生效。試算表商品工作表第一列需有「狀態」欄位（或「上架狀態」），儲存時才會寫入。</p>
             <p class="mt-2">若要產生客人訂單 PDF：在每筆訂單最右側「操作」欄點 <strong>產生 PDF</strong>，在跳出的列印視窗中選擇「另存為 PDF」即可。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 紅利點數區塊 -->
+      <section id="sectionLoyalty" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+            <svg class="section-title-icon text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            紅利點數
+          </h2>
+          <button type="button" id="btnSyncPointsSheet" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">同步至試算表</button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          <div class="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5">
+            <p class="text-xs font-medium text-amber-800/70 uppercase tracking-wide mb-1">集點規則</p>
+            <p class="text-2xl font-bold text-amber-900">NT$ 100 → 1 點</p>
+            <p class="text-sm text-slate-600 mt-2">依商品小計（扣除折扣與紅利折抵後）計算</p>
+          </div>
+          <div class="rounded-xl border border-rose-200 bg-gradient-to-br from-rose-50 to-white p-5">
+            <p class="text-xs font-medium text-rose-800/70 uppercase tracking-wide mb-1">折抵規則</p>
+            <p class="text-2xl font-bold text-rose-900">1 點 = NT$ 1</p>
+            <p class="text-sm text-slate-600 mt-2">折抵上限為該筆商品淨額</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5">
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">有效期限</p>
+            <p class="text-2xl font-bold text-slate-800">365 天</p>
+            <p class="text-sm text-slate-600 mt-2">到期未使用自動失效（先到期先扣）</p>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-200 bg-white p-5 mb-6">
+          <h3 class="text-sm font-semibold text-slate-800 mb-3">發點時機</h3>
+          <p class="text-sm text-slate-600">訂單狀態改為 <strong>已確認</strong> 或 <strong>已完成</strong> 時，系統自動發放／折抵紅利（每筆訂單僅處理一次）。</p>
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button type="button" id="btnLoyaltyExpireAll" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">執行到期失效檢查</button>
+            <button type="button" id="btnLoyaltyReload" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">重新載入</button>
+          </div>
+          <p id="loyaltyMessage" class="mt-3 text-sm text-slate-500 hidden"></p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+          <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-slate-800">會員餘額</h3>
+              <input type="text" id="loyaltySearchInput" placeholder="搜尋姓名／電話／Line" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-44" />
+            </div>
+            <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 sticky top-0">
+                  <tr>
+                    <th class="text-left py-2 px-3 font-medium text-slate-600">客戶</th>
+                    <th class="text-left py-2 px-3 font-medium text-slate-600">可用點數</th>
+                    <th class="text-left py-2 px-3 font-medium text-slate-600">最近到期</th>
+                  </tr>
+                </thead>
+                <tbody id="loyaltyCustomerBody">
+                  <tr><td colspan="3" class="py-8 text-center text-slate-400">尚無資料</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 bg-white p-4">
+            <h3 class="text-sm font-semibold text-slate-800 mb-3">手動調整點數</h3>
+            <form id="loyaltyAdjustForm" class="space-y-3">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">電話</label>
+                  <input type="text" id="loyaltyAdjustPhone" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">Line ID</label>
+                  <input type="text" id="loyaltyAdjustLineId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">姓名</label>
+                <input type="text" id="loyaltyAdjustName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">調整點數（正數增加、負數扣除）</label>
+                <input type="number" id="loyaltyAdjustPoints" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：10 或 -5" />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">備註</label>
+                <input type="text" id="loyaltyAdjustNote" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：補登、客訴補償" />
+              </div>
+              <button type="submit" class="w-full py-2 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600">確認調整</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+          <div class="px-4 py-3 border-b border-slate-200">
+            <h3 class="text-sm font-semibold text-slate-800">紅利異動紀錄</h3>
+          </div>
+          <div class="overflow-x-auto max-h-[420px] overflow-y-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 sticky top-0">
+                <tr>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">日期</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">客戶</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">類型</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">點數</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">到期日</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">訂單</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">備註</th>
+                </tr>
+              </thead>
+              <tbody id="loyaltyLedgerBody">
+                <tr><td colspan="7" class="py-8 text-center text-slate-400">尚無紀錄</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -1108,6 +1224,24 @@
               <input type="number" id="orderFixedDiscount" min="0" value="0" class="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
               <span class="text-sm text-slate-600">元</span>
             </div>
+            <div class="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="text-sm font-medium text-amber-900">⭐ 紅利點數</span>
+                <span class="text-xs text-amber-800">可用：<strong id="orderPointsBalance">0</strong> 點</span>
+              </div>
+              <p class="text-[11px] text-amber-900/70">消費滿 NT$100 集 1 點 · 1 點折 NT$1 · 365 天內有效</p>
+              <div class="flex flex-wrap items-center gap-2">
+                <label class="inline-flex items-center gap-2">
+                  <input type="checkbox" id="orderUsePointsCheck" class="rounded border-amber-300" />
+                  <span class="text-sm text-slate-700">使用紅利折抵</span>
+                </label>
+                <input type="number" id="orderPointsUsed" min="0" value="0" step="1" class="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <span class="text-sm text-slate-600">點（- NT$ <span id="orderPointsDiscountAmount">0</span>）</span>
+                <button type="button" id="btnOrderPointsMax" class="px-2 py-1 rounded border border-amber-300 text-xs text-amber-800 hover:bg-amber-100">全部折抵</button>
+              </div>
+              <p class="text-xs text-slate-600">預估本次可獲得：<strong id="orderPointsEarnPreview">0</strong> 點（訂單「已確認／已完成」時發放）</p>
+              <p id="orderPointsProcessedHint" class="text-xs text-rose-600 hidden">此訂單紅利已處理，無法再修改折抵點數</p>
+            </div>
             <div>
               <label class="block text-xs font-medium text-slate-500 mb-1">運費</label>
               <div class="flex items-center gap-2">
@@ -1213,6 +1347,7 @@
     </div>
   </div>
 
+  <script src="js/admin-loyalty.js"></script>
   <script>
     (function() {
       // ※ 重要：請換成「您自己的」Google 試算表網頁應用程式 URL，否則後台無法寫入試算表、顧客頁也讀不到資料。
@@ -1278,7 +1413,7 @@
       var searchKeyword = "";
 
       function setNavActive(navId) {
-        var navs = ["navReports", "navOrders", "navProducts", "navPurchases", "navLayout", "navSettings"];
+        var navs = ["navReports", "navOrders", "navLoyalty", "navProducts", "navPurchases", "navLayout", "navSettings"];
         navs.forEach(function(id) {
           var el = document.getElementById(id);
           if (!el) return;
@@ -1294,17 +1429,23 @@
         var reportsSection = document.getElementById("sectionReports");
         var productsSection = document.getElementById("sectionProducts");
         var ordersSection = document.getElementById("sectionOrders");
+        var loyaltySection = document.getElementById("sectionLoyalty");
         var purchasesSection = document.getElementById("sectionPurchases");
         var layoutSection = document.getElementById("sectionLayout");
         var settingsSection = document.getElementById("sectionSettings");
         if (reportsSection) reportsSection.classList.toggle("hidden", sectionId !== "sectionReports");
         if (productsSection) productsSection.classList.toggle("hidden", sectionId !== "sectionProducts");
         if (ordersSection) ordersSection.classList.toggle("hidden", sectionId !== "sectionOrders");
+        if (loyaltySection) loyaltySection.classList.toggle("hidden", sectionId !== "sectionLoyalty");
         if (purchasesSection) purchasesSection.classList.toggle("hidden", sectionId !== "sectionPurchases");
         if (layoutSection) layoutSection.classList.toggle("hidden", sectionId !== "sectionLayout");
         if (settingsSection) settingsSection.classList.toggle("hidden", sectionId !== "sectionSettings");
         if (sectionId === "sectionReports") setNavActive("navReports");
         else if (sectionId === "sectionOrders") setNavActive("navOrders");
+        else if (sectionId === "sectionLoyalty") {
+          setNavActive("navLoyalty");
+          if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+        }
         else if (sectionId === "sectionPurchases") {
           setNavActive("navPurchases");
           var ps = document.getElementById("purchaseDateStart");
@@ -1455,6 +1596,7 @@
         updateReportKPI();
       });
       document.getElementById("navOrders").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionOrders"); });
+      document.getElementById("navLoyalty").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionLoyalty"); });
       document.getElementById("navProducts").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionProducts"); });
       document.getElementById("navLayout").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionLayout"); });
       document.getElementById("navSettings").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionSettings"); });
@@ -3350,6 +3492,146 @@
         showMessage("已匯出 CSV");
       });
 
+      (function initLoyaltySection() {
+        if (!window.MaaruLoyalty) return;
+
+        function escapeHtmlLoyalty(s) {
+          var div = document.createElement("div");
+          div.textContent = s == null ? "" : String(s);
+          return div.innerHTML;
+        }
+
+        function showLoyaltyMessage(text, isError) {
+          var el = document.getElementById("loyaltyMessage");
+          if (!el) return;
+          el.textContent = text;
+          el.className = "mt-3 text-sm " + (isError ? "text-red-600" : "text-slate-600");
+          el.classList.remove("hidden");
+          setTimeout(function() { el.classList.add("hidden"); }, 4000);
+        }
+
+        function syncPointsLedgerToSheet() {
+          if (typeof fetchWrite !== "function") return Promise.resolve();
+          var ledger = MaaruLoyalty.getLedger();
+          return fetchWrite({ action: "points_sync", ledger: ledger })
+            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true }; } }); })
+            .then(function(res) {
+              if (res && res.error) throw new Error(res.message || "同步失敗");
+              return res;
+            });
+        }
+
+        function loadPointsFromSheet() {
+          if (typeof fetchWrite !== "function") return Promise.resolve();
+          return fetchWrite({ action: "points_list" })
+            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true }; } }); })
+            .then(function(res) {
+              if (res && res.error) throw new Error(res.message || "載入失敗");
+              var list = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
+              if (list.length) MaaruLoyalty.saveLedger(list);
+              return list;
+            });
+        }
+
+        function renderLoyaltyPanel() {
+          MaaruLoyalty.runGlobalExpiry();
+          var q = (document.getElementById("loyaltySearchInput") && document.getElementById("loyaltySearchInput").value || "").trim().toLowerCase();
+          var customers = MaaruLoyalty.summarizeCustomers();
+          if (q) {
+            customers = customers.filter(function(c) {
+              return (c.customerName || "").toLowerCase().indexOf(q) >= 0
+                || (c.phone || "").toLowerCase().indexOf(q) >= 0
+                || (c.lineId || "").toLowerCase().indexOf(q) >= 0;
+            });
+          }
+          var custBody = document.getElementById("loyaltyCustomerBody");
+          if (custBody) {
+            if (!customers.length) {
+              custBody.innerHTML = "<tr><td colspan=\"3\" class=\"py-8 text-center text-slate-400\">尚無會員資料</td></tr>";
+            } else {
+              custBody.innerHTML = customers.map(function(c) {
+                var exp = c.nextExpireDate ? (c.nextExpireDate + "（" + c.nextExpirePoints + "點）") : "—";
+                return "<tr class=\"border-b border-slate-100\"><td class=\"py-2 px-3\">" + escapeHtmlLoyalty(c.customerName || "—") + "<br><span class=\"text-xs text-slate-400\">" + escapeHtmlLoyalty(c.phone || c.lineId || "") + "</span></td>" +
+                  "<td class=\"py-2 px-3 font-semibold text-amber-700\">" + (c.balance || 0) + "</td>" +
+                  "<td class=\"py-2 px-3 text-xs text-slate-500\">" + escapeHtmlLoyalty(exp) + "</td></tr>";
+              }).join("");
+            }
+          }
+          var ledger = MaaruLoyalty.getLedger().slice().reverse();
+          var ledBody = document.getElementById("loyaltyLedgerBody");
+          if (ledBody) {
+            if (!ledger.length) {
+              ledBody.innerHTML = "<tr><td colspan=\"7\" class=\"py-8 text-center text-slate-400\">尚無紀錄</td></tr>";
+            } else {
+              ledBody.innerHTML = ledger.slice(0, 200).map(function(r) {
+                var pts = Number(r.points) || 0;
+                var ptsClass = pts >= 0 ? "text-emerald-600" : "text-red-600";
+                return "<tr class=\"border-b border-slate-100\"><td class=\"py-2 px-3 text-xs\">" + escapeHtmlLoyalty(String(r.date || "").slice(0, 10)) + "</td>" +
+                  "<td class=\"py-2 px-3 text-xs\">" + escapeHtmlLoyalty(r.customerName || r.phone || r.lineId || "—") + "</td>" +
+                  "<td class=\"py-2 px-3\">" + escapeHtmlLoyalty(r.type || "") + "</td>" +
+                  "<td class=\"py-2 px-3 font-medium " + ptsClass + "\">" + (pts > 0 ? "+" : "") + pts + "</td>" +
+                  "<td class=\"py-2 px-3 text-xs\">" + escapeHtmlLoyalty(r.expireDate || "—") + "</td>" +
+                  "<td class=\"py-2 px-3 text-xs font-mono\">" + escapeHtmlLoyalty(r.orderId || "—") + "</td>" +
+                  "<td class=\"py-2 px-3 text-xs text-slate-500\">" + escapeHtmlLoyalty(r.note || "") + "</td></tr>";
+              }).join("");
+            }
+          }
+        }
+        window.renderLoyaltyPanel = renderLoyaltyPanel;
+        window.syncPointsLedgerToSheet = syncPointsLedgerToSheet;
+
+        var btnSync = document.getElementById("btnSyncPointsSheet");
+        if (btnSync) btnSync.addEventListener("click", function() {
+          syncPointsLedgerToSheet().then(function() {
+            showLoyaltyMessage("已同步至試算表「紅利紀錄」");
+          }).catch(function(err) {
+            showLoyaltyMessage("同步失敗：" + (err.message || ""), true);
+          });
+        });
+        var btnExpire = document.getElementById("btnLoyaltyExpireAll");
+        if (btnExpire) btnExpire.addEventListener("click", function() {
+          MaaruLoyalty.runGlobalExpiry();
+          renderLoyaltyPanel();
+          syncPointsLedgerToSheet().catch(function() {});
+          showLoyaltyMessage("已完成到期失效檢查");
+        });
+        var btnReload = document.getElementById("btnLoyaltyReload");
+        if (btnReload) btnReload.addEventListener("click", function() {
+          loadPointsFromSheet().then(function() {
+            renderLoyaltyPanel();
+            showLoyaltyMessage("已重新載入");
+          }).catch(function(err) {
+            renderLoyaltyPanel();
+            showLoyaltyMessage("載入失敗：" + (err.message || ""), true);
+          });
+        });
+        var searchInp = document.getElementById("loyaltySearchInput");
+        if (searchInp) searchInp.addEventListener("input", renderLoyaltyPanel);
+        var adjForm = document.getElementById("loyaltyAdjustForm");
+        if (adjForm) adjForm.addEventListener("submit", function(e) {
+          e.preventDefault();
+          try {
+            var ledger = MaaruLoyalty.getLedger();
+            ledger = MaaruLoyalty.manualAdjust(ledger, {
+              phone: document.getElementById("loyaltyAdjustPhone").value,
+              lineId: document.getElementById("loyaltyAdjustLineId").value,
+              customerName: document.getElementById("loyaltyAdjustName").value,
+              points: document.getElementById("loyaltyAdjustPoints").value,
+              note: document.getElementById("loyaltyAdjustNote").value
+            });
+            MaaruLoyalty.saveLedger(ledger);
+            renderLoyaltyPanel();
+            syncPointsLedgerToSheet().catch(function() {});
+            showLoyaltyMessage("已調整點數");
+            adjForm.reset();
+          } catch (err) {
+            showLoyaltyMessage(err.message || "調整失敗", true);
+          }
+        });
+
+        loadPointsFromSheet().then(renderLoyaltyPanel).catch(renderLoyaltyPanel);
+      })();
+
       (function initOrderSection() {
         var ORDER_STORAGE_KEY = "adminOrders";
         var ORDER_LOCAL_ONLY = false; // 訂單管理：本機 + 試算表自動同步
@@ -3507,6 +3789,12 @@
           return ord.subtotal != null && ord.subtotal !== "" && !isNaN(Number(ord.subtotal));
         }
 
+        function orderPointsDiscountForOrder(ord) {
+          if (!window.MaaruLoyalty) return 0;
+          var pts = Number(ord && ord.pointsUsed) || 0;
+          return MaaruLoyalty.pointsDiscountAmount(pts);
+        }
+
         function orderGrossBeforeDeposit(ord) {
           if (!orderHasAmountBreakdown(ord)) {
             var t = ord.total != null ? Number(ord.total) : 0;
@@ -3515,8 +3803,69 @@
           var sub = Number(ord.subtotal) || 0;
           var disc = ord.discount != null && ord.discount !== "" ? Number(ord.discount) : 0;
           if (isNaN(disc)) disc = 0;
+          var ptsDisc = orderPointsDiscountForOrder(ord);
           var ship = orderEffectiveShippingForOrder(ord);
-          return Math.max(0, Math.ceil(sub - disc + ship));
+          return Math.max(0, Math.ceil(sub - disc - ptsDisc + ship));
+        }
+
+        function refreshOrderPointsPanel_(processedFlag) {
+          if (!window.MaaruLoyalty) return;
+          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+          var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
+          var balance = MaaruLoyalty.getBalance(phone, lineId);
+          var balEl = document.getElementById("orderPointsBalance");
+          if (balEl) balEl.textContent = String(balance);
+          var processed = processedFlag === true || processedFlag === "Y";
+          var hint = document.getElementById("orderPointsProcessedHint");
+          var useCheck = document.getElementById("orderUsePointsCheck");
+          var ptsInput = document.getElementById("orderPointsUsed");
+          var maxBtn = document.getElementById("btnOrderPointsMax");
+          if (hint) hint.classList.toggle("hidden", !processed);
+          if (useCheck) useCheck.disabled = processed;
+          if (ptsInput) ptsInput.disabled = processed;
+          if (maxBtn) maxBtn.disabled = processed;
+          var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
+          var rateCheck = document.getElementById("orderDiscountRateCheck").checked;
+          var fixedCheck = document.getElementById("orderFixedDiscountCheck").checked;
+          var rateVal = Number(document.getElementById("orderDiscountRate").value) || 0;
+          var fixedVal = Number(document.getElementById("orderFixedDiscount").value) || 0;
+          var discount = 0;
+          if (rateCheck && rateVal >= 0 && rateVal <= 100) discount = Math.ceil(subtotal * (1 - rateVal / 100));
+          if (fixedCheck) discount = Math.ceil(fixedVal);
+          var draftOrder = {
+            subtotal: subtotal,
+            discount: discount,
+            pointsUsed: (useCheck && useCheck.checked) ? (Number(ptsInput && ptsInput.value) || 0) : 0
+          };
+          var maxPts = MaaruLoyalty.calcMaxRedeemPoints(draftOrder, balance);
+          if (useCheck && useCheck.checked && ptsInput) {
+            var v = Math.floor(Number(ptsInput.value) || 0);
+            if (v > maxPts) { v = maxPts; ptsInput.value = String(v); }
+          }
+          var used = (useCheck && useCheck.checked) ? Math.floor(Number(ptsInput && ptsInput.value) || 0) : 0;
+          var discAmt = MaaruLoyalty.pointsDiscountAmount(used);
+          var discEl = document.getElementById("orderPointsDiscountAmount");
+          if (discEl) discEl.textContent = String(discAmt);
+          draftOrder.pointsUsed = used;
+          var earnEl = document.getElementById("orderPointsEarnPreview");
+          if (earnEl) earnEl.textContent = String(MaaruLoyalty.calcEarnPoints(draftOrder));
+        }
+
+        function applyLoyaltyToOrder_(ord, prevOrd) {
+          if (!window.MaaruLoyalty || !ord) return ord;
+          if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) return ord;
+          try {
+            var result = MaaruLoyalty.processOrderPoints(ord, prevOrd || null);
+            if (result.message && typeof showOrderMessage === "function") showOrderMessage("紅利：" + result.message);
+            if (typeof window.syncPointsLedgerToSheet === "function") {
+              window.syncPointsLedgerToSheet().catch(function() {});
+            }
+            if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+            return result.order;
+          } catch (err) {
+            if (typeof showOrderMessage === "function") showOrderMessage("紅利處理失敗：" + (err.message || ""), true);
+            return ord;
+          }
         }
 
         function orderAmountDue(ord) {
@@ -3712,11 +4061,14 @@
           var discount = 0;
           if (rateCheck && rateVal >= 0 && rateVal <= 100) discount = Math.ceil(subtotal * (1 - rateVal / 100));
           if (fixedCheck) discount = Math.ceil(fixedVal);
+          var usePtsCheck = document.getElementById("orderUsePointsCheck");
+          var pointsUsed = (usePtsCheck && usePtsCheck.checked) ? Math.floor(Number(document.getElementById("orderPointsUsed").value) || 0) : 0;
+          var pointsDiscount = window.MaaruLoyalty ? MaaruLoyalty.pointsDiscountAmount(pointsUsed) : pointsUsed;
           var effectiveShipping = shipCouponOn ? 0 : shipping;
           var depEl = document.getElementById("orderDepositAmount");
           var depositNum = (depEl && depEl.value !== "" && !isNaN(Number(depEl.value))) ? Number(depEl.value) : 0;
           if (isNaN(depositNum) || depositNum < 0) depositNum = 0;
-          var gross = Math.max(0, Math.ceil(subtotal - discount + effectiveShipping));
+          var gross = Math.max(0, Math.ceil(subtotal - discount - pointsDiscount + effectiveShipping));
           var total = depositNum > 0 ? Math.max(0, gross - depositNum) : gross;
           return {
             customerName: (document.getElementById("orderCustomerName").value || "").trim(),
@@ -3729,6 +4081,7 @@
             address: (document.getElementById("orderAddress").value || "").trim(),
             subtotal: subtotal,
             discount: discount,
+            pointsUsed: pointsUsed,
             shippingFee: shipping,
             shippingStatus: (function() {
               var el = document.getElementById("orderShippingStatusCoupon");
@@ -3767,7 +4120,13 @@
           if (depEl) depEl.value = o.depositAmount != null && o.depositAmount !== "" ? String(o.depositAmount) : "0";
           document.getElementById("orderPreorderDate").value = o.preorderDate || "";
           document.getElementById("orderShipDate").value = o.shipDate || "";
+          var usePts = Number(o.pointsUsed) > 0;
+          var usePtsCheck = document.getElementById("orderUsePointsCheck");
+          var ptsInput = document.getElementById("orderPointsUsed");
+          if (usePtsCheck) usePtsCheck.checked = usePts;
+          if (ptsInput) ptsInput.value = usePts ? String(Math.floor(Number(o.pointsUsed))) : "0";
           renderOrderItemsEditor_(o.items || []);
+          refreshOrderPointsPanel_(o.pointsProcessed === "Y" || o.pointsProcessed === true);
           updateOrderTotal();
         }
 
@@ -3805,7 +4164,12 @@
             if (depEl) depEl.value = "0";
             document.getElementById("orderPreorderDate").value = "";
             document.getElementById("orderShipDate").value = "";
+            var usePtsCheckNew = document.getElementById("orderUsePointsCheck");
+            var ptsInputNew = document.getElementById("orderPointsUsed");
+            if (usePtsCheckNew) usePtsCheckNew.checked = false;
+            if (ptsInputNew) ptsInputNew.value = "0";
             renderOrderItemsEditor_(window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) ? window.__lastPastedOrderItems : []);
+            refreshOrderPointsPanel_(false);
             updateOrderTotal();
           }
         }
@@ -3836,13 +4200,18 @@
             document.getElementById("orderDiscountRateAmount").textContent = "0";
           }
 
-          var total = subtotal - discount + (shipCouponOn ? 0 : shipping);
+          var usePtsCheck = document.getElementById("orderUsePointsCheck");
+          var pointsUsed = (usePtsCheck && usePtsCheck.checked) ? Math.floor(Number(document.getElementById("orderPointsUsed").value) || 0) : 0;
+          var pointsDiscount = window.MaaruLoyalty ? MaaruLoyalty.pointsDiscountAmount(pointsUsed) : pointsUsed;
+
+          var total = subtotal - discount - pointsDiscount + (shipCouponOn ? 0 : shipping);
           total = Math.ceil(total);
           if (total < 0) total = 0;
           var depositEl = document.getElementById("orderDepositAmount");
           var depositNum = (depositEl && depositEl.value !== "" && !isNaN(Number(depositEl.value))) ? Number(depositEl.value) : 0;
           var displayTotal = (depositNum > 0) ? Math.max(0, total - depositNum) : total;
           document.getElementById("orderTotalDisplay").textContent = displayTotal;
+          refreshOrderPointsPanel_();
         }
 
         function escapeHtml(s) {
@@ -3906,7 +4275,11 @@
               var id = this.getAttribute("data-order-id");
               var ord = orders.find(function(o) { return o.id === id; });
               if (ord) {
+                var prevStatus = ord.status;
+                var prevProcessed = ord.pointsProcessed;
                 ord.status = this.value;
+                ord.pointsUsed = ord.pointsUsed != null ? ord.pointsUsed : 0;
+                ord = applyLoyaltyToOrder_(ord, { status: prevStatus, pointsProcessed: prevProcessed });
                 saveOrders();
                 selectEl.disabled = true;
                 upsertOrderToSheet(ord).then(function() {
@@ -4352,9 +4725,26 @@
           });
         }
 
-        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount", "orderDepositAmount", "orderShippingStatusCoupon"].forEach(function(id) {
+        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount", "orderDepositAmount", "orderShippingStatusCoupon", "orderPhone", "orderLineId", "orderPointsUsed"].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) { el.addEventListener("input", updateOrderTotal); el.addEventListener("change", updateOrderTotal); }
+        });
+        var usePtsCheckEl = document.getElementById("orderUsePointsCheck");
+        if (usePtsCheckEl) usePtsCheckEl.addEventListener("change", updateOrderTotal);
+        var btnPtsMax = document.getElementById("btnOrderPointsMax");
+        if (btnPtsMax) btnPtsMax.addEventListener("click", function() {
+          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+          var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
+          if (!window.MaaruLoyalty) return;
+          var balance = MaaruLoyalty.getBalance(phone, lineId);
+          var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
+          var draft = { subtotal: subtotal, discount: 0, pointsUsed: 0 };
+          var maxPts = MaaruLoyalty.calcMaxRedeemPoints(draft, balance);
+          var useCheck = document.getElementById("orderUsePointsCheck");
+          var ptsInput = document.getElementById("orderPointsUsed");
+          if (useCheck) useCheck.checked = maxPts > 0;
+          if (ptsInput) ptsInput.value = String(maxPts);
+          updateOrderTotal();
         });
         if (document.getElementById("orderDiscountRateCheck")) {
           document.getElementById("orderDiscountRateCheck").addEventListener("change", function() {
@@ -4389,6 +4779,7 @@
               ord.address = data.address;
               ord.subtotal = data.subtotal;
               ord.discount = data.discount;
+              ord.pointsUsed = data.pointsUsed != null ? data.pointsUsed : 0;
               ord.shippingFee = data.shippingFee;
               ord.shippingStatus = data.shippingStatus || "";
               ord.total = data.total;
@@ -4398,6 +4789,7 @@
               ord.preorderDate = data.preorderDate;
               ord.shipDate = data.shipDate;
               ord.items = normalizeOrderItems_(orderItemsState).filter(function(it) { return String(it.lineName || "").trim() !== ""; });
+              ord = applyLoyaltyToOrder_(ord, null);
               saveOrders();
               renderOrders();
               closeOrderModal();
@@ -4435,6 +4827,7 @@
               address: data.address,
               subtotal: data.subtotal,
               discount: data.discount,
+              pointsUsed: data.pointsUsed != null ? data.pointsUsed : 0,
               shippingFee: data.shippingFee,
               shippingStatus: data.shippingStatus || "",
               total: data.total,
