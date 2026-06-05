@@ -1429,6 +1429,46 @@
       var pendingStatusChanges = {};
       var searchKeyword = "";
 
+      function getHiddenProductNameSet_() {
+        try {
+          var hidden = JSON.parse(localStorage.getItem("maaru_admin_hidden_product_names") || "[]");
+          if (!Array.isArray(hidden)) return new Set();
+          return new Set(hidden.map(function(n) { return String(n).trim(); }).filter(Boolean));
+        } catch (e) {
+          return new Set();
+        }
+      }
+
+      function syncProductStatusFields_(p) {
+        if (!p || typeof p !== "object") return p;
+        var raw = p.status != null ? p.status : (p.狀態 != null ? p.狀態 : "上架");
+        var s = String(raw).trim();
+        if (s !== "下架") s = "上架";
+        p.status = s;
+        p.狀態 = s;
+        return p;
+      }
+
+      /** 與顧客頁一致：本機 hidden 清單中的商品視為下架（試算表未寫入狀態時後台開關仍應顯示灰色） */
+      function applyHiddenNamesToProducts_(list) {
+        var hiddenSet = getHiddenProductNameSet_();
+        if (!hiddenSet.size) return list;
+        return list.map(function(p) {
+          var name = (p.name || p.商品名稱 || "").toString().trim();
+          if (!name || !hiddenSet.has(name)) return p;
+          return Object.assign({}, p, { status: "下架", 狀態: "下架" });
+        });
+      }
+
+      function updateProductStatusTrackUi_(track, next) {
+        if (!track) return;
+        var isListed = next !== "下架";
+        track.classList.remove("on", "off");
+        track.classList.add(isListed ? "on" : "off");
+        track.setAttribute("data-status", isListed ? "上架" : "下架");
+        track.title = isListed ? "上架中（點擊切換為下架）" : "已下架（點擊切換為上架）";
+      }
+
       function setNavActive(navId) {
         var navs = ["navReports", "navOrders", "navLoyalty", "navProducts", "navPurchases", "navLayout", "navSettings"];
         navs.forEach(function(id) {
@@ -2452,7 +2492,7 @@
             p.庫存 = n;
           }
         }
-        return p;
+        return syncProductStatusFields_(p);
       }
 
       function finalizeStockForSave(product) {
@@ -2548,7 +2588,7 @@
         if (patch.sellingPrice != null && patch.sellingPrice !== "") patch.售價 = patch.sellingPrice;
         if (patch.customerDisplayPrice != null && patch.customerDisplayPrice !== "") patch.顧客顯示售價 = patch.customerDisplayPrice;
         if (patch.image) { patch.圖片 = patch.image; patch.商品主圖 = patch.image; }
-        if (patch.status) patch.狀態 = patch.status;
+        if (Object.prototype.hasOwnProperty.call(patch, "status")) patch.狀態 = patch.status;
         if (patch.stockType) { patch.貨況 = patch.stockType; patch.現貨預購 = patch.stockType; }
         return normalizeProductRecord(patch);
       }
@@ -2605,7 +2645,7 @@
               if (rateInp) rateInp.value = globalRate;
             }
             var raw = data.products || (Array.isArray(data) ? data : []);
-            products = normalizeProductsFromApi(raw);
+            products = applyHiddenNamesToProducts_(normalizeProductsFromApi(raw));
             pendingStatusChanges = {};
             renderTable();
             updateRateHint();
@@ -2768,6 +2808,7 @@
                   localStorage.setItem("maaru_admin_hidden_product_names", JSON.stringify(hidden));
                 } catch (e) {}
                 try { localStorage.setItem("maaru_products_updated", String(Date.now())); } catch (e2) {}
+                updateProductStatusTrackUi_(track, next);
                 showMessage(next === "上架" ? "已設為上架，試算表已更新。" : "已設為下架，試算表已更新。");
                 scheduleProductsReload(2000);
               })
@@ -3651,10 +3692,12 @@
             if (savedName) {
               try {
                 var hidden = JSON.parse(localStorage.getItem("maaru_admin_hidden_product_names") || "[]");
-                if (Array.isArray(hidden)) {
-                  hidden = hidden.filter(function(n) { return String(n).trim() !== savedName; });
-                  localStorage.setItem("maaru_admin_hidden_product_names", JSON.stringify(hidden));
-                }
+                if (!Array.isArray(hidden)) hidden = [];
+                var hidx = hidden.indexOf(savedName);
+                var savedStatus = String((product && product.status) || "上架").trim();
+                if (savedStatus === "下架") { if (hidx < 0) hidden.push(savedName); }
+                else { if (hidx >= 0) hidden.splice(hidx, 1); }
+                localStorage.setItem("maaru_admin_hidden_product_names", JSON.stringify(hidden));
               } catch (e) {}
             }
             closeModal();
