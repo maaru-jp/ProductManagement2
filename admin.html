@@ -1018,6 +1018,18 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">規格（可多筆，每筆可填對應圖片網址；現貨時可填各規格數量，0 則顧客頁顯示已售完）</label>
+            <div class="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 mb-3 space-y-2">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="text-xs font-medium text-indigo-900">規格維度 · 自動組合</span>
+                <button type="button" id="btnAddVariantDim" class="px-2.5 py-1 rounded-lg border border-indigo-200 bg-white text-indigo-800 text-xs hover:bg-indigo-50">+ 新增維度</button>
+              </div>
+              <div id="variantDimContainer" class="space-y-2"></div>
+              <div class="flex flex-wrap items-center gap-2 pt-1">
+                <button type="button" id="btnGenerateVariantCombos" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700">自動生成規格組合</button>
+                <span id="variantComboPreview" class="text-xs text-slate-500"></span>
+              </div>
+              <p class="text-[11px] text-slate-500 leading-relaxed">每個維度用逗號分隔選項。例：角色「酷洛米,美樂蒂」+ 尺寸「S,M」→ 產生 4 筆：酷洛米 S、酷洛米 M、美樂蒂 S、美樂蒂 M。重新生成會保留同名規格的圖片與庫存。</p>
+            </div>
             <div id="variantListContainer" class="space-y-2">
               <div class="variant-item-row flex flex-wrap gap-2 items-start">
                 <input type="text" class="variant-item flex-1 min-w-[100px] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="規格名稱，例：酷洛米" />
@@ -2853,6 +2865,183 @@
         }
       }
 
+      function parseDimOptionList_(raw) {
+        return String(raw || "")
+          .split(/[,，、;；\n\r\uFF0C\u3000\s]+/)
+          .map(function(s) { return s.trim(); })
+          .filter(Boolean);
+      }
+
+      function cartesianCombine_(arrays) {
+        var lists = (arrays || []).filter(function(arr) { return arr && arr.length; });
+        if (!lists.length) return [];
+        return lists.reduce(function(acc, curr) {
+          if (!acc.length) return curr.map(function(v) { return [v]; });
+          var out = [];
+          acc.forEach(function(prefix) {
+            curr.forEach(function(v) { out.push(prefix.concat([v])); });
+          });
+          return out;
+        }, []);
+      }
+
+      function formatVariantComboName_(parts) {
+        return parts.map(function(p) { return String(p || "").trim(); }).filter(Boolean).join(" ");
+      }
+
+      function snapshotVariantRows_() {
+        var container = document.getElementById("variantListContainer");
+        var map = {};
+        if (!container) return map;
+        container.querySelectorAll(".variant-item-row").forEach(function(row) {
+          var nameInp = row.querySelector(".variant-item");
+          var urlInp = row.querySelector(".variant-image");
+          var qtyInp = row.querySelector(".variant-qty");
+          var name = (nameInp && nameInp.value) ? nameInp.value.trim() : "";
+          if (!name) return;
+          map[name] = {
+            url: (urlInp && urlInp.value) ? urlInp.value.trim() : "",
+            qty: (qtyInp && qtyInp.value !== "") ? qtyInp.value : ""
+          };
+        });
+        return map;
+      }
+
+      function collectVariantDims_() {
+        var container = document.getElementById("variantDimContainer");
+        if (!container) return [];
+        var dims = [];
+        container.querySelectorAll(".variant-dim-row").forEach(function(row) {
+          var labelInp = row.querySelector(".variant-dim-label");
+          var optsInp = row.querySelector(".variant-dim-options");
+          var options = parseDimOptionList_(optsInp && optsInp.value);
+          if (!options.length) return;
+          dims.push({
+            label: (labelInp && labelInp.value) ? labelInp.value.trim() : "",
+            options: options
+          });
+        });
+        return dims;
+      }
+
+      function updateVariantComboPreview_() {
+        var el = document.getElementById("variantComboPreview");
+        if (!el) return;
+        var dims = collectVariantDims_();
+        if (!dims.length) {
+          el.textContent = "";
+          return;
+        }
+        var count = dims.reduce(function(n, d) { return n * d.options.length; }, 1);
+        var labels = dims.map(function(d) {
+          return (d.label ? d.label + "：" : "") + d.options.length + " 項";
+        }).join(" × ");
+        el.textContent = "預覽 " + count + " 筆（" + labels + "）";
+      }
+
+      function bindVariantDimRow_(row) {
+        if (!row) return;
+        var optsInp = row.querySelector(".variant-dim-options");
+        var removeBtn = row.querySelector(".variant-dim-remove");
+        if (optsInp) {
+          optsInp.addEventListener("input", updateVariantComboPreview_);
+          optsInp.addEventListener("change", updateVariantComboPreview_);
+        }
+        if (removeBtn) {
+          removeBtn.addEventListener("click", function() {
+            var container = document.getElementById("variantDimContainer");
+            if (!container) return;
+            var rows = container.querySelectorAll(".variant-dim-row");
+            if (rows.length <= 1) {
+              var labelInp = row.querySelector(".variant-dim-label");
+              var opts = row.querySelector(".variant-dim-options");
+              if (labelInp) labelInp.value = "";
+              if (opts) opts.value = "";
+              updateVariantComboPreview_();
+              return;
+            }
+            row.remove();
+            updateVariantComboPreview_();
+          });
+        }
+      }
+
+      function createVariantDimRow_(label, options) {
+        var row = document.createElement("div");
+        row.className = "variant-dim-row flex flex-wrap gap-2 items-start";
+        row.innerHTML =
+          "<input type=\"text\" class=\"variant-dim-label w-24 min-w-0 rounded-lg border border-slate-300 px-2 py-1.5 text-xs\" placeholder=\"維度名稱\" value=\"" + escapeAttr(label || "") + "\" />" +
+          "<input type=\"text\" class=\"variant-dim-options flex-1 min-w-[160px] rounded-lg border border-slate-300 px-2 py-1.5 text-sm\" placeholder=\"選項用逗號分隔，例：酷洛米,美樂蒂,大耳狗\" value=\"" + escapeAttr(options || "") + "\" />" +
+          "<button type=\"button\" class=\"variant-dim-remove shrink-0 px-2 py-1.5 rounded-lg border border-slate-300 text-slate-500 text-xs hover:bg-white\" title=\"移除維度\">✕</button>";
+        bindVariantDimRow_(row);
+        return row;
+      }
+
+      function resetVariantDimBuilder_() {
+        var container = document.getElementById("variantDimContainer");
+        if (!container) return;
+        container.innerHTML = "";
+        container.appendChild(createVariantDimRow_("", ""));
+        updateVariantComboPreview_();
+      }
+
+      function inferVariantDimsFromExisting_(variantStr) {
+        var parts = String(variantStr || "").split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
+        var container = document.getElementById("variantDimContainer");
+        if (!container || !parts.length) return;
+
+        var tokens = parts.map(function(p) { return p.split(/\s+/).filter(Boolean); });
+        var len = tokens[0] ? tokens[0].length : 0;
+        var uniform = len > 1 && tokens.every(function(t) { return t.length === len; });
+
+        container.innerHTML = "";
+        if (uniform) {
+          for (var i = 0; i < len; i++) {
+            var seen = {};
+            var opts = [];
+            tokens.forEach(function(t) {
+              var v = t[i];
+              if (v && !seen[v]) { seen[v] = true; opts.push(v); }
+            });
+            var label = len === 2 ? (i === 0 ? "規格1" : "規格2") : ("規格" + (i + 1));
+            container.appendChild(createVariantDimRow_(label, opts.join(",")));
+          }
+        } else if (parts.length >= 1 && parts.every(function(p) { return p.indexOf(" ") < 0; })) {
+          container.appendChild(createVariantDimRow_("規格", parts.join(",")));
+        } else {
+          container.appendChild(createVariantDimRow_("", ""));
+        }
+        updateVariantComboPreview_();
+      }
+
+      function generateVariantCombinationsFromDims_(opts) {
+        opts = opts || {};
+        var dims = collectVariantDims_();
+        if (!dims.length) {
+          if (!opts.silent) showMessage("請至少在一個維度填寫選項（逗號分隔）", true);
+          return 0;
+        }
+        var optionLists = dims.map(function(d) { return d.options; });
+        var combos = cartesianCombine_(optionLists);
+        if (!combos.length) {
+          if (!opts.silent) showMessage("無法產生組合，請檢查各維度選項", true);
+          return 0;
+        }
+        if (combos.length > 80 && !opts.force) {
+          if (!confirm("將產生 " + combos.length + " 筆規格組合，數量較多，確定繼續？")) return 0;
+        }
+        var prev = snapshotVariantRows_();
+        var names = combos.map(function(parts) { return formatVariantComboName_(parts); });
+        var urls = names.map(function(n) { return (prev[n] && prev[n].url) ? prev[n].url : ""; });
+        var qtys = names.map(function(n) {
+          if (prev[n] && prev[n].qty !== "" && prev[n].qty != null) return prev[n].qty;
+          return "";
+        });
+        renderVariantList(names.join(", "), urls.join(", "), qtys.join(", "));
+        if (!opts.silent) showMessage("已自動生成 " + names.length + " 筆規格組合");
+        return names.length;
+      }
+
       function syncVariantToHidden() {
         var container = document.getElementById("variantListContainer");
         var form = document.getElementById("productForm");
@@ -2950,6 +3139,7 @@
         var marginSel = document.getElementById("marginPercentSelect");
         if (marginSel) marginSel.value = "";
         renderVariantList("", "", "");
+        resetVariantDimBuilder_();
         updateSubcategoryOptions("");
         var preview = document.getElementById("productImagePreview");
         var previewPh = document.getElementById("productImagePreviewPlaceholder");
@@ -2977,11 +3167,13 @@
           var el = form.querySelector("[name=" + key + "]");
           if (el) el.checked = (obj[key] === "Y" || obj[key] === true || obj[key] === "1");
         });
+        var variantStrEdit = obj && obj.variant != null ? obj.variant : "";
         renderVariantList(
-          obj && obj.variant != null ? obj.variant : "",
+          variantStrEdit,
           obj && obj.variantImages != null ? obj.variantImages : "",
           sanitizeVariantStockString(obj && obj.variantStock != null ? obj.variantStock : "")
         );
+        if (fromEdit && variantStrEdit) inferVariantDimsFromExisting_(variantStrEdit);
         var mainStockVal = obj && (obj.stock !== undefined && obj.stock !== null && obj.stock !== "" ? obj.stock : (obj.Stock !== undefined && obj.Stock !== null && obj.Stock !== "" ? obj.Stock : obj.庫存));
         var hasVariantStock = obj && sanitizeVariantStockString(obj.variantStock || "") !== "";
         if (mainStockVal !== undefined && mainStockVal !== null && mainStockVal !== "" && !hasVariantStock) {
@@ -3289,6 +3481,24 @@
       if (productFormRateInp) {
         productFormRateInp.addEventListener("change", saveRateFromInput);
         productFormRateInp.addEventListener("blur", saveRateFromInput);
+      }
+
+      resetVariantDimBuilder_();
+
+      var btnAddVariantDim = document.getElementById("btnAddVariantDim");
+      if (btnAddVariantDim) {
+        btnAddVariantDim.addEventListener("click", function() {
+          var container = document.getElementById("variantDimContainer");
+          if (!container) return;
+          container.appendChild(createVariantDimRow_("", ""));
+          updateVariantComboPreview_();
+        });
+      }
+      var btnGenerateVariantCombos = document.getElementById("btnGenerateVariantCombos");
+      if (btnGenerateVariantCombos) {
+        btnGenerateVariantCombos.addEventListener("click", function() {
+          generateVariantCombinationsFromDims_();
+        });
       }
 
       var btnAddVariant = document.getElementById("btnAddVariant");
