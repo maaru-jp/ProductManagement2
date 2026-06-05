@@ -387,12 +387,22 @@
         </div>
 
         <div id="orderMessage" class="mb-3 text-sm hidden"></div>
-        <div class="mb-4 rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
-          <p class="font-semibold text-sky-900">訂單合併與紅利點數（兩種做法）</p>
-          <p><strong>做法 A｜同一訂單編號：</strong>用「追加」把新清單併入原單，適合最後一起出貨、一張帳單結清。<span class="text-amber-800">請等全部併完再改「已確認」</span>，否則紅利已處理後再追加，不會自動補發差額點數。</p>
-          <p><strong>做法 B｜不同訂單編號：</strong>同顧客開新單（ORD00002…），適合分次下單／分次出貨。點客戶旁的 <strong>總覽</strong> 可一次查看；顧客也可在官網 <strong>我的訂單</strong> 自行查歷史紀錄。</p>
+        <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
+          <p class="font-semibold text-emerald-900">建議訂單流程（狀態 · PDF · 紅利）</p>
+          <ol class="list-decimal list-inside space-y-1.5 ml-0.5">
+            <li><strong>待處理</strong> — 建立訂單、編輯品項與金額</li>
+            <li><strong>已確認</strong> — 接單且金額定案 → <span class="text-amber-800 font-semibold">自動發放／折抵紅利（每筆僅一次）</span>；同步試算表後顧客可查點數</li>
+            <li><strong>出貨中</strong> — 備貨／安排出貨（選用，不影響紅利）</li>
+            <li><strong>產生 PDF</strong> — 出貨明細給客人（可多次；<span class="font-medium">不會</span>自動發點）</li>
+            <li><strong>已完成</strong> — 結案归档（若已在「已確認」發過點，<span class="font-medium">不會</span>再發第二次）</li>
+          </ol>
+          <p class="text-amber-800 border-t border-emerald-200/80 pt-2"><strong>速記：</strong>已確認＝發點 · PDF／出貨中＝出貨 · 已完成＝結案</p>
         </div>
-        <p class="mb-3 text-xs text-slate-500">每筆訂單右側「操作」欄可點 <strong>產生 PDF</strong>，列印時選擇「另存為 PDF」即可下載客人訂單 PDF。</p>
+        <div class="mb-4 rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
+          <p class="font-semibold text-sky-900">訂單合併與紅利（追加商品時）</p>
+          <p><strong>做法 A｜同一訂單編號：</strong>用「追加」併入原單。<span class="text-amber-800">請等全部併完再改「已確認」</span>，否則發點後再追加，不會自動補發差額點數。</p>
+          <p><strong>做法 B｜不同訂單編號：</strong>同顧客開新單，適合分次下單／分次出貨。點客戶旁 <strong>總覽</strong> 或請顧客至官網 <strong>我的訂單</strong> 查詢。</p>
+        </div>
 
         <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div class="overflow-x-auto">
@@ -415,11 +425,11 @@
           </div>
         </div>
 
-        <div class="mt-6 p-4 rounded-lg bg-rose-50 border border-rose-100 flex items-start gap-3">
-          <span class="text-rose-500 text-lg">💡</span>
-          <div class="text-sm text-slate-700">
-            <p>狀態開關：關閉＝下架（顧客頁不顯示），開啟＝上架（顧客頁顯示）。切換開關後請按右上方「儲存所有變更」才會寫入試算表並生效。試算表商品工作表第一列需有「狀態」欄位（或「上架狀態」），儲存時才會寫入。</p>
-            <p class="mt-2">若要產生客人訂單 PDF：在每筆訂單最右側「操作」欄點 <strong>產生 PDF</strong>，在跳出的列印視窗中選擇「另存為 PDF」即可。</p>
+        <div class="mt-6 p-4 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-3">
+          <span class="text-slate-500 text-lg">💡</span>
+          <div class="text-sm text-slate-700 space-y-2">
+            <p><strong>產生 PDF：</strong>每筆訂單「操作」欄 → 列印視窗選「另存為 PDF」。僅含「待出貨」品項，供客人出貨明細，<strong>不會</strong>觸發紅利發放。</p>
+            <p><strong>狀態與紅利：</strong><strong>已確認</strong>＝發點（建議金額定案後再改）· <strong>出貨中／PDF</strong>＝出貨作業 · <strong>已完成</strong>＝結案（不重複發點）。</p>
           </div>
         </div>
       </section>
@@ -434,32 +444,25 @@
           <button type="button" id="btnSyncPointsSheet" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">同步至試算表</button>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <div class="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5">
-            <p class="text-xs font-medium text-amber-800/70 uppercase tracking-wide mb-1">集點規則</p>
-            <p class="text-2xl font-bold text-amber-900">NT$ 100 → 1 點</p>
-            <p class="text-sm text-slate-600 mt-2">依商品小計 − 折扣 − 紅利折抵計算<br><span class="text-xs text-slate-500">不含運費、不含預購訂金（非待結清總金額）</span></p>
-          </div>
-          <div class="rounded-xl border border-rose-200 bg-gradient-to-br from-rose-50 to-white p-5">
-            <p class="text-xs font-medium text-rose-800/70 uppercase tracking-wide mb-1">折抵規則</p>
-            <p class="text-2xl font-bold text-rose-900">1 點 = NT$ 1</p>
-            <p class="text-sm text-slate-600 mt-2">商品淨額須滿 NT$199 才可折抵 · 折抵上限為該筆商品淨額</p>
-          </div>
-          <div class="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5">
-            <p class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">有效期限</p>
-            <p class="text-2xl font-bold text-slate-800">365 天</p>
-            <p class="text-sm text-slate-600 mt-2">到期未使用自動失效（先到期先扣）</p>
-          </div>
+        <div class="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5 mb-6">
+          <p class="text-sm font-semibold text-amber-900 mb-3">集點規則</p>
+          <ul class="text-sm text-slate-700 space-y-2 list-none">
+            <li>消費滿 NT$100 集 1 點（不含運費）</li>
+            <li>1 點可折抵 NT$1（下一次消費須滿 NT$199 才可折抵）</li>
+            <li>點數自發放日起 365 天內有效</li>
+          </ul>
         </div>
 
         <div class="rounded-xl border border-slate-200 bg-white p-5 mb-6">
           <h3 class="text-sm font-semibold text-slate-800 mb-3">發點時機</h3>
-          <p class="text-sm text-slate-600">訂單狀態改為 <strong>已確認</strong> 或 <strong>已完成</strong> 時，依<strong>客戶姓名</strong>自動發放／折抵紅利（每筆訂單僅處理一次）。</p>
-          <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
-            <strong>顧客官網查點數</strong>是讀取試算表「紅利紀錄」。後台發點後請按右上角 <strong>同步至試算表</strong>，顧客頁才會顯示相同餘額。
+          <p class="text-sm text-slate-600"><strong>主要：</strong>訂單改為 <strong>已確認</strong> 時，依會員卡號自動發放／折抵紅利（每筆訂單僅處理一次）。請在品項與金額定案後再改狀態，顧客較早可查點數。</p>
+          <p class="text-sm text-slate-600 mt-2"><strong>備用：</strong>若從未改過「已確認」、直接改 <strong>已完成</strong>，也會發點一次，但不會重複發放。</p>
+          <p class="text-sm text-slate-600 mt-2"><strong>不發點：</strong>「產生 PDF」、狀態「出貨中」本身<strong>不會</strong>觸發紅利；「已完成」僅作結案，若已在「已確認」發過點則不再發。</p>
+          <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+            <strong>顧客官網查點數</strong>讀取試算表「紅利紀錄」。狀態改「已確認」後系統會嘗試自動同步；若顧客查不到，請至本頁按 <strong>同步至試算表</strong>。
           </p>
           <div class="flex flex-wrap gap-2 mt-3">
-            <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理已完成訂單紅利</button>
+            <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理未發點訂單</button>
             <button type="button" id="btnLoyaltyExpireAll" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">執行到期失效檢查</button>
             <button type="button" id="btnLoyaltyReload" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">重新載入</button>
           </div>
@@ -1314,7 +1317,7 @@
                 <span class="text-sm font-medium text-amber-900">⭐ 紅利點數</span>
                 <span class="text-xs text-amber-800">可用：<strong id="orderPointsBalance">0</strong> 點</span>
               </div>
-              <p class="text-[11px] text-amber-900/70">集點：小計−折扣−紅利（不含運費、訂金）· 折抵滿 NT$199 · 1 點=NT$1 · 365 天有效</p>
+              <p class="text-[11px] text-amber-900/70">消費滿 NT$100 集 1 點（不含運費）· 1 點折 NT$1（下次滿 NT$199 可折）· 365 天有效</p>
               <div class="flex flex-wrap items-center gap-2">
                 <label class="inline-flex items-center gap-2">
                   <input type="checkbox" id="orderUsePointsCheck" class="rounded border-amber-300" />
@@ -1324,7 +1327,7 @@
                 <span class="text-sm text-slate-600">點（- NT$ <span id="orderPointsDiscountAmount">0</span>）</span>
                 <button type="button" id="btnOrderPointsMax" class="px-2 py-1 rounded border border-amber-300 text-xs text-amber-800 hover:bg-amber-100">全部折抵</button>
               </div>
-              <p class="text-xs text-slate-600">預估本次可獲得：<strong id="orderPointsEarnPreview">0</strong> 點（訂單「已確認／已完成」時發放）</p>
+              <p class="text-xs text-slate-600">預估本次可獲得：<strong id="orderPointsEarnPreview">0</strong> 點（改為「<strong>已確認</strong>」時發放；PDF／出貨中不發點）</p>
               <p class="text-[11px] text-slate-500">集點基準：<strong id="orderPointsEarnBase">NT$0</strong>（小計−折扣−紅利，不含運費與預購訂金）</p>
               <p id="orderPointsHint" class="text-xs text-amber-800 hidden"></p>
               <p id="orderPointsProcessedHint" class="text-xs text-rose-600 hidden">此訂單紅利已處理，無法再修改折抵點數</p>
@@ -1364,7 +1367,7 @@
             <div class="rounded-lg border border-slate-200 bg-white p-3">
               <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
                 <p class="text-xs text-slate-500">
-                  設定每個品項的出貨狀態；點「產生 PDF」時只會包含「待出貨」品項（並自動標記為「已出貨」）。
+                  設定品項出貨狀態；「產生 PDF」只含「待出貨」品項（並標記為已出貨）。此為出貨明細，<strong>不會</strong>觸發紅利發放。
                 </p>
                 <button type="button" id="btnOrderItemsAdd" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-xs hover:bg-slate-50">+ 新增品項</button>
               </div>
@@ -5935,7 +5938,7 @@
               var ord = orders.find(function(o) { return o.id === pasteOrderAppendOrderId; });
               if (ord) {
                 if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) {
-                  if (!confirm("此訂單紅利已處理（已確認／已完成）。追加商品後不會自動補發差額點數。\n\n若需分次集點，建議改開新訂單並填相同客戶姓名；若仍要併入本單請按「確定」。")) return;
+                  if (!confirm("此訂單紅利已處理（改「已確認」時已發點）。追加商品後不會自動補發差額點數。\n\n若需分次集點，建議改開新訂單並填相同客戶姓名；若仍要併入本單請按「確定」。")) return;
                 }
                 var newItems = window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) ? window.__lastPastedOrderItems : [];
                 ord.items = (ord.items && Array.isArray(ord.items) ? ord.items : []).concat(newItems);
