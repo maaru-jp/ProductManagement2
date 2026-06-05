@@ -466,11 +466,24 @@
           <p id="loyaltyMessage" class="mt-3 text-sm text-slate-500 hidden"></p>
         </div>
 
+        <div class="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5 mb-6">
+          <h3 class="text-sm font-semibold text-slate-800 mb-2">查詢客戶會員卡號</h3>
+          <p class="text-xs text-slate-500 mb-3">依訂單資料查詢，可輸入客戶姓名、電話或卡號（部分關鍵字即可）</p>
+          <div class="flex flex-wrap gap-2 items-end">
+            <div class="flex-1 min-w-[220px]">
+              <label class="block text-xs text-slate-500 mb-1">客戶姓名、電話或卡號</label>
+              <input type="text" id="loyaltyCardLookupInput" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：王小明 或 0912" />
+            </div>
+            <button type="button" id="btnLoyaltyCardLookup" class="px-4 py-2 rounded-lg bg-sky-600 text-white text-sm hover:bg-sky-700">查詢卡號</button>
+          </div>
+          <div id="loyaltyCardLookupResult" class="mt-3 hidden"></div>
+        </div>
+
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
           <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
             <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
               <h3 class="text-sm font-semibold text-slate-800">會員餘額</h3>
-              <input type="text" id="loyaltySearchInput" placeholder="搜尋卡號或姓名" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-44" />
+              <input type="text" id="loyaltySearchInput" placeholder="搜尋卡號、姓名或電話" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-44" />
             </div>
             <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
               <table class="w-full text-sm">
@@ -1227,7 +1240,7 @@
                   <input type="text" id="orderMemberCardNo" maxlength="13" inputmode="numeric" pattern="\d{13}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" placeholder="13 碼純數字（顧客查詢訂單／紅利用）" />
                   <button type="button" id="btnGenerateMemberCard" class="shrink-0 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50">自動產生</button>
                 </div>
-                <p class="text-xs text-slate-400 mt-1">每位顧客唯一卡號；同姓名舊客會沿用原卡號，新客可按「自動產生」</p>
+                <p class="text-xs text-slate-400 mt-1">每位顧客唯一卡號；同客戶或編輯原訂單時按「自動產生」會沿用原卡號，新客才產生新卡號</p>
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-500 mb-1">客戶姓名</label>
@@ -4141,16 +4154,100 @@
             });
         }
 
+        function loadAdminOrdersForLoyalty_() {
+          try {
+            var saved = localStorage.getItem("adminOrders");
+            if (saved) {
+              var list = JSON.parse(saved);
+              return Array.isArray(list) ? list : [];
+            }
+          } catch (e) {}
+          return [];
+        }
+
+        function customerMatchesLoyaltyQuery_(c, q, qDigits) {
+          if (!q) return true;
+          if ((c.memberCardNo || "").toLowerCase().indexOf(q) >= 0) return true;
+          if (qDigits.length >= 4 && (c.memberCardNo || "").indexOf(qDigits) >= 0) return true;
+          if ((c.customerName || "").toLowerCase().indexOf(q) >= 0) return true;
+          if ((c.phone || "").toLowerCase().indexOf(q) >= 0) return true;
+          if (qDigits.length >= 4 && String(c.phone || "").replace(/\D/g, "").indexOf(qDigits) >= 0) return true;
+          if ((c.lineId || "").toLowerCase().indexOf(q) >= 0) return true;
+          return false;
+        }
+
+        function renderLoyaltyCardLookupResult_(query) {
+          var box = document.getElementById("loyaltyCardLookupResult");
+          if (!box) return;
+          query = String(query || "").trim();
+          if (!query) {
+            box.classList.add("hidden");
+            box.innerHTML = "";
+            return;
+          }
+          var orders = loadAdminOrdersForLoyalty_();
+          var rows = [];
+          if (window.MaaruMemberCard && MaaruMemberCard.lookupMembersByQuery) {
+            rows = MaaruMemberCard.lookupMembersByQuery(orders, query);
+          }
+          if (!rows.length) {
+            box.classList.remove("hidden");
+            box.innerHTML = "<p class=\"text-sm text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2\">找不到符合「" + escapeHtmlLoyalty(query) + "」的訂單客戶。請確認訂單是否已填寫會員卡號，或至訂單管理新增／編輯該客戶訂單。</p>";
+            return;
+          }
+          box.classList.remove("hidden");
+          box.innerHTML =
+            "<div class=\"overflow-x-auto rounded-lg border border-sky-100 bg-white\">" +
+            "<table class=\"w-full text-sm\"><thead class=\"bg-sky-50\"><tr>" +
+            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">客戶姓名</th>" +
+            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">會員卡號</th>" +
+            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">電話</th>" +
+            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">紅利餘額</th>" +
+            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">操作</th>" +
+            "</tr></thead><tbody>" +
+            rows.map(function(row) {
+              var card = row.memberCardNo || "";
+              var balance = card && MaaruLoyalty ? MaaruLoyalty.getBalance(card, row.customerName, row.phone, row.lineId) : 0;
+              var cardHtml = card
+                ? "<span class=\"font-mono text-xs tracking-wider text-slate-800\">" + escapeHtmlLoyalty(card) + "</span>"
+                : "<span class=\"text-amber-700 text-xs\">尚無卡號（請至訂單編輯並儲存以自動產生）</span>";
+              var copyBtn = card
+                ? "<button type=\"button\" class=\"loyalty-copy-card text-xs text-sky-700 hover:underline\" data-card=\"" + escapeHtmlLoyalty(card) + "\">複製卡號</button>"
+                : "—";
+              return "<tr class=\"border-b border-slate-100\">" +
+                "<td class=\"py-2 px-3 font-medium text-slate-800\">" + escapeHtmlLoyalty(row.customerName || "（未填姓名）") + "</td>" +
+                "<td class=\"py-2 px-3\">" + cardHtml + "</td>" +
+                "<td class=\"py-2 px-3 text-slate-600\">" + escapeHtmlLoyalty(row.phone || "—") + "</td>" +
+                "<td class=\"py-2 px-3 font-semibold text-amber-700\">" + balance + " 點</td>" +
+                "<td class=\"py-2 px-3\">" + copyBtn + "</td></tr>";
+            }).join("") +
+            "</tbody></table></div>";
+          box.querySelectorAll(".loyalty-copy-card").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+              var card = btn.getAttribute("data-card") || "";
+              if (!card) return;
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(card).then(function() {
+                  showLoyaltyMessage("已複製卡號 " + card);
+                }).catch(function() {
+                  showLoyaltyMessage("複製失敗，請手動複製", true);
+                });
+              } else {
+                showLoyaltyMessage("卡號：" + card);
+              }
+            });
+          });
+        }
+
         function renderLoyaltyPanel() {
           MaaruLoyalty.runGlobalExpiry();
           var q = (document.getElementById("loyaltySearchInput") && document.getElementById("loyaltySearchInput").value || "").trim().toLowerCase();
-          var customers = MaaruLoyalty.summarizeCustomers();
+          var qDigits = q.replace(/\D/g, "");
+          var orders = loadAdminOrdersForLoyalty_();
+          var customers = MaaruLoyalty.summarizeCustomersWithOrders(MaaruLoyalty.getLedger(), orders);
           if (q) {
             customers = customers.filter(function(c) {
-              return (c.memberCardNo || "").toLowerCase().indexOf(q) >= 0
-                || (c.customerName || "").toLowerCase().indexOf(q) >= 0
-                || (c.phone || "").toLowerCase().indexOf(q) >= 0
-                || (c.lineId || "").toLowerCase().indexOf(q) >= 0;
+              return customerMatchesLoyaltyQuery_(c, q, qDigits);
             });
           }
           var custBody = document.getElementById("loyaltyCustomerBody");
@@ -4226,6 +4323,25 @@
         });
         var searchInp = document.getElementById("loyaltySearchInput");
         if (searchInp) searchInp.addEventListener("input", renderLoyaltyPanel);
+        var cardLookupInp = document.getElementById("loyaltyCardLookupInput");
+        var btnCardLookup = document.getElementById("btnLoyaltyCardLookup");
+        function runLoyaltyCardLookup_() {
+          var query = cardLookupInp ? cardLookupInp.value : "";
+          renderLoyaltyCardLookupResult_(query);
+          if (searchInp && query.trim()) {
+            searchInp.value = query.trim();
+            renderLoyaltyPanel();
+          }
+        }
+        if (btnCardLookup) btnCardLookup.addEventListener("click", runLoyaltyCardLookup_);
+        if (cardLookupInp) {
+          cardLookupInp.addEventListener("keydown", function(e) {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              runLoyaltyCardLookup_();
+            }
+          });
+        }
         var loyaltyCardInputEl = document.getElementById("loyaltyAdjustCard");
         if (loyaltyCardInputEl) {
           loyaltyCardInputEl.addEventListener("input", function() {
@@ -5828,7 +5944,26 @@
               draft.memberCardNo = "";
               var card = resolveOrderMemberCardForSave_(draft, editId);
               fillOrderMemberCard_(card);
-              showOrderMessage("已產生會員卡號：" + card);
+              var msg = "已產生會員卡號：" + card;
+              if (editId) {
+                var editKey = String(editId).trim().toUpperCase();
+                for (var oi = 0; oi < orders.length; oi++) {
+                  var ord = orders[oi];
+                  if (!ord || String(ord.id || "").trim().toUpperCase() !== editKey) continue;
+                  var savedCard = window.MaaruMemberCard
+                    ? MaaruMemberCard.normalizeMemberCardNo(ord.memberCardNo)
+                    : String(ord.memberCardNo || "").replace(/\D/g, "").slice(0, 13);
+                  if (window.MaaruLoyalty && MaaruLoyalty.isValidMemberCardNo(savedCard) && savedCard === card) {
+                    msg = "已沿用此訂單原卡號：" + card;
+                  }
+                  break;
+                }
+              }
+              if (msg.indexOf("已沿用此訂單") < 0 && window.MaaruMemberCard && MaaruMemberCard.findMemberCardForCustomer) {
+                var reused = MaaruMemberCard.findMemberCardForCustomer(orders, draft.customerName, draft.phone, draft.lineId, editId);
+                if (reused && reused === card) msg = "已沿用客戶原卡號：" + card;
+              }
+              showOrderMessage(msg);
             } catch (err) {
               showOrderMessage(err.message || "產生失敗", true);
             }
