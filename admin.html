@@ -429,7 +429,7 @@
 
         <div class="rounded-xl border border-slate-200 bg-white p-5 mb-6">
           <h3 class="text-sm font-semibold text-slate-800 mb-3">發點時機</h3>
-          <p class="text-sm text-slate-600">訂單狀態改為 <strong>已確認</strong> 或 <strong>已完成</strong> 時，系統自動發放／折抵紅利（每筆訂單僅處理一次）。</p>
+          <p class="text-sm text-slate-600">訂單狀態改為 <strong>已確認</strong> 或 <strong>已完成</strong> 時，依<strong>客戶姓名</strong>自動發放／折抵紅利（每筆訂單僅處理一次）。</p>
           <div class="flex flex-wrap gap-2 mt-3">
             <button type="button" id="btnLoyaltyExpireAll" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">執行到期失效檢查</button>
             <button type="button" id="btnLoyaltyReload" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">重新載入</button>
@@ -441,13 +441,13 @@
           <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
             <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
               <h3 class="text-sm font-semibold text-slate-800">會員餘額</h3>
-              <input type="text" id="loyaltySearchInput" placeholder="搜尋姓名／電話／Line" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-44" />
+              <input type="text" id="loyaltySearchInput" placeholder="搜尋客戶姓名" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-44" />
             </div>
             <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
               <table class="w-full text-sm">
                 <thead class="bg-slate-50 sticky top-0">
                   <tr>
-                    <th class="text-left py-2 px-3 font-medium text-slate-600">客戶</th>
+                    <th class="text-left py-2 px-3 font-medium text-slate-600">客戶姓名</th>
                     <th class="text-left py-2 px-3 font-medium text-slate-600">可用點數</th>
                     <th class="text-left py-2 px-3 font-medium text-slate-600">最近到期</th>
                   </tr>
@@ -462,19 +462,19 @@
           <div class="rounded-xl border border-slate-200 bg-white p-4">
             <h3 class="text-sm font-semibold text-slate-800 mb-3">手動調整點數</h3>
             <form id="loyaltyAdjustForm" class="space-y-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">客戶姓名 <span class="text-rose-500">*</span></label>
+                <input type="text" id="loyaltyAdjustName" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="與訂單姓名一致" />
+              </div>
               <div class="grid grid-cols-2 gap-3">
                 <div>
-                  <label class="block text-xs text-slate-500 mb-1">電話</label>
+                  <label class="block text-xs text-slate-500 mb-1">電話（選填）</label>
                   <input type="text" id="loyaltyAdjustPhone" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                 </div>
                 <div>
-                  <label class="block text-xs text-slate-500 mb-1">Line ID</label>
+                  <label class="block text-xs text-slate-500 mb-1">Line ID（選填）</label>
                   <input type="text" id="loyaltyAdjustLineId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                 </div>
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">姓名</label>
-                <input type="text" id="loyaltyAdjustName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
               </div>
               <div>
                 <label class="block text-xs text-slate-500 mb-1">調整點數（正數增加、負數扣除）</label>
@@ -3551,7 +3551,8 @@
             } else {
               custBody.innerHTML = customers.map(function(c) {
                 var exp = c.nextExpireDate ? (c.nextExpireDate + "（" + c.nextExpirePoints + "點）") : "—";
-                return "<tr class=\"border-b border-slate-100\"><td class=\"py-2 px-3\">" + escapeHtmlLoyalty(c.customerName || "—") + "<br><span class=\"text-xs text-slate-400\">" + escapeHtmlLoyalty(c.phone || c.lineId || "") + "</span></td>" +
+                var displayName = c.customerName || (c.key && c.key.indexOf("N:") === 0 ? c.key.slice(2) : "") || c.phone || c.lineId || "—";
+                return "<tr class=\"border-b border-slate-100\"><td class=\"py-2 px-3 font-medium\">" + escapeHtmlLoyalty(displayName) + "</td>" +
                   "<td class=\"py-2 px-3 font-semibold text-amber-700\">" + (c.balance || 0) + "</td>" +
                   "<td class=\"py-2 px-3 text-xs text-slate-500\">" + escapeHtmlLoyalty(exp) + "</td></tr>";
               }).join("");
@@ -3810,9 +3811,10 @@
 
         function refreshOrderPointsPanel_(processedFlag) {
           if (!window.MaaruLoyalty) return;
+          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
           var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
           var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-          var balance = MaaruLoyalty.getBalance(phone, lineId);
+          var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
           var balEl = document.getElementById("orderPointsBalance");
           if (balEl) balEl.textContent = String(balance);
           var processed = processedFlag === true || processedFlag === "Y";
@@ -4725,7 +4727,7 @@
           });
         }
 
-        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount", "orderDepositAmount", "orderShippingStatusCoupon", "orderPhone", "orderLineId", "orderPointsUsed"].forEach(function(id) {
+        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount", "orderDepositAmount", "orderShippingStatusCoupon", "orderCustomerName", "orderPhone", "orderLineId", "orderPointsUsed"].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) { el.addEventListener("input", updateOrderTotal); el.addEventListener("change", updateOrderTotal); }
         });
@@ -4733,10 +4735,11 @@
         if (usePtsCheckEl) usePtsCheckEl.addEventListener("change", updateOrderTotal);
         var btnPtsMax = document.getElementById("btnOrderPointsMax");
         if (btnPtsMax) btnPtsMax.addEventListener("click", function() {
+          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
           var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
           var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
           if (!window.MaaruLoyalty) return;
-          var balance = MaaruLoyalty.getBalance(phone, lineId);
+          var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
           var subtotal = Number(document.getElementById("orderSubtotal").value) || 0;
           var draft = { subtotal: subtotal, discount: 0, pointsUsed: 0 };
           var maxPts = MaaruLoyalty.calcMaxRedeemPoints(draft, balance);
