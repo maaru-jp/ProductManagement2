@@ -54,15 +54,31 @@
     throw new Error("無法產生唯一會員卡號，請稍後再試");
   }
 
+  function normalizeCustomerName(name) {
+    return String(name || "").trim().replace(/\s+/g, "");
+  }
+
+  function normalizePhone(phone) {
+    return String(phone || "").replace(/\D/g, "");
+  }
+
+  function isSameCustomerProfile(nameA, phoneA, nameB, phoneB) {
+    var na = normalizeCustomerName(nameA);
+    var nb = normalizeCustomerName(nameB);
+    if (na && nb) return na === nb;
+    if (na || nb) return false;
+    var pa = normalizePhone(phoneA);
+    var pb = normalizePhone(phoneB);
+    return !!(pa && pb && pa === pb);
+  }
+
   function findMemberCardForCustomer(orders, customerName, phone, lineId, excludeOrderId) {
-    var normalizeName = function (name) {
-      return String(name || "").trim().replace(/\s+/g, "");
-    };
-    var normalizePhone = function (p) {
+    var normalizeName = normalizeCustomerName;
+    var normalizePhoneLocal = function (p) {
       return String(p || "").replace(/\D/g, "");
     };
     var n = normalizeName(customerName);
-    var p = normalizePhone(phone);
+    var p = normalizePhoneLocal(phone);
     var exclude = String(excludeOrderId || "").trim().toUpperCase();
     for (var i = 0; i < (orders || []).length; i++) {
       var ord = orders[i];
@@ -71,9 +87,91 @@
       var card = normalizeMemberCardNo(ord.memberCardNo);
       if (!isValidMemberCardNo(card)) continue;
       if (n && normalizeName(ord.customerName) === n) return card;
-      if (!n && p && normalizePhone(ord.phone) === p) return card;
+      if (!n && p && normalizePhoneLocal(ord.phone) === p) return card;
     }
     return "";
+  }
+
+  function validateMemberCardAssignment(card, orders, ledger, customerName, phone, excludeOrderId) {
+    var c = normalizeMemberCardNo(card);
+    if (!isValidMemberCardNo(c)) {
+      return { ok: false, conflict: false, incomplete: true, sameCustomerReuse: false, message: "" };
+    }
+    var exclude = String(excludeOrderId || "").trim().toUpperCase();
+    var usages = [];
+
+    (orders || []).forEach(function (ord) {
+      if (!ord) return;
+      if (exclude && String(ord.id || "").trim().toUpperCase() === exclude) return;
+      if (normalizeMemberCardNo(ord.memberCardNo) !== c) return;
+      usages.push({
+        source: "order",
+        orderId: ord.id || "",
+        customerName: ord.customerName || "",
+        phone: ord.phone || "",
+      });
+    });
+
+    var ledgerSeen = {};
+    (ledger || []).forEach(function (rec) {
+      if (!rec) return;
+      if (normalizeMemberCardNo(rec.memberCardNo) !== c) return;
+      var key = normalizeCustomerName(rec.customerName) + "|" + normalizePhone(rec.phone);
+      if (ledgerSeen[key]) return;
+      ledgerSeen[key] = true;
+      var covered = usages.some(function (u) {
+        return isSameCustomerProfile(u.customerName, u.phone, rec.customerName, rec.phone);
+      });
+      if (!covered) {
+        usages.push({
+          source: "ledger",
+          orderId: rec.orderId || "",
+          customerName: rec.customerName || "",
+          phone: rec.phone || "",
+        });
+      }
+    });
+
+    if (!usages.length) {
+      return { ok: true, conflict: false, incomplete: false, sameCustomerReuse: false, message: "" };
+    }
+
+    var allSame = usages.every(function (u) {
+      return isSameCustomerProfile(customerName, phone, u.customerName, u.phone);
+    });
+    if (allSame) {
+      return {
+        ok: true,
+        conflict: false,
+        incomplete: false,
+        sameCustomerReuse: true,
+        message: "此卡號為同客戶既有卡號，可沿用。",
+        usages: usages,
+      };
+    }
+
+    var other = usages.find(function (u) {
+      return !isSameCustomerProfile(customerName, phone, u.customerName, u.phone);
+    }) || usages[0];
+    var ownerLabel = (other.customerName || "（未填姓名）") + (other.phone ? "（" + other.phone + "）" : "");
+    var sourceLabel = other.source === "order" && other.orderId
+      ? "訂單 " + other.orderId
+      : other.source === "ledger"
+        ? "紅利紀錄"
+        : "";
+    return {
+      ok: false,
+      conflict: true,
+      incomplete: false,
+      sameCustomerReuse: false,
+      message:
+        "此卡號與其他顧客重複！已被「" +
+        ownerLabel +
+        "」" +
+        (sourceLabel ? "（" + sourceLabel + "）" : "") +
+        "使用。請勿與他人共用卡號，可改按「自動產生」取得正確卡號。",
+      usages: usages,
+    };
   }
 
   function isMemberCardTaken(card, orders, ledger, excludeOrderId) {
@@ -161,9 +259,15 @@
     var editId = order.id || "";
     var card = normalizeMemberCardNo(order.memberCardNo);
     if (isValidMemberCardNo(card)) {
-      if (isMemberCardTaken(card, orders, ledger, editId)) {
-        throw new Error("會員卡號 " + card + " 已被其他顧客使用");
-      }
+      var check = validateMemberCardAssignment(
+        card,
+        orders,
+        ledger,
+        order.customerName,
+        order.phone,
+        editId
+      );
+      if (!check.ok && check.conflict) throw new Error(check.message);
       return card;
     }
     if (editId) {
@@ -201,6 +305,8 @@
     collectUsedMemberCardsFromOrders: collectUsedMemberCardsFromOrders,
     findMemberCardForCustomer: findMemberCardForCustomer,
     lookupMembersByQuery: lookupMembersByQuery,
+    isSameCustomerProfile: isSameCustomerProfile,
+    validateMemberCardAssignment: validateMemberCardAssignment,
     isMemberCardTaken: isMemberCardTaken,
     ensureOrderMemberCard: ensureOrderMemberCard,
   };
