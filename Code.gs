@@ -28,6 +28,11 @@ var CONFIG = {
  */
 function doGet(e) {
   try {
+    var params = (e && e.parameter) ? e.parameter : {};
+    var action = (params.action || "").toString().toLowerCase().trim();
+    if (action === "points_balance") {
+      return jsonOutput(getPointsBalancePublic_(params));
+    }
     var data = getApiData();
     var json = JSON.stringify(data);
     return ContentService.createTextOutput(json)
@@ -1075,4 +1080,94 @@ function syncPointsLedger(sheet, ledger) {
   if (rows.length) {
     sheet.getRange(2, 1, rows.length, colCount).setValues(rows);
   }
+}
+
+/** 顧客端公開查詢：依客戶姓名回傳可用紅利餘額（唯讀，不含完整異動明細） */
+function normalizeCustomerNameForPoints_(name) {
+  return String(name || "").trim().replace(/\s+/g, "");
+}
+
+function todayStrForPoints_() {
+  var d = new Date();
+  var m = d.getMonth() + 1;
+  var day = d.getDate();
+  return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+}
+
+function getPointRecordCustomerName_(rec) {
+  if (!rec) return "";
+  if (rec.customerName != null && String(rec.customerName).trim() !== "") return String(rec.customerName);
+  if (rec["姓名"] != null && String(rec["姓名"]).trim() !== "") return String(rec["姓名"]);
+  return "";
+}
+
+function recordMatchesCustomerForPoints_(rec, customerName) {
+  var n = normalizeCustomerNameForPoints_(customerName);
+  if (!n) return false;
+  return normalizeCustomerNameForPoints_(getPointRecordCustomerName_(rec)) === n;
+}
+
+function getActiveLotsForCustomer_(ledger, customerName) {
+  var today = todayStrForPoints_();
+  var lots = [];
+  for (var i = 0; i < ledger.length; i++) {
+    var rec = ledger[i];
+    var type = (rec.type || "").toString().trim();
+    if (type !== "發放") continue;
+    if (!recordMatchesCustomerForPoints_(rec, customerName)) continue;
+    var remaining = Number(rec.remaining);
+    if (!remaining || remaining <= 0 || isNaN(remaining)) continue;
+    var exp = rec.expireDate != null ? String(rec.expireDate).slice(0, 10) : "";
+    if (!exp || exp >= today) {
+      lots.push({
+        date: rec.date != null ? String(rec.date) : "",
+        remaining: remaining,
+        expireDate: exp
+      });
+    }
+  }
+  lots.sort(function(a, b) {
+    return String(a.date || "").localeCompare(String(b.date || ""));
+  });
+  return lots;
+}
+
+function getPointsBalancePublic_(params) {
+  var name = (params.name || params.customerName || params["姓名"] || "").toString().trim();
+  var normalized = normalizeCustomerNameForPoints_(name);
+  if (!normalized || normalized.length < 2) {
+    return { error: true, message: "請輸入至少兩個字的客戶姓名" };
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pointsSheet = getPointsSheet(ss);
+  if (!pointsSheet) {
+    return { error: true, message: "找不到紅利紀錄工作表" };
+  }
+  var ledger = getPointsLedger(pointsSheet);
+  var lots = getActiveLotsForCustomer_(ledger, name);
+  var balance = 0;
+  for (var j = 0; j < lots.length; j++) {
+    balance += Number(lots[j].remaining) || 0;
+  }
+  var nextExpireDate = "";
+  var nextExpirePoints = 0;
+  if (lots.length > 0) {
+    nextExpireDate = lots[0].expireDate || "";
+    nextExpirePoints = Number(lots[0].remaining) || 0;
+  }
+  return {
+    error: false,
+    customerName: name,
+    balance: balance,
+    pointValue: 1,
+    discountAmount: balance,
+    nextExpireDate: nextExpireDate,
+    nextExpirePoints: nextExpirePoints,
+    rules: {
+      spendPerPoint: 100,
+      pointValue: 1,
+      expireDays: 365
+    },
+    message: balance > 0 ? "OK" : "目前尚無可用紅利點數"
+  };
 }
