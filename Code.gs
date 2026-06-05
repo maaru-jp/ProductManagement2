@@ -773,7 +773,9 @@ function applyVariantDimHeadersToRow_(headers, row, product, forceWrite) {
     ["規格維度1名稱", "variantDim1Label"],
     ["規格維度1選項", "variantDim1Options"],
     ["規格維度2名稱", "variantDim2Label"],
-    ["規格維度2選項", "variantDim2Options"]
+    ["規格維度2選項", "variantDim2Options"],
+    ["規格售價", "variantPrices"],
+    ["規格台幣售價", "variantPrices"]
   ];
   for (var p = 0; p < pairs.length; p++) {
     var headerName = pairs[p][0];

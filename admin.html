@@ -2514,13 +2514,59 @@
 
       function sanitizeVariantPriceString(str) {
         if (!str || String(str).trim() === "") return "";
-        var parts = String(str).trim().split(/[,，、\s]+/);
+        var parts = String(str).trim().split(/[,，、]+/);
         var nums = [];
         for (var i = 0; i < parts.length; i++) {
           var t = parts[i].trim();
+          if (!t) {
+            nums.push("");
+            continue;
+          }
           if (/^\d+(\.\d+)?$/.test(t)) nums.push(t);
+          else nums.push("");
         }
+        while (nums.length && nums[nums.length - 1] === "") nums.pop();
         return nums.join(", ");
+      }
+
+      function parseVariantPriceSlots_(str, count) {
+        var n = Math.max(0, count || 0);
+        if (!n) return [];
+        if (!str || String(str).trim() === "") return Array(n).fill("");
+        var parts = String(str).trim().split(/[,，、]+/).map(function(s) { return s.trim(); });
+        while (parts.length < n) parts.push("");
+        return parts.slice(0, n).map(function(t) {
+          return /^\d+(\.\d+)?$/.test(t) ? t : "";
+        });
+      }
+
+      function variantsMatchDimsForSave_(dims) {
+        if (!dims || dims.length < 2) return false;
+        var hidden = document.getElementById("variantValue");
+        var parts = String(hidden && hidden.value ? hidden.value : "")
+          .split(/[,，、\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
+        if (!parts.length) return false;
+        var combos = cartesianCombine_(dims.map(function(d) { return d.options; }));
+        if (parts.length !== combos.length) return false;
+        var comboSet = {};
+        combos.forEach(function(c) { comboSet[formatVariantComboName_(c)] = true; });
+        for (var i = 0; i < parts.length; i++) {
+          if (!comboSet[parts[i]]) return false;
+        }
+        return true;
+      }
+
+      function applyVariantPricesFromRowsToProduct_(product) {
+        if (!product) return product;
+        syncVariantToHidden();
+        var hiddenPrices = document.getElementById("variantPricesValue");
+        var hiddenVariant = document.getElementById("variantValue");
+        if (hiddenPrices) {
+          product.variantPrices = String(hiddenPrices.value != null ? hiddenPrices.value : "").trim();
+          product["規格售價"] = product.variantPrices;
+        }
+        if (hiddenVariant) product.variant = String(hiddenVariant.value != null ? hiddenVariant.value : "").trim();
+        return product;
       }
 
       /** 只加總純數字規格庫存，避免子分類「2025年03月」被誤算成 2025 */
@@ -2544,6 +2590,8 @@
         if (p.variantDim1Options) p["規格維度1選項"] = p.variantDim1Options;
         if (p.variantDim2Label) p["規格維度2名稱"] = p.variantDim2Label;
         if (p.variantDim2Options) p["規格維度2選項"] = p.variantDim2Options;
+        if (!p.variantPrices && p["規格售價"]) p.variantPrices = String(p["規格售價"]).trim();
+        if (p.variantPrices) p["規格售價"] = p.variantPrices;
         return p;
       }
 
@@ -3321,26 +3369,27 @@
         var hiddenPrices = document.getElementById("variantPricesValue");
         if (!container || !hiddenVariant) return;
         var rows = container.querySelectorAll(".variant-item-row");
-        var names = [];
-        var urls = [];
-        var qtys = [];
-        var prices = [];
+        var entries = [];
         rows.forEach(function(row) {
           var nameInp = row.querySelector(".variant-item");
           var priceInp = row.querySelector(".variant-price");
           var urlInp = row.querySelector(".variant-image");
           var qtyInp = row.querySelector(".variant-qty");
-          names.push((nameInp && nameInp.value) ? nameInp.value.trim() : "");
+          var name = (nameInp && nameInp.value) ? nameInp.value.trim() : "";
+          if (!name) return;
           var pRaw = (priceInp && priceInp.value !== "" && priceInp.value != null) ? String(priceInp.value).trim() : "";
-          prices.push(/^\d+(\.\d+)?$/.test(pRaw) ? pRaw : "");
-          urls.push((urlInp && urlInp.value) ? urlInp.value.trim() : "");
           var q = (qtyInp && qtyInp.value !== "" && qtyInp.value !== null) ? parseInt(qtyInp.value, 10) : "";
-          qtys.push((q === "" || isNaN(q)) ? "" : Math.max(0, q));
+          entries.push({
+            name: name,
+            price: /^\d+(\.\d+)?$/.test(pRaw) ? pRaw : "",
+            url: (urlInp && urlInp.value) ? urlInp.value.trim() : "",
+            qty: (q === "" || isNaN(q)) ? "" : Math.max(0, q)
+          });
         });
-        hiddenVariant.value = names.filter(Boolean).join(", ");
-        if (hiddenImages) hiddenImages.value = urls.join(", ");
-        if (hiddenStock) hiddenStock.value = qtys.map(function(q) { return q === "" ? "0" : q; }).join(", ");
-        if (hiddenPrices) hiddenPrices.value = sanitizeVariantPriceString(prices.join(", "));
+        hiddenVariant.value = entries.map(function(e) { return e.name; }).join(", ");
+        if (hiddenImages) hiddenImages.value = entries.map(function(e) { return e.url; }).join(", ");
+        if (hiddenStock) hiddenStock.value = entries.map(function(e) { return e.qty === "" ? "0" : e.qty; }).join(", ");
+        if (hiddenPrices) hiddenPrices.value = entries.map(function(e) { return e.price; }).join(", ");
         syncVariantDimsToHidden_();
         var total = qtys.reduce(function(sum, q) {
           if (q === "" || q === null || q === undefined) return sum + 0;
@@ -3504,7 +3553,10 @@
           if (!/^\d+$/.test(t)) return "";
           return Math.max(0, parseInt(t, 10));
         });
-        var priceParts = sanitizeVariantPriceString(variantPricesStr != null && variantPricesStr !== undefined ? String(variantPricesStr) : "").split(/[,，、\s]/).map(function(s) { return s.trim(); });
+        var priceParts = parseVariantPriceSlots_(
+          variantPricesStr != null && variantPricesStr !== undefined ? String(variantPricesStr) : "",
+          parts.length
+        );
         if (parts.length === 0) parts = [""];
         container.innerHTML = parts.map(function(val, i) {
           var url = urlParts[i] != null ? urlParts[i] : "";
@@ -4007,7 +4059,9 @@
         var dimsForSave = ensureSecondVariantDimFromList_();
         syncVariantDimsToHidden_();
         if (dimsForSave.length >= 2 && dimsForSave.every(function(d) { return d.options && d.options.length; })) {
-          generateVariantCombinationsFromDims_({ silent: true, force: true });
+          if (!variantsMatchDimsForSave_(dimsForSave)) {
+            generateVariantCombinationsFromDims_({ silent: true, force: true });
+          }
           syncVariantToHidden();
           syncVariantDimsToHidden_();
         } else if (dimsForSave.length === 1) {
@@ -4041,6 +4095,7 @@
         var action = (rowIndexInput && !isNaN(rowIndexNum) && rowIndexNum >= 2) ? "update" : "append";
         var product = action === "update" ? buildSaveProduct(rowIndexNum, formProduct) : finalizeStockForSave(formProduct);
         applyVariantDimsFromBuilderToProduct_(product);
+        applyVariantPricesFromRowsToProduct_(product);
         product.variantDim1Label = product.variantDim1Label || formProduct.variantDim1Label || "";
         product.variantDim1Options = product.variantDim1Options || formProduct.variantDim1Options || "";
         product.variantDim2Label = product.variantDim2Label || formProduct.variantDim2Label || "";
