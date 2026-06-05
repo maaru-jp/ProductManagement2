@@ -429,6 +429,88 @@
     return ledger;
   }
 
+  function buildOrderMemberIndex(orders) {
+    var byCard = {};
+    (orders || []).forEach(function (ord) {
+      if (!ord) return;
+      var card = normalizeMemberCardNo(ord.memberCardNo);
+      if (!isValidMemberCardNo(card)) return;
+      if (!byCard[card]) {
+        byCard[card] = {
+          memberCardNo: card,
+          customerName: ord.customerName || "",
+          phone: ord.phone || "",
+          lineId: ord.lineId || "",
+          orderDate: ord.date || "",
+        };
+        return;
+      }
+      var d = String(ord.date || "");
+      if (d >= String(byCard[card].orderDate || "")) {
+        if (ord.customerName) byCard[card].customerName = ord.customerName;
+        if (ord.phone) byCard[card].phone = ord.phone;
+        if (ord.lineId) byCard[card].lineId = ord.lineId;
+        byCard[card].orderDate = d;
+      } else {
+        if (!byCard[card].customerName && ord.customerName) byCard[card].customerName = ord.customerName;
+        if (!byCard[card].phone && ord.phone) byCard[card].phone = ord.phone;
+        if (!byCard[card].lineId && ord.lineId) byCard[card].lineId = ord.lineId;
+      }
+    });
+    return byCard;
+  }
+
+  function sortCustomerSummaries(list) {
+    return (list || []).slice().sort(function (a, b) {
+      var ca = normalizeMemberCardNo(a.memberCardNo);
+      var cb = normalizeMemberCardNo(b.memberCardNo);
+      if (ca && cb && ca !== cb) return ca.localeCompare(cb);
+      var na = normalizeCustomerName(a.customerName);
+      var nb = normalizeCustomerName(b.customerName);
+      if (na && nb && na !== nb) return na.localeCompare(nb, "zh-Hant");
+      return (b.balance || 0) - (a.balance || 0);
+    });
+  }
+
+  function summarizeCustomersWithOrders(ledger, orders) {
+    ledger = ledger || getLedger();
+    var byKey = {};
+    summarizeCustomers(ledger).forEach(function (c) {
+      byKey[c.key] = Object.assign({}, c);
+    });
+    var orderMembers = buildOrderMemberIndex(orders);
+    Object.keys(orderMembers).forEach(function (card) {
+      var om = orderMembers[card];
+      var k = "C:" + card;
+      if (byKey[k]) {
+        if (!byKey[k].customerName && om.customerName) byKey[k].customerName = om.customerName;
+        if (!byKey[k].phone && om.phone) byKey[k].phone = om.phone;
+        if (!byKey[k].lineId && om.lineId) byKey[k].lineId = om.lineId;
+        if (!byKey[k].memberCardNo) byKey[k].memberCardNo = card;
+        return;
+      }
+      var lots = getActiveLots(ledger, card, om.customerName, om.phone, om.lineId);
+      byKey[k] = {
+        key: k,
+        memberCardNo: card,
+        phone: om.phone || "",
+        lineId: om.lineId || "",
+        customerName: om.customerName || "",
+        balance: lots.reduce(function (s, lot) {
+          return s + (Number(lot.remaining) || 0);
+        }, 0),
+        totalEarned: 0,
+        totalUsed: 0,
+        nextExpireDate: lots.length ? lots[0].expireDate || "" : "",
+        nextExpirePoints: lots.length ? Number(lots[0].remaining) || 0 : 0,
+        fromOrdersOnly: true,
+      };
+    });
+    return sortCustomerSummaries(Object.keys(byKey).map(function (k) {
+      return byKey[k];
+    }));
+  }
+
   function summarizeCustomers(ledger) {
     ledger = ledger || getLedger();
     var map = {};
@@ -467,17 +549,9 @@
         c.nextExpirePoints = Number(lots[0].remaining) || 0;
       }
     });
-    return Object.keys(map)
-      .map(function (k) { return map[k]; })
-      .sort(function (a, b) {
-        var ca = normalizeMemberCardNo(a.memberCardNo);
-        var cb = normalizeMemberCardNo(b.memberCardNo);
-        if (ca && cb && ca !== cb) return ca.localeCompare(cb);
-        var na = normalizeCustomerName(a.customerName);
-        var nb = normalizeCustomerName(b.customerName);
-        if (na && nb && na !== nb) return na.localeCompare(nb, "zh-Hant");
-        return (b.balance || 0) - (a.balance || 0);
-      });
+    return sortCustomerSummaries(Object.keys(map).map(function (k) {
+      return map[k];
+    }));
   }
 
   function normalizeLedgerFromApi(rows) {
@@ -522,6 +596,7 @@
     manualAdjust: manualAdjust,
     runGlobalExpiry: runGlobalExpiry,
     summarizeCustomers: summarizeCustomers,
+    summarizeCustomersWithOrders: summarizeCustomersWithOrders,
     normalizeLedgerFromApi: normalizeLedgerFromApi,
     mergeLedgers: mergeLedgers,
     processPendingOrders: processPendingOrders,
