@@ -1474,7 +1474,7 @@
   </div>
 
   <script src="js/member-card.js"></script>
-  <script src="js/admin-loyalty.js?v=20260601-13"></script>
+  <script src="js/admin-loyalty.js?v=20260601-14"></script>
   <script>
     (function() {
       // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
@@ -4152,23 +4152,38 @@
           });
         }
 
+        function backfillLedgerSafe_(ledger, orders, persist) {
+          ledger = ledger || (window.MaaruLoyalty ? MaaruLoyalty.getLedger() : []);
+          orders = orders || loadAdminOrdersForLoyalty_();
+          if (window.MaaruLoyalty && typeof MaaruLoyalty.backfillLedgerMemberCards === "function") {
+            return MaaruLoyalty.backfillLedgerMemberCards(ledger, orders, persist);
+          }
+          if (persist !== false && window.MaaruLoyalty && typeof MaaruLoyalty.saveLedger === "function") {
+            MaaruLoyalty.saveLedger(ledger);
+          }
+          return { ledger: ledger, changed: false };
+        }
+
         function preparePointsLedgerForSync_() {
           if (!window.MaaruLoyalty) return [];
           var orders = loadAdminOrdersForLoyalty_();
-          var bf = MaaruLoyalty.backfillLedgerMemberCards(MaaruLoyalty.getLedger(), orders, true);
-          return bf.ledger;
+          return backfillLedgerSafe_(MaaruLoyalty.getLedger(), orders, true).ledger;
         }
 
         function syncPointsLedgerToSheet() {
           if (typeof fetchWrite !== "function") return Promise.resolve();
-          var ledger = preparePointsLedgerForSync_();
-          if (!ledger.length) return Promise.resolve({ skipped: true, message: "尚無紅利紀錄" });
-          return fetchWrite({ action: "points_sync", ledger: ledger })
-            .then(parseWriteApiResponse_)
-            .then(function(res) {
-              if (res && res.error) throw new Error(res.message || "同步失敗");
-              return res;
-            });
+          try {
+            var ledger = preparePointsLedgerForSync_();
+            if (!ledger.length) return Promise.resolve({ skipped: true, message: "尚無紅利紀錄" });
+            return fetchWrite({ action: "points_sync", ledger: ledger })
+              .then(parseWriteApiResponse_)
+              .then(function(res) {
+                if (res && res.error) throw new Error(res.message || "同步失敗");
+                return res;
+              });
+          } catch (err) {
+            return Promise.reject(err);
+          }
         }
 
         function loadPointsFromSheet() {
@@ -4180,7 +4195,7 @@
               var remote = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
               var merged = MaaruLoyalty.mergeLedgers(MaaruLoyalty.getLedger(), remote);
               var orders = loadAdminOrdersForLoyalty_();
-              var bf = MaaruLoyalty.backfillLedgerMemberCards(merged, orders, true);
+              var bf = backfillLedgerSafe_(merged, orders, true);
               MaaruLoyalty.saveLedger(bf.ledger);
               return bf.ledger;
             });
@@ -4320,6 +4335,7 @@
         window.renderLoyaltyPanel = renderLoyaltyPanel;
         window.syncPointsLedgerToSheet = syncPointsLedgerToSheet;
         window.loadPointsFromSheet = loadPointsFromSheet;
+        window.backfillLedgerSafe_ = backfillLedgerSafe_;
 
         var btnSync = document.getElementById("btnSyncPointsSheet");
         if (btnSync) btnSync.addEventListener("click", function() {
@@ -4439,8 +4455,15 @@
         function buildPointsLedgerPayload_() {
           if (!window.MaaruLoyalty) return null;
           var ordList = getOrdersForLoyaltyLookup_();
-          var bf = MaaruLoyalty.backfillLedgerMemberCards(MaaruLoyalty.getLedger(), ordList, true);
-          return bf.ledger;
+          var backfill = typeof window.backfillLedgerSafe_ === "function"
+            ? window.backfillLedgerSafe_
+            : function(ledger, orders, persist) {
+                if (window.MaaruLoyalty && typeof MaaruLoyalty.backfillLedgerMemberCards === "function") {
+                  return MaaruLoyalty.backfillLedgerMemberCards(ledger, orders, persist);
+                }
+                return { ledger: ledger || [], changed: false };
+              };
+          return backfill(MaaruLoyalty.getLedger(), ordList, true).ledger;
         }
 
         function upsertOrderToSheet(ord, opts) {
@@ -4563,7 +4586,9 @@
               backfillMissingMemberCards_({ syncSheet: true, silent: true });
               processPendingLoyaltyOrders_(true);
               if (typeof window.syncPointsLedgerToSheet === "function") {
-                window.syncPointsLedgerToSheet().catch(function() {});
+                window.syncPointsLedgerToSheet().catch(function(syncErr) {
+                  showOrderMessage("訂單已載入，但紅利同步失敗：" + (syncErr && syncErr.message ? syncErr.message : "請至紅利點數頁手動同步"), true);
+                });
               }
               renderOrders();
               showOrderMessage("已從試算表載入訂單");
