@@ -9,9 +9,9 @@
  * 4. 執行身分：我、誰可以存取：任何人 → 部署
  * 5. 複製「網頁應用程式 URL」貼到前端的 API_URL
  *
- * 顧客端 GET action：
- * - points_balance   紅利餘額（card / memberCardNo）
- * - customer_orders  會員卡號歷史訂單
+ * 顧客端 GET action（會員中心／查詢中心）：
+ * - points_balance   會員中心：餘額 + 紅利異動歷程（試算表「紅利點數」）
+ * - customer_orders  歷史訂單：交易紀錄 + 每筆獲得／折抵點數（試算表「歷史訂單」）
  * - order_status     單筆配送進度（orderId，5 碼或 ORD00001）
  * - （相容）?orderId=00001 同 order_status
  */
@@ -46,10 +46,11 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-06-04-sheet1",
+        apiVersion: "2026-05-26-member-center",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
+        pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"],
         postRoutes: ["order_list", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "append", "update", "delete"]
       });
@@ -2038,6 +2039,41 @@ function countLedgerRowsForMemberCard_(ledger, card, allOrders) {
   return count;
 }
 
+function sanitizePublicPointRecord_(rec) {
+  var r = rec || {};
+  var pts = Math.floor(Number(r.points) || 0);
+  return {
+    id: String(r.id != null ? r.id : "").trim(),
+    date: normalizeSheetDateValue_(r.date) || "",
+    type: String(r.type != null ? r.type : "").trim(),
+    points: pts,
+    pointsDisplay: pts > 0 ? ("+" + pts) : String(pts),
+    remaining: Math.floor(Number(r.remaining) || 0),
+    expireDate: normalizeSheetDateValue_(r.expireDate) || "",
+    orderId: r.orderId != null ? normalizeOrderId_(r.orderId) || String(r.orderId).trim() : "",
+    note: String(r.note != null ? r.note : "").trim()
+  };
+}
+
+/** 會員中心：依卡號取得完整紅利異動歷程（發放／折抵／失效／調整） */
+function getPointsHistoryForMemberCard_(ledger, card, allOrders) {
+  if (!isValidMemberCardNo_(card)) return [];
+  var identityIndex = buildMemberCardIdentityIndex_(allOrders, ledger);
+  var linkedNames = collectCustomerNamesForMemberCard_(allOrders, card, ledger);
+  var list = [];
+  for (var i = 0; i < (ledger || []).length; i++) {
+    var rec = ledger[i];
+    if (!recordMatchesMemberCardExtended_(rec, card, linkedNames, identityIndex)) continue;
+    list.push(sanitizePublicPointRecord_(rec));
+  }
+  list.sort(function(a, b) {
+    var d = String(b.date || "").localeCompare(String(a.date || ""));
+    if (d !== 0) return d;
+    return String(b.id || "").localeCompare(String(a.id || ""));
+  });
+  return list;
+}
+
 function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet) {
   var lots = getActiveLotsForMemberCardExtended_(ledger, allOrders || [], card);
   var balance = 0;
@@ -2059,6 +2095,7 @@ function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet) {
     nextExpireDate: nextExpireDate,
     nextExpirePoints: nextExpirePoints,
     lots: lots,
+    history: getPointsHistoryForMemberCard_(ledger, card, allOrders || []),
     rules: {
       spendPerPoint: 100,
       pointValue: 1,
@@ -2223,6 +2260,8 @@ function getCustomerOrdersPublic_(params) {
     return nb - na;
   });
   var publicOrders = [];
+  var totalPointsEarned = 0;
+  var totalPointsUsed = 0;
   for (var j = 0; j < matched.length; j++) {
     publicOrders.push(sanitizePublicOrder_(matched[j]));
   }
@@ -2232,6 +2271,8 @@ function getCustomerOrdersPublic_(params) {
     var o = publicOrders[k];
     if (o.status === "已取消") continue;
     activeCount++;
+    totalPointsEarned += Math.max(0, Math.floor(Number(o.pointsEarned) || 0));
+    totalPointsUsed += Math.max(0, Math.floor(Number(o.pointsUsed) || 0));
     if (o.status !== "已完成") totalDue += o.amountDue;
   }
   return {
@@ -2241,6 +2282,8 @@ function getCustomerOrdersPublic_(params) {
     orderCount: publicOrders.length,
     activeCount: activeCount,
     totalDue: totalDue,
+    totalPointsEarned: totalPointsEarned,
+    totalPointsUsed: totalPointsUsed,
     debug: {
       orderSheetName: orderSheet ? orderSheet.getName() : "",
       orderSheetRows: all.length,
