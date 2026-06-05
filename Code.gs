@@ -33,6 +33,9 @@ function doGet(e) {
     if (action === "points_balance") {
       return jsonOutput(getPointsBalancePublic_(params));
     }
+    if (action === "customer_orders") {
+      return jsonOutput(getCustomerOrdersPublic_(params));
+    }
     var data = getApiData();
     var json = JSON.stringify(data);
     return ContentService.createTextOutput(json)
@@ -280,6 +283,7 @@ function ensureOrderHeaderRow_(sheet) {
     "狀態",
     "日期",
     "客戶姓名",
+    "會員卡號",
     "電話",
     "Email",
     "Line ID",
@@ -351,6 +355,7 @@ function orderKeyMap_(headers) {
     ["狀態", "status"],
     ["日期", "date"],
     ["客戶姓名", "customerName", "姓名", "name"],
+    ["會員卡號", "memberCardNo", "memberCard"],
     ["電話", "phone"],
     ["Email", "email"],
     ["Line ID", "lineId", "LineID", "line id"],
@@ -399,6 +404,7 @@ function normalizeOrderForSheet_(order) {
     status: (o.status != null && String(o.status).trim() !== "") ? String(o.status).trim() : "",
     date: (o.date != null) ? String(o.date) : "",
     customerName: (o.customerName != null) ? String(o.customerName) : "",
+    memberCardNo: normalizeMemberCardNo_(o.memberCardNo != null ? o.memberCardNo : ""),
     phone: (o.phone != null) ? String(o.phone) : "",
     email: (o.email != null) ? String(o.email) : "",
     lineId: (o.lineId != null) ? String(o.lineId) : "",
@@ -1077,6 +1083,7 @@ function ensurePointsHeaderRow_(sheet) {
     "電話",
     "Line ID",
     "姓名",
+    "會員卡號",
     "類型",
     "點數",
     "剩餘",
@@ -1097,6 +1104,7 @@ function normalizePointRecordForSheet_(rec) {
     phone: (r.phone != null) ? String(r.phone) : "",
     lineId: (r.lineId != null) ? String(r.lineId) : "",
     customerName: (r.customerName != null) ? String(r.customerName) : "",
+    memberCardNo: normalizeMemberCardNo_(r.memberCardNo != null ? r.memberCardNo : ""),
     type: (r.type != null) ? String(r.type) : "",
     points: (r.points != null && r.points !== "") ? Number(r.points) : "",
     remaining: (r.remaining != null && r.remaining !== "") ? Number(r.remaining) : "",
@@ -1114,6 +1122,7 @@ function pointsKeyMap_(headers) {
     ["電話", "phone"],
     ["Line ID", "lineId"],
     ["姓名", "customerName"],
+    ["會員卡號", "memberCardNo", "memberCard"],
     ["類型", "type"],
     ["點數", "points"],
     ["剩餘", "remaining"],
@@ -1171,6 +1180,7 @@ function normalizePointLedgerRecord_(obj) {
   if (obj.date != null && obj.date !== "") obj.date = normalizeSheetDateValue_(obj.date);
   if (obj.expireDate != null && obj.expireDate !== "") obj.expireDate = normalizeSheetDateValue_(obj.expireDate);
   if (obj.customerName != null) obj.customerName = String(obj.customerName).trim();
+  if (obj.memberCardNo != null && obj.memberCardNo !== "") obj.memberCardNo = normalizeMemberCardNo_(obj.memberCardNo);
   if (obj.type != null) obj.type = String(obj.type).trim();
   if (obj.remaining != null && obj.remaining !== "") obj.remaining = Number(obj.remaining);
   if (obj.points != null && obj.points !== "") obj.points = Number(obj.points);
@@ -1221,7 +1231,15 @@ function syncPointsLedger(sheet, ledger) {
   }
 }
 
-/** 顧客端公開查詢：依客戶姓名回傳可用紅利餘額（唯讀，不含完整異動明細） */
+/** 顧客端公開查詢：依會員卡號（13 碼純數字） */
+function normalizeMemberCardNo_(card) {
+  return String(card || "").replace(/\D/g, "").slice(0, 13);
+}
+
+function isValidMemberCardNo_(card) {
+  return /^\d{13}$/.test(normalizeMemberCardNo_(card));
+}
+
 function normalizeCustomerNameForPoints_(name) {
   return String(name || "").trim().replace(/\s+/g, "");
 }
@@ -1238,6 +1256,38 @@ function getPointRecordCustomerName_(rec) {
   if (rec.customerName != null && String(rec.customerName).trim() !== "") return String(rec.customerName);
   if (rec["姓名"] != null && String(rec["姓名"]).trim() !== "") return String(rec["姓名"]);
   return "";
+}
+
+function getPointRecordMemberCard_(rec) {
+  if (rec.memberCardNo != null && String(rec.memberCardNo).trim() !== "") {
+    return normalizeMemberCardNo_(rec.memberCardNo);
+  }
+  return "";
+}
+
+function recordMatchesMemberCardForPoints_(rec, memberCardNo) {
+  var card = normalizeMemberCardNo_(memberCardNo);
+  if (!isValidMemberCardNo_(card)) return false;
+  return getPointRecordMemberCard_(rec) === card;
+}
+
+function getActiveLotsForMemberCard_(ledger, memberCardNo) {
+  var today = todayStrForPoints_();
+  var lots = [];
+  for (var i = 0; i < ledger.length; i++) {
+    var rec = ledger[i];
+    if (!recordMatchesMemberCardForPoints_(rec, memberCardNo)) continue;
+    if (!isActivePointLot_(rec, today)) continue;
+    lots.push({
+      date: rec.date != null ? normalizeSheetDateValue_(rec.date) : "",
+      remaining: Number(rec.remaining) || 0,
+      expireDate: normalizeSheetDateValue_(rec.expireDate)
+    });
+  }
+  lots.sort(function(a, b) {
+    return String(a.date || "").localeCompare(String(b.date || ""));
+  });
+  return lots;
 }
 
 function recordMatchesCustomerForPoints_(rec, customerName) {
@@ -1276,10 +1326,9 @@ function getActiveLotsForCustomer_(ledger, customerName) {
 }
 
 function getPointsBalancePublic_(params) {
-  var name = (params.name || params.customerName || params["姓名"] || "").toString().trim();
-  var normalized = normalizeCustomerNameForPoints_(name);
-  if (!normalized || normalized.length < 2) {
-    return { error: true, message: "請輸入至少兩個字的客戶姓名" };
+  var card = normalizeMemberCardNo_(params.card || params.memberCardNo || params["會員卡號"] || "");
+  if (!isValidMemberCardNo_(card)) {
+    return { error: true, message: "請輸入 13 碼會員卡號" };
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pointsSheet = getPointsSheet(ss);
@@ -1287,7 +1336,7 @@ function getPointsBalancePublic_(params) {
     return { error: true, message: "找不到紅利紀錄工作表" };
   }
   var ledger = getPointsLedger(pointsSheet);
-  var lots = getActiveLotsForCustomer_(ledger, name);
+  var lots = getActiveLotsForMemberCard_(ledger, card);
   var balance = 0;
   for (var j = 0; j < lots.length; j++) {
     balance += Number(lots[j].remaining) || 0;
@@ -1300,7 +1349,7 @@ function getPointsBalancePublic_(params) {
   }
   return {
     error: false,
-    customerName: name,
+    memberCardNo: card,
     balance: balance,
     pointValue: 1,
     discountAmount: balance,
@@ -1309,8 +1358,124 @@ function getPointsBalancePublic_(params) {
     rules: {
       spendPerPoint: 100,
       pointValue: 1,
-      expireDays: 365
+      expireDays: 365,
+      minRedeemNet: 199
     },
     message: balance > 0 ? "OK" : "目前尚無可用紅利點數"
+  };
+}
+
+function orderMatchesMemberCard_(order, memberCardNo) {
+  var card = normalizeMemberCardNo_(memberCardNo);
+  if (!isValidMemberCardNo_(card)) return false;
+  return normalizeMemberCardNo_(order && order.memberCardNo) === card;
+}
+
+function orderMatchesCustomerName_(order, customerName) {
+  var n = normalizeCustomerNameForPoints_(customerName);
+  if (!n) return false;
+  return normalizeCustomerNameForPoints_(order && order.customerName) === n;
+}
+
+function orderEffectiveShippingPublic_(ord) {
+  var fee = Number(ord && ord.shippingFee);
+  if (isNaN(fee)) fee = 38;
+  var st = String(ord && ord.shippingStatus || "");
+  if (st.indexOf("免運") >= 0) return 0;
+  return Math.max(0, Math.ceil(fee));
+}
+
+function orderAmountDuePublic_(ord) {
+  var sub = Number(ord && ord.subtotal) || 0;
+  var disc = Number(ord && ord.discount) || 0;
+  if (isNaN(disc)) disc = 0;
+  var pts = Math.floor(Number(ord && ord.pointsUsed) || 0);
+  var ship = orderEffectiveShippingPublic_(ord);
+  var dep = Number(ord && ord.depositAmount) || 0;
+  if (isNaN(dep) || dep < 0) dep = 0;
+  var gross = Math.max(0, Math.ceil(sub - disc - pts + ship));
+  return dep > 0 ? Math.max(0, gross - dep) : gross;
+}
+
+function sanitizePublicOrderItem_(it) {
+  var o = it || {};
+  var price = (o.price != null && o.price !== "" && !isNaN(Number(o.price))) ? Number(o.price) : null;
+  return {
+    lineName: String(o.lineName != null ? o.lineName : "").trim(),
+    qty: Math.max(0, Math.floor(Number(o.qty) || 0)),
+    price: price,
+    shipStatus: String(o.shipStatus != null ? o.shipStatus : "待出貨").trim() || "待出貨"
+  };
+}
+
+function sanitizePublicOrder_(ord) {
+  var items = [];
+  if (ord && ord.items && Array.isArray(ord.items)) {
+    for (var i = 0; i < ord.items.length; i++) {
+      var it = sanitizePublicOrderItem_(ord.items[i]);
+      if (it.lineName) items.push(it);
+    }
+  }
+  return {
+    id: String(ord && ord.id != null ? ord.id : "").trim(),
+    status: String(ord && ord.status != null ? ord.status : "").trim() || "待處理",
+    date: ord && ord.date != null ? String(ord.date) : "",
+    subtotal: Number(ord && ord.subtotal) || 0,
+    discount: Number(ord && ord.discount) || 0,
+    pointsUsed: Math.floor(Number(ord && ord.pointsUsed) || 0),
+    shippingFee: orderEffectiveShippingPublic_(ord),
+    depositAmount: Number(ord && ord.depositAmount) || 0,
+    amountDue: orderAmountDuePublic_(ord),
+    pointsEarned: Math.floor(Number(ord && ord.pointsEarned) || 0),
+    linkedOrderIds: String(ord && ord.linkedOrderIds != null ? ord.linkedOrderIds : "").trim(),
+    preorderDate: ord && ord.preorderDate != null ? String(ord.preorderDate) : "",
+    shipDate: ord && ord.shipDate != null ? String(ord.shipDate) : "",
+    shippingMethod: String(ord && ord.shippingMethod != null ? ord.shippingMethod : "").trim(),
+    items: items
+  };
+}
+
+function getCustomerOrdersPublic_(params) {
+  var card = normalizeMemberCardNo_(params.card || params.memberCardNo || params["會員卡號"] || "");
+  if (!isValidMemberCardNo_(card)) {
+    return { error: true, message: "請輸入 13 碼會員卡號" };
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var orderSheet = getOrderSheet(ss);
+  if (!orderSheet) {
+    return { error: true, message: "找不到訂單工作表" };
+  }
+  var all = getOrders(orderSheet);
+  var matched = [];
+  for (var i = 0; i < all.length; i++) {
+    if (orderMatchesMemberCard_(all[i], card)) matched.push(all[i]);
+  }
+  matched.sort(function(a, b) {
+    var ma = String(a.id || "").match(/^ORD(\d+)$/i);
+    var mb = String(b.id || "").match(/^ORD(\d+)$/i);
+    var na = ma ? parseInt(ma[1], 10) : Number.MAX_SAFE_INTEGER;
+    var nb = mb ? parseInt(mb[1], 10) : Number.MAX_SAFE_INTEGER;
+    return nb - na;
+  });
+  var publicOrders = [];
+  for (var j = 0; j < matched.length; j++) {
+    publicOrders.push(sanitizePublicOrder_(matched[j]));
+  }
+  var totalDue = 0;
+  var activeCount = 0;
+  for (var k = 0; k < publicOrders.length; k++) {
+    var o = publicOrders[k];
+    if (o.status === "已取消") continue;
+    activeCount++;
+    if (o.status !== "已完成") totalDue += o.amountDue;
+  }
+  return {
+    error: false,
+    memberCardNo: card,
+    orders: publicOrders,
+    orderCount: publicOrders.length,
+    activeCount: activeCount,
+    totalDue: totalDue,
+    message: publicOrders.length ? "OK" : "目前尚無訂單紀錄"
   };
 }

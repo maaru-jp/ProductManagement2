@@ -390,7 +390,7 @@
         <div class="mb-4 rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
           <p class="font-semibold text-sky-900">訂單合併與紅利點數（兩種做法）</p>
           <p><strong>做法 A｜同一訂單編號：</strong>用「追加」把新清單併入原單，適合最後一起出貨、一張帳單結清。<span class="text-amber-800">請等全部併完再改「已確認」</span>，否則紅利已處理後再追加，不會自動補發差額點數。</p>
-          <p><strong>做法 B｜不同訂單編號：</strong>同顧客開新單（ORD00002…），適合分次下單／分次出貨。點客戶旁的 <strong>總覽</strong> 可一次查看該顧客所有訂單與紅利；編輯訂單時可填「關聯訂單」標記併箱單號。</p>
+          <p><strong>做法 B｜不同訂單編號：</strong>同顧客開新單（ORD00002…），適合分次下單／分次出貨。點客戶旁的 <strong>總覽</strong> 可一次查看；顧客也可在官網 <strong>我的訂單</strong> 自行查歷史紀錄。</p>
         </div>
         <p class="mb-3 text-xs text-slate-500">每筆訂單右側「操作」欄可點 <strong>產生 PDF</strong>，列印時選擇「另存為 PDF」即可下載客人訂單 PDF。</p>
 
@@ -470,13 +470,13 @@
           <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
             <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
               <h3 class="text-sm font-semibold text-slate-800">會員餘額</h3>
-              <input type="text" id="loyaltySearchInput" placeholder="搜尋客戶姓名" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-44" />
+              <input type="text" id="loyaltySearchInput" placeholder="搜尋卡號或姓名" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-44" />
             </div>
             <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
               <table class="w-full text-sm">
                 <thead class="bg-slate-50 sticky top-0">
                   <tr>
-                    <th class="text-left py-2 px-3 font-medium text-slate-600">客戶姓名</th>
+                    <th class="text-left py-2 px-3 font-medium text-slate-600">會員卡號</th>
                     <th class="text-left py-2 px-3 font-medium text-slate-600">可用點數</th>
                     <th class="text-left py-2 px-3 font-medium text-slate-600">最近到期</th>
                   </tr>
@@ -492,8 +492,12 @@
             <h3 class="text-sm font-semibold text-slate-800 mb-3">手動調整點數</h3>
             <form id="loyaltyAdjustForm" class="space-y-3">
               <div>
-                <label class="block text-xs text-slate-500 mb-1">客戶姓名 <span class="text-rose-500">*</span></label>
-                <input type="text" id="loyaltyAdjustName" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="與訂單姓名一致" />
+                <label class="block text-xs text-slate-500 mb-1">會員卡號 <span class="text-rose-500">*</span></label>
+                <input type="text" id="loyaltyAdjustCard" required maxlength="13" inputmode="numeric" pattern="\d{13}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" placeholder="13 碼純數字" />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">客戶姓名（選填）</label>
+                <input type="text" id="loyaltyAdjustName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="備註用" />
               </div>
               <div class="grid grid-cols-2 gap-3">
                 <div>
@@ -1217,6 +1221,14 @@
           <div>
             <h4 class="text-sm font-medium text-slate-700 mb-3">客戶資訊 (可編輯)</h4>
             <div class="grid grid-cols-2 gap-4">
+              <div class="col-span-2">
+                <label class="block text-xs font-medium text-slate-500 mb-1">會員卡號 <span class="text-rose-500">*</span></label>
+                <div class="flex gap-2">
+                  <input type="text" id="orderMemberCardNo" maxlength="13" inputmode="numeric" pattern="\d{13}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" placeholder="13 碼純數字（顧客查詢訂單／紅利用）" />
+                  <button type="button" id="btnGenerateMemberCard" class="shrink-0 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50">自動產生</button>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">每位顧客唯一卡號；同姓名舊客會沿用原卡號，新客可按「自動產生」</p>
+              </div>
               <div>
                 <label class="block text-xs font-medium text-slate-500 mb-1">客戶姓名</label>
                 <input type="text" id="orderCustomerName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入姓名" />
@@ -1444,6 +1456,7 @@
     </div>
   </div>
 
+  <script src="js/member-card.js"></script>
   <script src="js/admin-loyalty.js"></script>
   <script>
     (function() {
@@ -4134,7 +4147,8 @@
           var customers = MaaruLoyalty.summarizeCustomers();
           if (q) {
             customers = customers.filter(function(c) {
-              return (c.customerName || "").toLowerCase().indexOf(q) >= 0
+              return (c.memberCardNo || "").toLowerCase().indexOf(q) >= 0
+                || (c.customerName || "").toLowerCase().indexOf(q) >= 0
                 || (c.phone || "").toLowerCase().indexOf(q) >= 0
                 || (c.lineId || "").toLowerCase().indexOf(q) >= 0;
             });
@@ -4146,8 +4160,9 @@
             } else {
               custBody.innerHTML = customers.map(function(c) {
                 var exp = c.nextExpireDate ? (c.nextExpireDate + "（" + c.nextExpirePoints + "點）") : "—";
-                var displayName = c.customerName || (c.key && c.key.indexOf("N:") === 0 ? c.key.slice(2) : "") || c.phone || c.lineId || "—";
-                return "<tr class=\"border-b border-slate-100\"><td class=\"py-2 px-3 font-medium\">" + escapeHtmlLoyalty(displayName) + "</td>" +
+                var displayCard = c.memberCardNo || (c.key && c.key.indexOf("C:") === 0 ? c.key.slice(2) : "") || "—";
+                var nameHint = c.customerName ? " <span class=\"text-slate-400 font-normal\">(" + escapeHtmlLoyalty(c.customerName) + ")</span>" : "";
+                return "<tr class=\"border-b border-slate-100\"><td class=\"py-2 px-3 font-medium font-mono text-xs tracking-wider\">" + escapeHtmlLoyalty(displayCard) + nameHint + "</td>" +
                   "<td class=\"py-2 px-3 font-semibold text-amber-700\">" + (c.balance || 0) + "</td>" +
                   "<td class=\"py-2 px-3 text-xs text-slate-500\">" + escapeHtmlLoyalty(exp) + "</td></tr>";
               }).join("");
@@ -4163,7 +4178,7 @@
                 var pts = Number(r.points) || 0;
                 var ptsClass = pts >= 0 ? "text-emerald-600" : "text-red-600";
                 return "<tr class=\"border-b border-slate-100\"><td class=\"py-2 px-3 text-xs\">" + escapeHtmlLoyalty(String(r.date || "").slice(0, 10)) + "</td>" +
-                  "<td class=\"py-2 px-3 text-xs\">" + escapeHtmlLoyalty(r.customerName || r.phone || r.lineId || "—") + "</td>" +
+                  "<td class=\"py-2 px-3 text-xs font-mono\">" + escapeHtmlLoyalty(r.memberCardNo || r.customerName || r.phone || r.lineId || "—") + "</td>" +
                   "<td class=\"py-2 px-3\">" + escapeHtmlLoyalty(r.type || "") + "</td>" +
                   "<td class=\"py-2 px-3 font-medium " + ptsClass + "\">" + (pts > 0 ? "+" : "") + pts + "</td>" +
                   "<td class=\"py-2 px-3 text-xs\">" + escapeHtmlLoyalty(r.expireDate || "—") + "</td>" +
@@ -4211,12 +4226,20 @@
         });
         var searchInp = document.getElementById("loyaltySearchInput");
         if (searchInp) searchInp.addEventListener("input", renderLoyaltyPanel);
+        var loyaltyCardInputEl = document.getElementById("loyaltyAdjustCard");
+        if (loyaltyCardInputEl) {
+          loyaltyCardInputEl.addEventListener("input", function() {
+            var v = String(this.value || "").replace(/\D/g, "").slice(0, 13);
+            if (this.value !== v) this.value = v;
+          });
+        }
         var adjForm = document.getElementById("loyaltyAdjustForm");
         if (adjForm) adjForm.addEventListener("submit", function(e) {
           e.preventDefault();
           try {
             var ledger = MaaruLoyalty.getLedger();
             ledger = MaaruLoyalty.manualAdjust(ledger, {
+              memberCardNo: document.getElementById("loyaltyAdjustCard").value,
               phone: document.getElementById("loyaltyAdjustPhone").value,
               lineId: document.getElementById("loyaltyAdjustLineId").value,
               customerName: document.getElementById("loyaltyAdjustName").value,
@@ -4458,16 +4481,46 @@
           );
         }
 
+        function getOrderMemberCardFromForm_() {
+          var el = document.getElementById("orderMemberCardNo");
+          if (window.MaaruMemberCard) return MaaruMemberCard.normalizeMemberCardNo((el && el.value) || "");
+          if (window.MaaruLoyalty) return MaaruLoyalty.normalizeMemberCardNo((el && el.value) || "");
+          return String((el && el.value) || "").replace(/\D/g, "").slice(0, 13);
+        }
+
+        function fillOrderMemberCard_(card) {
+          var el = document.getElementById("orderMemberCardNo");
+          if (el) el.value = card || "";
+          refreshOrderPointsPanel_();
+        }
+
+        function resolveOrderMemberCardForSave_(data, editId) {
+          if (!window.MaaruMemberCard) {
+            if (!window.MaaruLoyalty || !MaaruLoyalty.isValidMemberCardNo(data.memberCardNo)) {
+              throw new Error("請輸入 13 碼會員卡號（純數字）");
+            }
+            return data.memberCardNo;
+          }
+          var orderIdInput = (document.getElementById("orderId") && document.getElementById("orderId").value) ? document.getElementById("orderId").value.trim() : "";
+          var ledger = window.MaaruLoyalty ? MaaruLoyalty.getLedger() : [];
+          return MaaruMemberCard.ensureOrderMemberCard(
+            Object.assign({}, data, { id: editId || orderIdInput }),
+            orders,
+            ledger
+          );
+        }
+
         function refreshOrderPointsPanel_(processedFlag, callback) {
           function doRefresh() {
             if (!window.MaaruLoyalty) {
               if (typeof callback === "function") callback();
               return;
             }
+            var memberCardNo = getOrderMemberCardFromForm_();
             var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
             var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
             var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-            var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
+            var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId);
             var balEl = document.getElementById("orderPointsBalance");
             if (balEl) balEl.textContent = String(balance);
             var processed = processedFlag === true || processedFlag === "Y";
@@ -4514,14 +4567,15 @@
             showOrderPointsHint_("紅利模組未載入，請重新整理頁面", true);
             return 0;
           }
-          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
-          if (!MaaruLoyalty.normalizeCustomerName(customerName)) {
-            showOrderPointsHint_("請先填寫客戶姓名，才能查詢並折抵紅利", true);
+          var memberCardNo = getOrderMemberCardFromForm_();
+          if (!MaaruLoyalty.isValidMemberCardNo(memberCardNo)) {
+            showOrderPointsHint_("請先填寫 13 碼會員卡號，才能查詢並折抵紅利", true);
             return 0;
           }
+          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
           var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
           var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-          var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
+          var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId);
           var amounts = getOrderDiscountFromForm_();
           var net = MaaruLoyalty.merchandiseNet({ subtotal: amounts.subtotal, discount: amounts.discount });
           var maxPts = getOrderPointsMaxRedeem_(balance);
@@ -4703,8 +4757,12 @@
           var balance = 0;
           if (window.MaaruLoyalty) {
             var lineId = "";
-            if (rows.length) lineId = rows[0].lineId || "";
-            balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
+            var memberCardNo = "";
+            if (rows.length) {
+              lineId = rows[0].lineId || "";
+              memberCardNo = rows[0].memberCardNo || "";
+            }
+            balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId);
           }
           var totalDue = 0;
           var activeCount = 0;
@@ -4712,8 +4770,10 @@
           rows.forEach(function(o) {
             if (!o || o._missing) return;
             if (o.status !== "已取消") {
-              totalDue += orderAmountDue(o);
               activeCount += 1;
+            }
+            if (o.status !== "已取消" && o.status !== "已完成") {
+              totalDue += orderAmountDue(o);
             }
             earnedPts += Math.floor(Number(o.pointsEarned) || 0);
           });
@@ -4739,7 +4799,7 @@
           if (summary) {
             summary.innerHTML =
               "<div class=\"rounded-lg border border-amber-200 bg-amber-50 px-3 py-2\"><p class=\"text-[10px] text-amber-800/70\">紅利餘額</p><p class=\"text-lg font-bold text-amber-900\">" + stats.balance + " 點</p></div>" +
-              "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">待結清合計</p><p class=\"text-lg font-bold text-slate-800\">NT$ " + stats.totalDue + "</p></div>" +
+              "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">待結清合計</p><p class=\"text-lg font-bold text-slate-800\">NT$ " + stats.totalDue + "</p><p class=\"text-[10px] text-slate-400 mt-0.5\">不含已完成</p></div>" +
               "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">有效訂單</p><p class=\"text-lg font-bold text-slate-800\">" + stats.activeCount + " 筆</p></div>" +
               "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">累計獲得紅利</p><p class=\"text-lg font-bold text-slate-800\">" + stats.earnedPts + " 點</p></div>";
           }
@@ -5017,10 +5077,11 @@
             ? Math.floor(Number(document.getElementById("orderPointsUsed").value) || 0)
             : 0;
           if (!window.MaaruLoyalty || pointsUsed <= 0) return pointsUsed;
+          var memberCardNo = getOrderMemberCardFromForm_();
           var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
           var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
           var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-          var balance = MaaruLoyalty.getBalance(customerName, phone, lineId);
+          var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId);
           var maxPts = MaaruLoyalty.calcMaxRedeemPoints(
             { subtotal: subtotal, discount: discount, pointsUsed: 0 },
             balance
@@ -5052,6 +5113,7 @@
           var selfIdForLink = editIdForLink || ((document.getElementById("orderId") && document.getElementById("orderId").value) || "");
           var linkedRaw = (document.getElementById("orderLinkedOrderIds") && document.getElementById("orderLinkedOrderIds").value) || "";
           return {
+            memberCardNo: getOrderMemberCardFromForm_(),
             customerName: (document.getElementById("orderCustomerName").value || "").trim(),
             phone: (document.getElementById("orderPhone").value || "").trim(),
             email: (document.getElementById("orderEmail").value || "").trim(),
@@ -5083,6 +5145,8 @@
           if (orderIdEl) { orderIdEl.value = o.id || ""; orderIdEl.readOnly = true; }
           var linkedEl = document.getElementById("orderLinkedOrderIds");
           if (linkedEl) linkedEl.value = formatLinkedOrderIds_(o.linkedOrderIds || "");
+          var cardEl = document.getElementById("orderMemberCardNo");
+          if (cardEl) cardEl.value = (o.memberCardNo || "");
           document.getElementById("orderCustomerName").value = o.customerName || "";
           document.getElementById("orderPhone").value = o.phone || "";
           document.getElementById("orderEmail").value = o.email || "";
@@ -5136,6 +5200,8 @@
             document.getElementById("orderShippingFee").value = "38";
             var shipStatusEl = document.getElementById("orderShippingStatusCoupon");
             if (shipStatusEl) shipStatusEl.checked = false;
+            var cardElNew = document.getElementById("orderMemberCardNo");
+            if (cardElNew) cardElNew.value = "";
             document.getElementById("orderCustomerName").value = "";
             document.getElementById("orderPhone").value = "";
             document.getElementById("orderEmail").value = "";
@@ -5742,10 +5808,32 @@
           });
         }
 
-        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount", "orderDepositAmount", "orderShippingStatusCoupon", "orderCustomerName", "orderPhone", "orderLineId", "orderPointsUsed"].forEach(function(id) {
+        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount", "orderDepositAmount", "orderShippingStatusCoupon", "orderMemberCardNo", "orderCustomerName", "orderPhone", "orderLineId", "orderPointsUsed"].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) { el.addEventListener("input", updateOrderTotal); el.addEventListener("change", updateOrderTotal); }
         });
+        var orderCardInputEl = document.getElementById("orderMemberCardNo");
+        if (orderCardInputEl) {
+          orderCardInputEl.addEventListener("input", function() {
+            var v = String(this.value || "").replace(/\D/g, "").slice(0, 13);
+            if (this.value !== v) this.value = v;
+          });
+        }
+        var btnGenMemberCard = document.getElementById("btnGenerateMemberCard");
+        if (btnGenMemberCard) {
+          btnGenMemberCard.addEventListener("click", function() {
+            try {
+              var draft = getOrderFromForm();
+              var editId = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id")) || "";
+              draft.memberCardNo = "";
+              var card = resolveOrderMemberCardForSave_(draft, editId);
+              fillOrderMemberCard_(card);
+              showOrderMessage("已產生會員卡號：" + card);
+            } catch (err) {
+              showOrderMessage(err.message || "產生失敗", true);
+            }
+          });
+        }
         var usePtsCheckEl = document.getElementById("orderUsePointsCheck");
         if (usePtsCheckEl) {
           usePtsCheckEl.addEventListener("change", function() {
@@ -5798,10 +5886,19 @@
           if (submitBtn) submitBtn.disabled = true;
           var editId = this.getAttribute("data-edit-id") || "";
           var data = getOrderFromForm();
+          try {
+            data.memberCardNo = resolveOrderMemberCardForSave_(data, editId);
+            fillOrderMemberCard_(data.memberCardNo);
+          } catch (cardErr) {
+            showOrderMessage(cardErr.message || "會員卡號無效", true);
+            if (submitBtn) submitBtn.disabled = false;
+            return;
+          }
           syncOrderItemsStateFromEditor_();
           if (editId) {
             var ord = orders.find(function(o) { return o.id === editId; });
             if (ord) {
+              ord.memberCardNo = data.memberCardNo;
               ord.customerName = data.customerName;
               ord.phone = data.phone;
               ord.email = data.email;
@@ -5851,6 +5948,7 @@
               id: newId,
               date: new Date().toISOString(),
               status: "待處理",
+              memberCardNo: data.memberCardNo,
               customerName: data.customerName,
               phone: data.phone,
               email: data.email,
