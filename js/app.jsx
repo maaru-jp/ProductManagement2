@@ -188,6 +188,29 @@ function parseVariantStockStrict(raw) {
   return parts.filter((s) => /^\d+$/.test(s)).map((s) => Math.max(0, parseInt(s, 10)));
 }
 
+function parseVariantPriceList(raw) {
+  if (raw == null || String(raw).trim() === "") return [];
+  const parts = Array.isArray(raw)
+    ? raw.map((x) => String(x).trim())
+    : String(raw).trim().split(/[,，、\s]+/).map((s) => s.trim());
+  return parts.map((s) => {
+    if (!/^\d+(\.\d+)?$/.test(s)) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  });
+}
+
+function resolveVariantUnitPrice_(product, variantPrice) {
+  if (variantPrice != null && Number.isFinite(variantPrice)) {
+    return variantPrice;
+  }
+  const customerPrice = toNumberOrNull(product?.customerDisplayPrice);
+  if (customerPrice != null) return customerPrice;
+  const twd = toNumberOrNull(product?.sellingPrice);
+  if (twd != null) return twd;
+  return null;
+}
+
 /** 從商品或 raw 取得單一庫存數字（含 0），沒資料回傳 null；供顧客頁穩定顯示庫存用 */
 function getProductStockNumber(p) {
   if (!p || typeof p !== "object") return null;
@@ -427,6 +450,12 @@ function normalizeItem(row, index) {
   const variant = Array.isArray(rawVariant)
     ? rawVariant.map((v) => String(v).trim()).filter(Boolean).join(",")
     : (rawVariant != null && rawVariant !== "" ? String(rawVariant).trim() : "");
+  const rawVariantPrices =
+    row.variantPrices ?? row.規格售價 ?? row["規格售價"] ?? row["規格台幣售價"] ?? "";
+  const variantPrices =
+    rawVariantPrices != null && String(rawVariantPrices).trim() !== ""
+      ? String(rawVariantPrices).trim()
+      : "";
   const category = row.category ?? row.分類 ?? "";
   const subcategory = row.subcategory ?? row.子分類 ?? "";
   const character = row.character ?? row.角色 ?? row.角色名稱 ?? "";
@@ -452,6 +481,7 @@ function normalizeItem(row, index) {
     image,
     variantImages,
     variantStock,
+    variantPrices,
     stock,
     description,
     introduction,
@@ -1947,19 +1977,12 @@ function HomePage({ products, rate, loading, error, search: routeSearch, searchK
   );
 }
 
-// 試算表「規格」欄：多個規格用逗號分隔（單欄「凱蒂貓,美樂,布丁狗」或分欄 規格1/2/3）→ 顧客頁會顯示為多個選項
+// 試算表「規格」欄：多個規格以逗號分隔；名稱內可含空白（例：吊飾娃 酷洛米, 手機鍊 美樂蒂）
 function splitVariantString(variantStr) {
   if (variantStr == null || variantStr === "") return [];
   const s = String(variantStr).trim();
   if (!s) return [];
-  // 依「逗號、頓號、分號、空白、換行」任一或多個拆分，支援單欄「凱蒂貓, 美樂, 布丁狗」與分欄合併後的字串
-  const sep = /[,，、;；\s\n\r\uFF0C\u3000\u00A0]+/;
-  let parts = s.split(sep).map((part) => part.trim()).filter(Boolean);
-  // 若只得到一筆但內容裡還有分隔符，再拆一次
-  if (parts.length === 1 && sep.test(parts[0])) {
-    parts = parts[0].split(sep).map((p) => p.trim()).filter(Boolean);
-  }
-  return parts;
+  return s.split(/[,，、;；\n\r\uFF0C]+/).map((part) => part.trim()).filter(Boolean);
 }
 
 function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
@@ -2017,14 +2040,26 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
       p0.variantImages && Array.isArray(p0.variantImages)
         ? p0.variantImages
         : typeof p0.variantImages === "string"
-          ? splitVariantString(p0.variantImages)
+          ? String(p0.variantImages).split(/[,，、;；\n\r\uFF0C]+/).map((s) => s.trim()).filter(Boolean)
           : [];
+
+    const priceList = parseVariantPriceList(
+      p0.variantPrices ?? p0.raw?.variantPrices ?? p0.raw?.規格售價 ?? ""
+    );
 
     if (allParts.length === 0) {
       const rawV = p0.variant ?? p0.規格 ?? "";
       const v = Array.isArray(rawV) ? rawV.join(",") : String(rawV || "").trim();
       const qty = stockList[0] != null ? stockList[0] : getProductStockNumber(p0);
-      return [{ ...p0, variant: v || "單一規格", sku: [p0.name, v || "單一規格", p0.price ?? ""].join("||"), variantStockQty: qty }];
+      const unitPrice = resolveVariantUnitPrice_(p0, priceList[0]);
+      return [{
+        ...p0,
+        variant: v || "單一規格",
+        sellingPrice: unitPrice ?? p0.sellingPrice,
+        customerDisplayPrice: unitPrice ?? p0.customerDisplayPrice,
+        sku: [p0.name, v || "單一規格", unitPrice ?? p0.price ?? ""].join("||"),
+        variantStockQty: qty,
+      }];
     }
 
     return allParts.map((part, i) => {
@@ -2036,11 +2071,14 @@ function ProductDetailPage({ products, rate, encodedName, onAddToCart }) {
         stockList[i] != null
           ? stockList[i]
           : getVariantStockQty(p0, part) ?? getProductStockNumber(p0);
+      const unitPrice = resolveVariantUnitPrice_(p0, priceList[i]);
       return {
         ...p0,
         variant: part,
         image: variantImage || p0.image,
-        sku: [p0.name, part, p0.price ?? ""].join("||"),
+        sellingPrice: unitPrice ?? p0.sellingPrice,
+        customerDisplayPrice: unitPrice ?? p0.customerDisplayPrice,
+        sku: [p0.name, part, unitPrice ?? p0.price ?? ""].join("||"),
         variantStockQty: stock,
       };
     });
@@ -2263,6 +2301,7 @@ function CartDrawer({
       ...it,
       price: it.price ?? fromList.price ?? it.price,
       sellingPrice: it.sellingPrice ?? fromList.sellingPrice,
+      customerDisplayPrice: it.customerDisplayPrice ?? fromList.customerDisplayPrice,
     };
   }
 
@@ -2775,7 +2814,9 @@ function App() {
   }, [path]);
 
   function addToCart(product, qty) {
-    const key = product.sku || [product.name, product.variant || "", product.price ?? ""].join("||");
+    const key =
+      product.sku ||
+      [product.name, product.variant || "", product.sellingPrice ?? product.price ?? ""].join("||");
     const addQty = Math.max(1, Number(qty || 1));
     setCartItems((prev) => {
       const idx = prev.findIndex((x) => x.key === key);
@@ -2792,6 +2833,7 @@ function App() {
           variant: product.variant || "",
           price: product.price,
           sellingPrice: product.sellingPrice,
+          customerDisplayPrice: product.customerDisplayPrice,
           image: product.image || "",
           qty: addQty,
         },
