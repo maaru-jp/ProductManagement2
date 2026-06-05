@@ -195,7 +195,20 @@ function doPost(e) {
         return jsonOutput(out);
       }
       upsertOrder(orderSheet, order);
-      out.message = "已寫入訂單 " + upId + " →「" + orderSheet.getName() + "」";
+      var pointsNote = "";
+      if (body.ledger && Array.isArray(body.ledger) && body.ledger.length) {
+        var pointsSheetSync = getPointsSheet(ss);
+        syncPointsLedger(pointsSheetSync, body.ledger);
+        out.pointsSynced = body.ledger.length;
+        pointsNote = "；紅利紀錄 " + body.ledger.length + " 筆";
+      } else {
+        var pointsAppended = ensurePointsLedgerEntriesFromOrder_(ss, order);
+        if (pointsAppended > 0) {
+          out.pointsAppended = pointsAppended;
+          pointsNote = "；已補寫 " + pointsAppended + " 筆紅利至「紅利紀錄」";
+        }
+      }
+      out.message = "已寫入訂單 " + upId + " →「" + orderSheet.getName() + "」" + pointsNote;
       out.sheetName = orderSheet.getName();
       out.spreadsheetId = ss.getId();
       out.spreadsheetName = ss.getName();
@@ -1615,16 +1628,73 @@ function getActiveLotsForCustomer_(ledger, customerName) {
   return lots;
 }
 
-function collectCustomerNamesForMemberCard_(orders, card) {
-  var names = {};
-  if (!isValidMemberCardNo_(card)) return [];
+function buildMemberCardIdentityIndex_(orders, ledger) {
+  var nameToCard = {};
+  var phoneToCard = {};
+  var lineToCard = {};
+  var cardToNames = {};
+
+  function register(card, name, phone, lineId) {
+    card = normalizeMemberCardNo_(card);
+    if (!isValidMemberCardNo_(card)) return;
+    var n = normalizeCustomerNameForPoints_(name);
+    if (n) {
+      if (!nameToCard[n]) nameToCard[n] = card;
+      if (!cardToNames[card]) cardToNames[card] = {};
+      cardToNames[card][n] = true;
+    }
+    var p = normalizePhoneForPoints_(phone);
+    if (p && !phoneToCard[p]) phoneToCard[p] = card;
+    var l = normalizeLineIdForPoints_(lineId);
+    if (l && !lineToCard[l]) lineToCard[l] = card;
+  }
+
   for (var i = 0; i < (orders || []).length; i++) {
     var ord = orders[i];
-    if (!orderMatchesMemberCard_(ord, card)) continue;
-    var n = normalizeCustomerNameForPoints_(ord && ord.customerName);
-    if (n) names[n] = true;
+    if (!ord) continue;
+    register(ord.memberCardNo, ord.customerName, ord.phone, ord.lineId);
   }
-  return Object.keys(names);
+  for (var j = 0; j < (ledger || []).length; j++) {
+    var rec = ledger[j];
+    if (!rec) continue;
+    register(rec.memberCardNo, getPointRecordCustomerName_(rec), rec.phone, rec.lineId);
+  }
+
+  function resolveCard(rec) {
+    if (!rec) return "";
+    var direct = normalizeMemberCardNo_(getPointRecordMemberCard_(rec));
+    if (isValidMemberCardNo_(direct)) return direct;
+    var n = normalizeCustomerNameForPoints_(getPointRecordCustomerName_(rec));
+    if (n && nameToCard[n]) return nameToCard[n];
+    var p = normalizePhoneForPoints_(rec.phone);
+    if (p && phoneToCard[p]) return phoneToCard[p];
+    var l = normalizeLineIdForPoints_(rec.lineId);
+    if (l && lineToCard[l]) return lineToCard[l];
+    return "";
+  }
+
+  return {
+    resolveCard: resolveCard,
+    linkedNamesForCard: function(c) {
+      c = normalizeMemberCardNo_(c);
+      if (!isValidMemberCardNo_(c)) return [];
+      return Object.keys(cardToNames[c] || {});
+    }
+  };
+}
+
+function normalizePhoneForPoints_(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+function normalizeLineIdForPoints_(lineId) {
+  return String(lineId || "").trim().toLowerCase();
+}
+
+function collectCustomerNamesForMemberCard_(orders, card, ledger) {
+  if (!isValidMemberCardNo_(card)) return [];
+  var idx = buildMemberCardIdentityIndex_(orders, ledger);
+  return idx.linkedNamesForCard(card);
 }
 
 function orderMatchesMemberCardExtended_(order, card, linkedNames) {
@@ -1650,21 +1720,24 @@ function findOrdersForMemberCard_(allOrders, card) {
   return matched;
 }
 
-function recordMatchesMemberCardExtended_(rec, card, linkedNames) {
+function recordMatchesMemberCardExtended_(rec, card, linkedNames, identityIndex) {
+  card = normalizeMemberCardNo_(card);
   if (recordMatchesMemberCardForPoints_(rec, card)) return true;
   if (getPointRecordMemberCard_(rec)) return false;
+  if (identityIndex && identityIndex.resolveCard(rec) === card) return true;
   if (!linkedNames || !linkedNames.length) return false;
   var n = normalizeCustomerNameForPoints_(getPointRecordCustomerName_(rec));
   return !!(n && linkedNames.indexOf(n) >= 0);
 }
 
 function getActiveLotsForMemberCardExtended_(ledger, allOrders, card) {
-  var linkedNames = collectCustomerNamesForMemberCard_(allOrders, card);
+  var identityIndex = buildMemberCardIdentityIndex_(allOrders, ledger);
+  var linkedNames = collectCustomerNamesForMemberCard_(allOrders, card, ledger);
   var today = todayStrForPoints_();
   var lots = [];
   for (var i = 0; i < (ledger || []).length; i++) {
     var rec = ledger[i];
-    if (!recordMatchesMemberCardExtended_(rec, card, linkedNames)) continue;
+    if (!recordMatchesMemberCardExtended_(rec, card, linkedNames, identityIndex)) continue;
     if (!isActivePointLot_(rec, today)) continue;
     lots.push({
       date: rec.date != null ? normalizeSheetDateValue_(rec.date) : "",
@@ -1676,6 +1749,94 @@ function getActiveLotsForMemberCardExtended_(ledger, allOrders, card) {
     return String(a.date || "").localeCompare(String(b.date || ""));
   });
   return lots;
+}
+
+function newPointRecordId_() {
+  return "PT" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+}
+
+function addDaysStrForPoints_(dateStr, days) {
+  var d = new Date(String(dateStr || "") + "T12:00:00");
+  if (isNaN(d.getTime())) d = new Date();
+  d.setDate(d.getDate() + (Number(days) || 0));
+  var m = d.getMonth() + 1;
+  var day = d.getDate();
+  return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day;
+}
+
+function orderHasPointsLedgerEntries_(ledger, orderId) {
+  var oid = String(orderId || "").trim().toUpperCase();
+  if (!oid) return false;
+  for (var i = 0; i < (ledger || []).length; i++) {
+    var rec = ledger[i];
+    if (String(rec.orderId || "").trim().toUpperCase() === oid) return true;
+  }
+  return false;
+}
+
+/** 訂單寫入試算表時，若本機未同步完整 ledger，至少補寫發放／折抵列（供顧客查詢） */
+function ensurePointsLedgerEntriesFromOrder_(ss, order) {
+  if (!order) return 0;
+  var processed = String(order.pointsProcessed || "").trim().toUpperCase();
+  if (processed !== "Y" && processed !== "TRUE") return 0;
+  var card = normalizeMemberCardNo_(order.memberCardNo);
+  if (!isValidMemberCardNo_(card)) return 0;
+  var orderId = normalizeOrderId_(order.id);
+  if (!orderId) return 0;
+
+  var pointsSheet = getPointsSheet(ss);
+  var ledger = getPointsLedger(pointsSheet);
+  if (orderHasPointsLedgerEntries_(ledger, orderId)) return 0;
+
+  var pointsUsed = Math.max(0, Math.floor(Number(order.pointsUsed) || 0));
+  var pointsEarned = Math.max(0, Math.floor(Number(order.pointsEarned) || 0));
+  if (pointsUsed <= 0 && pointsEarned <= 0) return 0;
+
+  var today = todayStrForPoints_();
+  var exp = addDaysStrForPoints_(today, 365);
+  var appended = 0;
+
+  if (pointsEarned > 0) {
+    appendPointRecordRow_(pointsSheet, {
+      id: newPointRecordId_(),
+      date: today,
+      phone: order.phone || "",
+      lineId: order.lineId || "",
+      customerName: order.customerName || "",
+      memberCardNo: card,
+      type: "發放",
+      points: pointsEarned,
+      remaining: pointsEarned,
+      expireDate: exp,
+      orderId: orderId,
+      note: "訂單發放（order_upsert 自動寫入）"
+    });
+    appended++;
+  }
+  if (pointsUsed > 0) {
+    appendPointRecordRow_(pointsSheet, {
+      id: newPointRecordId_(),
+      date: today,
+      phone: order.phone || "",
+      lineId: order.lineId || "",
+      customerName: order.customerName || "",
+      memberCardNo: card,
+      type: "折抵",
+      points: -pointsUsed,
+      remaining: 0,
+      expireDate: "",
+      orderId: orderId,
+      note: "訂單折抵（order_upsert 自動寫入）"
+    });
+    appended++;
+  }
+  return appended;
+}
+
+function appendPointRecordRow_(sheet, rec) {
+  ensurePointsHeaderRow_(sheet);
+  var row = buildRowFromPointRecord_(sheet, rec);
+  sheet.appendRow(row);
 }
 
 /** 顧客端查詢：從 GET 參數解析 13 碼卡號（支援 card / memberCardNo / 誤填在 name 欄） */

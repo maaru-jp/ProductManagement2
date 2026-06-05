@@ -372,9 +372,6 @@
           <button type="button" id="btnExportOrders" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">
             匯出 CSV
           </button>
-          <button type="button" id="btnSyncOrdersSheet" class="px-4 py-2 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-900 text-sm hover:bg-emerald-100" title="將本機全部訂單寫入試算表「歷史訂單」">
-            同步全部至試算表
-          </button>
           <div class="flex-1 flex items-center gap-2 min-w-0 justify-end">
             <input type="text" id="orderSearchInput" placeholder="搜尋訂單編號、客戶姓名、電話..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm pl-9" />
             <button type="button" id="btnOrderSearch" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm hover:bg-slate-50">搜尋</button>
@@ -462,7 +459,7 @@
           <p class="text-sm text-slate-600 mt-2"><strong>備用：</strong>若從未改過「已確認」、直接改 <strong>已完成</strong>，也會發點一次，但不會重複發放。</p>
           <p class="text-sm text-slate-600 mt-2"><strong>不發點：</strong>「產生 PDF」、狀態「出貨中」本身<strong>不會</strong>觸發紅利；「已完成」僅作結案，若已在「已確認」發過點則不再發。</p>
           <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-            <strong>顧客官網查點數</strong>讀取試算表「紅利紀錄」。狀態改「已確認」後系統會嘗試自動同步；若顧客查不到，請至本頁按 <strong>同步至試算表</strong>。
+            <strong>顧客查詢中心</strong>讀取試算表「紅利紀錄」。訂單改「已確認」並寫入試算表後，系統會<strong>自動同步紅利</strong>；若仍查不到，請至本頁按「同步至試算表」。
           </p>
           <div class="flex flex-wrap gap-2 mt-3">
             <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理未發點訂單</button>
@@ -4155,9 +4152,17 @@
           });
         }
 
+        function preparePointsLedgerForSync_() {
+          if (!window.MaaruLoyalty) return [];
+          var orders = loadAdminOrdersForLoyalty_();
+          var bf = MaaruLoyalty.backfillLedgerMemberCards(MaaruLoyalty.getLedger(), orders, true);
+          return bf.ledger;
+        }
+
         function syncPointsLedgerToSheet() {
           if (typeof fetchWrite !== "function") return Promise.resolve();
-          var ledger = MaaruLoyalty.getLedger();
+          var ledger = preparePointsLedgerForSync_();
+          if (!ledger.length) return Promise.resolve({ skipped: true, message: "尚無紅利紀錄" });
           return fetchWrite({ action: "points_sync", ledger: ledger })
             .then(parseWriteApiResponse_)
             .then(function(res) {
@@ -4431,10 +4436,23 @@
           try { localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(orders)); } catch (err) {}
         }
 
-        function upsertOrderToSheet(ord) {
+        function buildPointsLedgerPayload_() {
+          if (!window.MaaruLoyalty) return null;
+          var ordList = getOrdersForLoyaltyLookup_();
+          var bf = MaaruLoyalty.backfillLedgerMemberCards(MaaruLoyalty.getLedger(), ordList, true);
+          return bf.ledger;
+        }
+
+        function upsertOrderToSheet(ord, opts) {
           if (ORDER_LOCAL_ONLY) return Promise.resolve({ localOnly: true, message: "local only" });
           if (!ord || !ord.id) return Promise.resolve(null);
-          return fetchWrite({ action: "order_upsert", order: ord })
+          opts = opts || {};
+          var body = { action: "order_upsert", order: ord };
+          if (opts.syncPoints) {
+            var ledger = buildPointsLedgerPayload_();
+            if (ledger && ledger.length) body.ledger = ledger;
+          }
+          return fetchWrite(body)
             .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON（可能 API 未支援 order_upsert，請確認 GAS 部署在 ProductManagement2 試算表）" }; } }); })
             .then(function(res) {
               if (res && res.error) throw new Error(res.message || "寫入訂單失敗");
@@ -4939,8 +4957,10 @@
         }
 
         function applyLoyaltyToOrder_(ord, prevOrd) {
-          if (!window.MaaruLoyalty || !ord) return ord;
-          if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) return ord;
+          if (!window.MaaruLoyalty || !ord) return { order: ord, pointsChanged: false };
+          if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) {
+            return { order: ord, pointsChanged: false };
+          }
           ord = ensureOrderMemberCardOnOrder_(ord);
           try {
             var result = MaaruLoyalty.processOrderPoints(ord, prevOrd || null);
@@ -4948,22 +4968,45 @@
               if (typeof showOrderMessage === "function") showOrderMessage("紅利：" + result.message);
               if (typeof window.showLoyaltyMessage === "function") window.showLoyaltyMessage(result.message);
             }
-            if (typeof window.syncPointsLedgerToSheet === "function") {
-              window.syncPointsLedgerToSheet().then(function() {
-                if (typeof window.showLoyaltyMessage === "function") window.showLoyaltyMessage("紅利已同步至試算表，顧客頁可查詢");
-              }).catch(function(syncErr) {
-                if (typeof window.showLoyaltyMessage === "function") {
-                  window.showLoyaltyMessage("紅利已處理，但同步試算表失敗：" + (syncErr.message || "請按「同步至試算表」"), true);
-                }
-              });
-            }
+            var pointsChanged = result.order.pointsProcessed === "Y" || result.order.pointsProcessed === true;
             if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
-            return result.order;
+            return { order: result.order, pointsChanged: pointsChanged };
           } catch (err) {
             if (typeof showOrderMessage === "function") showOrderMessage("紅利處理失敗：" + (err.message || ""), true);
             if (typeof window.showLoyaltyMessage === "function") window.showLoyaltyMessage("處理失敗：" + (err.message || ""), true);
-            return ord;
+            return { order: ord, pointsChanged: false };
           }
+        }
+
+        function upsertOrderWithPointsSync_(ord, pointsChanged, successMsg) {
+          return upsertOrderToSheet(ord, { syncPoints: !!pointsChanged }).then(function(res) {
+            var sheetHint = (res && res.sheetName) ? ("「" + res.sheetName + "」") : "試算表";
+            var msg = successMsg || ("訂單已寫入 " + sheetHint);
+            if (pointsChanged) {
+              if (res && res.pointsSynced) msg += "；紅利已同步（" + res.pointsSynced + " 筆）";
+              else if (res && res.pointsAppended) msg += "；已補寫紅利 " + res.pointsAppended + " 筆";
+              else msg += "；紅利已同步";
+              if (typeof window.showLoyaltyMessage === "function") {
+                window.showLoyaltyMessage("紅利已寫入試算表，顧客可查詢");
+              }
+            }
+            showOrderMessage(msg);
+            return res;
+          }).catch(function(err) {
+            showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
+            if (pointsChanged && typeof window.syncPointsLedgerToSheet === "function") {
+              window.syncPointsLedgerToSheet().then(function() {
+                if (typeof window.showLoyaltyMessage === "function") {
+                  window.showLoyaltyMessage("訂單已寫入，紅利已另行同步至試算表");
+                }
+              }).catch(function(syncErr) {
+                if (typeof window.showLoyaltyMessage === "function") {
+                  window.showLoyaltyMessage("紅利同步失敗：" + (syncErr.message || "請至紅利點數頁手動同步"), true);
+                }
+              });
+            }
+            throw err;
+          });
         }
 
         function processPendingLoyaltyOrders_(silent) {
@@ -4972,18 +5015,26 @@
           var result = MaaruLoyalty.processPendingOrders(orders);
           if (result.processed > 0) {
             saveOrders();
+            var chain = Promise.resolve();
             orders.forEach(function (ord) {
               if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) {
-                upsertOrderToSheet(ord).catch(function() {});
+                chain = chain.then(function () {
+                  return upsertOrderToSheet(ord).catch(function () { return null; });
+                });
               }
             });
-            if (typeof window.syncPointsLedgerToSheet === "function") {
-              window.syncPointsLedgerToSheet().catch(function() {});
-            }
-            if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
-            if (!silent && typeof showOrderMessage === "function") {
-              showOrderMessage("已補處理 " + result.processed + " 筆訂單紅利並同步試算表");
-            }
+            chain = chain.then(function () {
+              if (typeof window.syncPointsLedgerToSheet === "function") {
+                return window.syncPointsLedgerToSheet().catch(function () { return null; });
+              }
+              return null;
+            });
+            chain.then(function () {
+              if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+              if (!silent && typeof showOrderMessage === "function") {
+                showOrderMessage("已補處理 " + result.processed + " 筆訂單紅利並同步試算表");
+              }
+            });
           } else if (!silent && typeof showOrderMessage === "function") {
             showOrderMessage("沒有需要補處理的訂單（需為已確認／已完成、有會員卡號且尚未發點）", true);
           }
@@ -5674,16 +5725,12 @@
                 ord.status = this.value;
                 ord.pointsUsed = ord.pointsUsed != null ? ord.pointsUsed : 0;
                 ord = ensureOrderMemberCardOnOrder_(ord);
-                ord = applyLoyaltyToOrder_(ord, { status: prevStatus, pointsProcessed: prevProcessed });
+                var loyaltyResult = applyLoyaltyToOrder_(ord, { status: prevStatus, pointsProcessed: prevProcessed });
+                ord = loyaltyResult.order;
                 saveOrders();
                 renderOrders();
                 selectEl.disabled = true;
-                upsertOrderToSheet(ord).then(function(res) {
-                  var sheetHint = (res && res.sheetName) ? ("「" + res.sheetName + "」") : "試算表";
-                  showOrderMessage("訂單狀態已寫入 " + sheetHint);
-                }).catch(function(err) {
-                  showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
-                }).finally(function() {
+                upsertOrderWithPointsSync_(ord, loyaltyResult.pointsChanged, "訂單狀態已寫入").finally(function() {
                   selectEl.disabled = false;
                 });
               }
@@ -6290,16 +6337,13 @@
               ord.shipDate = data.shipDate;
               ord.linkedOrderIds = data.linkedOrderIds || "";
               ord.items = normalizeOrderItems_(orderItemsState).filter(function(it) { return String(it.lineName || "").trim() !== ""; });
-              ord = applyLoyaltyToOrder_(ord, null);
+              var loyaltyResult = applyLoyaltyToOrder_(ord, null);
+              ord = loyaltyResult.order;
               saveOrders();
               renderOrders();
               closeOrderModal();
               showOrderMessage("訂單已更新（含 " + ord.items.length + " 筆品項）");
-              upsertOrderToSheet(ord).then(function() {
-                showOrderMessage("訂單已更新（試算表已同步）");
-              }).catch(function(err) {
-                showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
-              }).finally(function() {
+              upsertOrderWithPointsSync_(ord, loyaltyResult.pointsChanged, "訂單已更新（試算表已同步）").finally(function() {
                 if (submitBtn) submitBtn.disabled = false;
               });
             }
@@ -6401,12 +6445,6 @@
 
         if (btnExportOrders) btnExportOrders.addEventListener("click", function() {
           exportOrdersCsvFromCurrentList();
-        });
-        var btnSyncOrdersSheet = document.getElementById("btnSyncOrdersSheet");
-        if (btnSyncOrdersSheet) btnSyncOrdersSheet.addEventListener("click", function() {
-          verifyShopApiBinding_().then(function(ok) {
-            if (ok) return syncAllLocalOrdersToSheet();
-          });
         });
         if (btnSaveOrders) {
           btnSaveOrders.disabled = false;
