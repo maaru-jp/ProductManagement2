@@ -1,5 +1,6 @@
 /**
  * MAARU 紅利點數 — 消費滿 100 元集 1 點，1 點折 1 元，1 年內有效
+ * 會員以「客戶姓名」識別（電話／Line ID 僅供備註，舊資料無姓名時仍可以電話／Line 對應）
  */
 (function (global) {
   var CONFIG_KEY = "maaru_loyalty_config";
@@ -27,6 +28,10 @@
     localStorage.setItem(CONFIG_KEY, JSON.stringify(Object.assign({}, DEFAULT_CONFIG, cfg || {})));
   }
 
+  function normalizeCustomerName(name) {
+    return String(name || "").trim().replace(/\s+/g, "");
+  }
+
   function normalizePhone(phone) {
     return String(phone || "").replace(/\D/g, "");
   }
@@ -35,7 +40,9 @@
     return String(lineId || "").trim().toLowerCase();
   }
 
-  function customerKey(phone, lineId) {
+  function customerKey(customerName, phone, lineId) {
+    var n = normalizeCustomerName(customerName);
+    if (n) return "N:" + n;
     var p = normalizePhone(phone);
     if (p) return "P:" + p;
     var l = normalizeLineId(lineId);
@@ -74,9 +81,10 @@
     localStorage.setItem(LEDGER_KEY, JSON.stringify(Array.isArray(list) ? list : []));
   }
 
-  function recordMatchesCustomer(rec, phone, lineId) {
-    var key = customerKey(phone, lineId);
-    if (!key) return false;
+  function recordMatchesCustomer(rec, customerName, phone, lineId) {
+    var n = normalizeCustomerName(customerName);
+    if (n && normalizeCustomerName(rec.customerName) === n) return true;
+    if (n) return false;
     var p = normalizePhone(phone);
     var l = normalizeLineId(lineId);
     if (p && normalizePhone(rec.phone) === p) return true;
@@ -84,13 +92,12 @@
     return false;
   }
 
-  function expireCustomerPoints(ledger, phone, lineId) {
+  function expireCustomerPoints(ledger, customerName, phone, lineId) {
     var today = todayStr();
-    var cfg = getConfig();
     var changed = false;
     ledger.forEach(function (rec) {
       if (rec.type !== "發放") return;
-      if (!recordMatchesCustomer(rec, phone, lineId)) return;
+      if (!recordMatchesCustomer(rec, customerName, phone, lineId)) return;
       var remaining = Number(rec.remaining);
       if (!remaining || remaining <= 0) return;
       var exp = rec.expireDate ? String(rec.expireDate).slice(0, 10) : "";
@@ -115,13 +122,13 @@
     return changed ? ledger : ledger;
   }
 
-  function getActiveLots(ledger, phone, lineId) {
-    ledger = expireCustomerPoints(ledger.slice(), phone, lineId);
+  function getActiveLots(ledger, customerName, phone, lineId) {
+    ledger = expireCustomerPoints(ledger.slice(), customerName, phone, lineId);
     var today = todayStr();
     return ledger
       .filter(function (rec) {
         if (rec.type !== "發放") return false;
-        if (!recordMatchesCustomer(rec, phone, lineId)) return false;
+        if (!recordMatchesCustomer(rec, customerName, phone, lineId)) return false;
         var remaining = Number(rec.remaining);
         if (!remaining || remaining <= 0) return false;
         var exp = rec.expireDate ? String(rec.expireDate).slice(0, 10) : "";
@@ -132,9 +139,9 @@
       });
   }
 
-  function getBalance(phone, lineId) {
+  function getBalance(customerName, phone, lineId) {
     var ledger = getLedger();
-    return getActiveLots(ledger, phone, lineId).reduce(function (sum, lot) {
+    return getActiveLots(ledger, customerName, phone, lineId).reduce(function (sum, lot) {
       return sum + (Number(lot.remaining) || 0);
     }, 0);
   }
@@ -168,7 +175,7 @@
   function redeemPoints(ledger, order, pointsToUse) {
     var pts = Math.max(0, Math.floor(Number(pointsToUse) || 0));
     if (!pts) return ledger;
-    var lots = getActiveLots(ledger, order.phone, order.lineId);
+    var lots = getActiveLots(ledger, order.customerName, order.phone, order.lineId);
     var need = pts;
     lots.forEach(function (lot) {
       if (need <= 0) return;
@@ -225,9 +232,10 @@
   function manualAdjust(ledger, payload) {
     var pts = Math.floor(Number(payload.points) || 0);
     if (!pts) throw new Error("請輸入點數");
+    var customerName = (payload.customerName || "").trim();
     var phone = (payload.phone || "").trim();
     var lineId = (payload.lineId || "").trim();
-    if (!customerKey(phone, lineId)) throw new Error("請填電話或 Line ID");
+    if (!normalizeCustomerName(customerName)) throw new Error("請填客戶姓名");
     if (pts > 0) {
       var cfg = getConfig();
       ledger.push({
@@ -235,7 +243,7 @@
         date: todayStr(),
         phone: phone,
         lineId: lineId,
-        customerName: (payload.customerName || "").trim(),
+        customerName: customerName,
         type: "調整",
         points: pts,
         remaining: pts,
@@ -247,7 +255,7 @@
     } else {
       ledger = redeemPoints(
         ledger,
-        { phone: phone, lineId: lineId, customerName: payload.customerName, id: "ADJ" },
+        { customerName: customerName, phone: phone, lineId: lineId, id: "ADJ" },
         Math.abs(pts)
       );
       var last = ledger[ledger.length - 1];
@@ -274,14 +282,14 @@
     if (!shouldProcessOrder(order)) {
       return { order: order, ledger: getLedger(), message: "" };
     }
-    if (!customerKey(order.phone, order.lineId)) {
-      return { order: order, ledger: getLedger(), message: "缺少電話或 Line ID，無法發放紅利" };
+    if (!normalizeCustomerName(order.customerName)) {
+      return { order: order, ledger: getLedger(), message: "缺少客戶姓名，無法發放紅利" };
     }
 
     var cfg = getConfig();
     var ledger = getLedger();
     var pointsUsed = Math.floor(Number(order.pointsUsed) || 0);
-    var balance = getBalance(order.phone, order.lineId);
+    var balance = getBalance(order.customerName, order.phone, order.lineId);
 
     if (pointsUsed > 0) {
       var maxUse = calcMaxRedeemPoints(order, balance);
@@ -313,13 +321,17 @@
     var ledger = getLedger();
     var keys = {};
     ledger.forEach(function (rec) {
-      if (!recordMatchesCustomer(rec, rec.phone, rec.lineId)) return;
-      var k = customerKey(rec.phone, rec.lineId);
-      if (k) keys[k] = { phone: rec.phone, lineId: rec.lineId };
+      var k = customerKey(rec.customerName, rec.phone, rec.lineId);
+      if (!k) return;
+      keys[k] = {
+        customerName: rec.customerName || "",
+        phone: rec.phone || "",
+        lineId: rec.lineId || "",
+      };
     });
     Object.keys(keys).forEach(function (k) {
       var c = keys[k];
-      ledger = expireCustomerPoints(ledger, c.phone, c.lineId);
+      ledger = expireCustomerPoints(ledger, c.customerName, c.phone, c.lineId);
     });
     saveLedger(ledger);
     return ledger;
@@ -329,7 +341,7 @@
     ledger = ledger || getLedger();
     var map = {};
     ledger.forEach(function (rec) {
-      var k = customerKey(rec.phone, rec.lineId);
+      var k = customerKey(rec.customerName, rec.phone, rec.lineId);
       if (!k) return;
       if (!map[k]) {
         map[k] = {
@@ -354,7 +366,7 @@
     });
     Object.keys(map).forEach(function (k) {
       var c = map[k];
-      var lots = getActiveLots(ledger, c.phone, c.lineId);
+      var lots = getActiveLots(ledger, c.customerName, c.phone, c.lineId);
       c.balance = lots.reduce(function (s, lot) { return s + (Number(lot.remaining) || 0); }, 0);
       if (lots.length) {
         c.nextExpireDate = lots[0].expireDate || "";
@@ -363,7 +375,12 @@
     });
     return Object.keys(map)
       .map(function (k) { return map[k]; })
-      .sort(function (a, b) { return (b.balance || 0) - (a.balance || 0); });
+      .sort(function (a, b) {
+        var na = normalizeCustomerName(a.customerName);
+        var nb = normalizeCustomerName(b.customerName);
+        if (na && nb && na !== nb) return na.localeCompare(nb, "zh-Hant");
+        return (b.balance || 0) - (a.balance || 0);
+      });
   }
 
   function normalizeLedgerFromApi(rows) {
@@ -405,6 +422,7 @@
     runGlobalExpiry: runGlobalExpiry,
     summarizeCustomers: summarizeCustomers,
     normalizeLedgerFromApi: normalizeLedgerFromApi,
+    normalizeCustomerName: normalizeCustomerName,
     customerKey: customerKey,
     todayStr: todayStr,
   };
