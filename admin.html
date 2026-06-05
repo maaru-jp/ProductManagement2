@@ -1474,7 +1474,7 @@
   </div>
 
   <script src="js/member-card.js"></script>
-  <script src="js/admin-loyalty.js?v=20260601-14"></script>
+  <script src="js/admin-loyalty.js?v=20260601-16"></script>
   <script>
     (function() {
       // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
@@ -4155,6 +4155,9 @@
         function backfillLedgerSafe_(ledger, orders, persist) {
           ledger = ledger || (window.MaaruLoyalty ? MaaruLoyalty.getLedger() : []);
           orders = orders || loadAdminOrdersForLoyalty_();
+          if (window.MaaruLoyalty && typeof MaaruLoyalty.consolidateLedgerMemberCards === "function") {
+            return MaaruLoyalty.consolidateLedgerMemberCards(ledger, orders, persist);
+          }
           if (window.MaaruLoyalty && typeof MaaruLoyalty.backfillLedgerMemberCards === "function") {
             return MaaruLoyalty.backfillLedgerMemberCards(ledger, orders, persist);
           }
@@ -4164,23 +4167,59 @@
           return { ledger: ledger, changed: false };
         }
 
-        function preparePointsLedgerForSync_() {
+        function mergeOrdersForLoyalty_(sheetOrders, localOrders) {
+          var out = [];
+          var byId = {};
+          (Array.isArray(sheetOrders) ? sheetOrders : []).forEach(function (o) {
+            var id = (o && o.id != null) ? String(o.id).trim() : "";
+            if (!id) return;
+            byId[id.toUpperCase()] = o;
+          });
+          Object.keys(byId).forEach(function (k) { out.push(byId[k]); });
+          (Array.isArray(localOrders) ? localOrders : []).forEach(function (o) {
+            var id = (o && o.id != null) ? String(o.id).trim() : "";
+            if (!id) return;
+            var key = id.toUpperCase();
+            var idx = out.findIndex(function (x) { return String(x.id || "").trim().toUpperCase() === key; });
+            if (idx >= 0) out[idx] = o;
+            else out.push(o);
+          });
+          return out;
+        }
+
+        function fetchOrdersForLoyalty_() {
+          var local = loadAdminOrdersForLoyalty_();
+          if (typeof fetchWrite !== "function") return Promise.resolve(local);
+          return fetchWrite({ action: "order_list" })
+            .then(parseWriteApiResponse_)
+            .then(function (res) {
+              if (res && res.error) throw new Error(res.message || "載入訂單失敗");
+              return mergeOrdersForLoyalty_(res.orders || [], local);
+            })
+            .catch(function () { return local; });
+        }
+
+        function preparePointsLedgerForSync_(orders) {
           if (!window.MaaruLoyalty) return [];
-          var orders = loadAdminOrdersForLoyalty_();
+          orders = orders || loadAdminOrdersForLoyalty_();
           return backfillLedgerSafe_(MaaruLoyalty.getLedger(), orders, true).ledger;
         }
 
-        function syncPointsLedgerToSheet() {
+        function syncPointsLedgerToSheet(orders) {
           if (typeof fetchWrite !== "function") return Promise.resolve();
           try {
-            var ledger = preparePointsLedgerForSync_();
-            if (!ledger.length) return Promise.resolve({ skipped: true, message: "尚無紅利紀錄" });
-            return fetchWrite({ action: "points_sync", ledger: ledger })
-              .then(parseWriteApiResponse_)
-              .then(function(res) {
-                if (res && res.error) throw new Error(res.message || "同步失敗");
-                return res;
-              });
+            var prep = function (ordList) {
+              var ledger = preparePointsLedgerForSync_(ordList);
+              if (!ledger.length) return Promise.resolve({ skipped: true, message: "尚無紅利紀錄" });
+              return fetchWrite({ action: "points_sync", ledger: ledger })
+                .then(parseWriteApiResponse_)
+                .then(function (res) {
+                  if (res && res.error) throw new Error(res.message || "同步失敗");
+                  return res;
+                });
+            };
+            if (Array.isArray(orders)) return prep(orders);
+            return fetchOrdersForLoyalty_().then(prep);
           } catch (err) {
             return Promise.reject(err);
           }
@@ -4188,28 +4227,34 @@
 
         function loadPointsFromSheet() {
           if (typeof fetchWrite !== "function") return Promise.resolve();
-          return fetchWrite({ action: "points_list" })
-            .then(parseWriteApiResponse_)
-            .then(function(res) {
-              if (res && res.error) throw new Error(res.message || "載入失敗");
-              var remote = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
-              var merged = MaaruLoyalty.mergeLedgers(MaaruLoyalty.getLedger(), remote);
-              var orders = loadAdminOrdersForLoyalty_();
-              var bf = backfillLedgerSafe_(merged, orders, true);
-              MaaruLoyalty.saveLedger(bf.ledger);
-              return bf.ledger;
-            });
+          return fetchOrdersForLoyalty_().then(function(orders) {
+            return fetchWrite({ action: "points_list" })
+              .then(parseWriteApiResponse_)
+              .then(function(res) {
+                if (res && res.error) throw new Error(res.message || "載入失敗");
+                var remote = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
+                var merged = MaaruLoyalty.mergeLedgers(MaaruLoyalty.getLedger(), remote);
+                var bf = backfillLedgerSafe_(merged, orders, true);
+                MaaruLoyalty.saveLedger(bf.ledger);
+                return { ledger: bf.ledger, orders: orders };
+              });
+          });
         }
 
         function loadAdminOrdersForLoyalty_() {
+          var list = [];
           try {
             var saved = localStorage.getItem("adminOrders");
             if (saved) {
-              var list = JSON.parse(saved);
-              return Array.isArray(list) ? list : [];
+              list = JSON.parse(saved);
             }
           } catch (e) {}
-          return [];
+          if (!Array.isArray(list)) list = [];
+          if (typeof window.getAdminOrdersSnapshot_ === "function") {
+            var live = window.getAdminOrdersSnapshot_();
+            if (Array.isArray(live) && live.length >= list.length) list = live;
+          }
+          return list;
         }
 
         function customerMatchesLoyaltyQuery_(c, q, qDigits) {
@@ -4286,8 +4331,8 @@
           });
         }
 
-        function renderLoyaltyPanel() {
-          var orders = loadAdminOrdersForLoyalty_();
+        function renderLoyaltyPanel(orders) {
+          orders = orders || loadAdminOrdersForLoyalty_();
           MaaruLoyalty.runGlobalExpiry(orders);
           var q = (document.getElementById("loyaltySearchInput") && document.getElementById("loyaltySearchInput").value || "").trim().toLowerCase();
           var qDigits = q.replace(/\D/g, "");
@@ -4339,10 +4384,21 @@
 
         var btnSync = document.getElementById("btnSyncPointsSheet");
         if (btnSync) btnSync.addEventListener("click", function() {
-          syncPointsLedgerToSheet().then(function() {
-            showLoyaltyMessage("已同步至試算表「紅利紀錄」");
+          btnSync.disabled = true;
+          syncPointsLedgerToSheet().then(function(res) {
+            return fetchOrdersForLoyalty_().then(function(orders) {
+              renderLoyaltyPanel(orders);
+              if (res && res.skipped) {
+                showLoyaltyMessage("尚無紅利紀錄可同步");
+              } else {
+                showLoyaltyMessage("已同步至試算表「紅利紀錄」，會員餘額已重新整理");
+              }
+            });
           }).catch(function(err) {
+            renderLoyaltyPanel();
             showLoyaltyMessage("同步失敗：" + (err.message || ""), true);
+          }).finally(function() {
+            btnSync.disabled = false;
           });
         });
         var btnExpire = document.getElementById("btnLoyaltyExpireAll");
@@ -4361,12 +4417,15 @@
         });
         var btnReload = document.getElementById("btnLoyaltyReload");
         if (btnReload) btnReload.addEventListener("click", function() {
-          loadPointsFromSheet().then(function() {
-            renderLoyaltyPanel();
-            showLoyaltyMessage("已重新載入");
+          btnReload.disabled = true;
+          loadPointsFromSheet().then(function(result) {
+            renderLoyaltyPanel(result && result.orders ? result.orders : null);
+            showLoyaltyMessage("已重新載入並合併會員資料");
           }).catch(function(err) {
             renderLoyaltyPanel();
             showLoyaltyMessage("載入失敗：" + (err.message || ""), true);
+          }).finally(function() {
+            btnReload.disabled = false;
           });
         });
         var searchInp = document.getElementById("loyaltySearchInput");
@@ -4420,7 +4479,11 @@
           }
         });
 
-        loadPointsFromSheet().then(renderLoyaltyPanel).catch(renderLoyaltyPanel);
+        loadPointsFromSheet().then(function(result) {
+          renderLoyaltyPanel(result && result.orders ? result.orders : null);
+        }).catch(function() {
+          renderLoyaltyPanel();
+        });
       })();
 
       (function initOrderSection() {
@@ -4451,15 +4514,19 @@
         function saveOrders() {
           try { localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(orders)); } catch (err) {}
         }
+        window.getAdminOrdersSnapshot_ = function () { return orders; };
 
         function buildPointsLedgerPayload_() {
           if (!window.MaaruLoyalty) return null;
           var ordList = getOrdersForLoyaltyLookup_();
           var backfill = typeof window.backfillLedgerSafe_ === "function"
             ? window.backfillLedgerSafe_
-            : function(ledger, orders, persist) {
+            : function (ledger, ords, persist) {
+                if (window.MaaruLoyalty && typeof MaaruLoyalty.consolidateLedgerMemberCards === "function") {
+                  return MaaruLoyalty.consolidateLedgerMemberCards(ledger, ords, persist);
+                }
                 if (window.MaaruLoyalty && typeof MaaruLoyalty.backfillLedgerMemberCards === "function") {
-                  return MaaruLoyalty.backfillLedgerMemberCards(ledger, orders, persist);
+                  return MaaruLoyalty.backfillLedgerMemberCards(ledger, ords, persist);
                 }
                 return { ledger: ledger || [], changed: false };
               };
