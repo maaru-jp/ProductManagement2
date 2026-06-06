@@ -1513,20 +1513,29 @@
       var EXPECTED_SHOP_SPREADSHEET_ID = "14dqpeCDpKRA8_Ca2b5Phinh00ydPiaBh3MHKrVYMVOI";
 
       function getFetchWriteUrls_() {
-        var urls = [];
-        if (onLocalDevServer) urls.push("/api-write");
-        urls.push(API_BASE);
-        return urls;
+        if (onLocalDevServer) return ["/api-write"];
+        return [API_BASE];
       }
 
-      function fetchWrite(body) {
+      function fetchWriteTimeoutMs_(body) {
+        var action = body && body.action ? String(body.action) : "";
+        if (action === "points_sync") return 240000;
+        if (action === "order_list" || action === "order_upsert") return 120000;
+        return 90000;
+      }
+
+      function fetchWrite(body, options) {
+        options = options || {};
         var payload = Object.assign({}, body || {}, { token: ADMIN_WRITE_TOKEN });
         var jsonBody = JSON.stringify(payload);
         var urls = getFetchWriteUrls_();
-        var strategies = [
-          { headers: { "Content-Type": "text/plain;charset=utf-8" } },
-          { headers: { "Content-Type": "application/json" } }
-        ];
+        var strategies = onLocalDevServer
+          ? [{ headers: { "Content-Type": "text/plain;charset=utf-8" } }]
+          : [
+            { headers: { "Content-Type": "text/plain;charset=utf-8" } },
+            { headers: { "Content-Type": "application/json" } }
+          ];
+        var timeoutMs = options.timeoutMs || fetchWriteTimeoutMs_(body);
         var lastErr = null;
 
         function tryCombo(urlIndex, strategyIndex) {
@@ -1538,11 +1547,13 @@
             } else if (!onLocalDevServer) {
               hint = "若仍失敗，請在本機執行 start.bat，用 http://localhost:3000/admin.html 操作";
             } else {
-              hint = "請確認已執行 python server.py（或 start.bat），並用 http://localhost:3000/admin.html 開啟";
+              hint = "請確認已執行 start.bat，並用 http://localhost:3000/admin.html 開啟";
             }
             throw new Error((lastErr && lastErr.message ? lastErr.message : "無法連線 GAS") + "。" + hint);
           }
           var url = urls[urlIndex];
+          var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+          var timer = null;
           var opts = {
             method: "POST",
             headers: strategies[strategyIndex].headers,
@@ -1550,13 +1561,23 @@
             redirect: "follow",
             cache: "no-store"
           };
+          if (controller) {
+            opts.signal = controller.signal;
+            timer = setTimeout(function() { controller.abort(); }, timeoutMs);
+          }
           return fetch(url, opts).then(function(res) {
+            if (timer) clearTimeout(timer);
             if (!res || !res.ok) {
               lastErr = new Error("HTTP " + (res ? res.status : "?"));
               return tryCombo(urlIndex + 1, strategyIndex);
             }
             return res;
           }).catch(function(err) {
+            if (timer) clearTimeout(timer);
+            if (controller && err && err.name === "AbortError") {
+              lastErr = new Error("同步逾時（超過 " + Math.round(timeoutMs / 1000) + " 秒）。請確認 start.bat 視窗仍開啟，或稍後再試");
+              return tryCombo(urlIndex + 1, strategyIndex);
+            }
             lastErr = err;
             return tryCombo(urlIndex + 1, strategyIndex);
           });
@@ -1567,6 +1588,7 @@
 
       function formatNetworkError(err) {
         var raw = (err && err.message) ? String(err.message) : "網路錯誤";
+        if (/同步逾時/.test(raw)) return raw;
         if (/failed to fetch|無法連線|networkerror|load failed/i.test(raw)) {
           if (window.location.protocol === "file:") {
             return "無法連線。請雙擊專案資料夾的 start.bat，改用 http://localhost:3000/admin.html 開啟後台（勿用 file://）";
@@ -4285,13 +4307,17 @@
           return backfillLedgerSafe_(MaaruLoyalty.getLedger(), orders, true).ledger;
         }
 
-        function syncPointsLedgerToSheet(orders) {
+        function syncPointsLedgerToSheet(orders, onProgress) {
           if (typeof fetchWrite !== "function") {
             return Promise.reject(new Error("API 寫入功能未就緒"));
           }
+          var report = function (msg) {
+            if (typeof onProgress === "function") onProgress(msg);
+          };
           try {
             var prep = function (ordList, remoteRows) {
               ordList = ordList || loadAdminOrdersForLoyalty_();
+              report("合併本機紅利…");
               var remote = window.MaaruLoyalty
                 ? MaaruLoyalty.normalizeLedgerFromApi(remoteRows || [])
                 : [];
@@ -4302,6 +4328,7 @@
               var bf = backfillLedgerSafe_(merged, ordList, true);
               if (window.MaaruLoyalty) MaaruLoyalty.saveLedger(bf.ledger);
               if (!bf.ledger.length) return Promise.resolve({ skipped: true, message: "尚無紅利紀錄" });
+              report("上傳至試算表（共 " + bf.ledger.length + " 筆）…");
               return fetchWrite({ action: "points_sync", ledger: bf.ledger })
                 .then(parseWriteApiResponse_)
                 .then(function (res) {
@@ -4309,6 +4336,7 @@
                   return res;
                 });
             };
+            report("讀取試算表紅利…");
             var loadRemote = fetchWrite({ action: "points_list" })
               .then(parseWriteApiResponse_)
               .then(function (res) {
@@ -4316,11 +4344,17 @@
                 return res.ledger || [];
               })
               .catch(function () { return []; });
+            var loadOrders = Array.isArray(orders)
+              ? Promise.resolve(orders)
+              : (function () {
+                report("讀取訂單…");
+                return fetchOrdersForLoyalty_();
+              })();
             if (Array.isArray(orders)) {
               return loadRemote.then(function (remote) { return prep(orders, remote); });
             }
-            return fetchOrdersForLoyalty_().then(function (ordList) {
-              return loadRemote.then(function (remote) { return prep(ordList, remote); });
+            return Promise.all([loadOrders, loadRemote]).then(function (pair) {
+              return prep(pair[0], pair[1]);
             });
           } catch (err) {
             return Promise.reject(err);
@@ -4490,7 +4524,9 @@
           btnSync.disabled = true;
           btnSync.textContent = "同步中…";
           showLoyaltyMessage("正在同步至試算表「紅利點數」…", false);
-          syncPointsLedgerToSheet().then(function(res) {
+          syncPointsLedgerToSheet(null, function(step) {
+            showLoyaltyMessage(step, false);
+          }).then(function(res) {
             return fetchOrdersForLoyalty_().then(function(orders) {
               renderLoyaltyPanel(orders);
               if (res && res.skipped) {

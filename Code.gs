@@ -148,16 +148,8 @@ function doPost(e) {
         out.ledgerCount = getPointsLedger(pointsSheet).length;
         return jsonOutput(out);
       }
-      var orderSheetForPoints = getOrderSheet(ss);
-      var ordersForPoints = getAllOrdersMerged_(ss);
-      var cardsSeen = {};
-      for (var opi = 0; opi < ordersForPoints.length; opi++) {
-        var oc = normalizeMemberCardNo_(ordersForPoints[opi] && ordersForPoints[opi].memberCardNo);
-        if (!isValidMemberCardNo_(oc) || cardsSeen[oc]) continue;
-        cardsSeen[oc] = true;
-        syncMissingLedgerEntriesForMemberCard_(ss, oc, ordersForPoints);
-      }
-      syncPointsLedger(pointsSheet, ledger, ordersForPoints);
+      // 後台已在本機合併 ledger 再上傳；略過逐卡補寫（極慢，易逾時卡住）
+      syncPointsLedger(pointsSheet, ledger, null);
       out.message = "已同步 " + getPointsLedger(pointsSheet).length + " 筆至「紅利點數」";
       out.ledgerCount = getPointsLedger(pointsSheet).length;
       return jsonOutput(out);
