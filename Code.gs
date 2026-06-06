@@ -49,7 +49,7 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-05-26-member-external-sheet",
+        apiVersion: "2026-05-26-member-row2-fix",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
@@ -189,6 +189,9 @@ function doPost(e) {
         out.members = getMembers(memberSheet);
         out.message = "OK";
         out.memberCount = out.members.length;
+        out.memberSpreadsheetId = getMemberSpreadsheetMeta_().id;
+        out.memberSpreadsheetName = getMemberSpreadsheetMeta_().name;
+        out.memberSpreadsheetUrl = getMemberSpreadsheetMeta_().url;
         return jsonOutput(out);
       }
       if (action === "member_sync_from_orders") {
@@ -198,6 +201,10 @@ function doPost(e) {
         out.updated = syncResult.updated;
         out.conflicts = syncResult.conflicts;
         out.skipped = syncResult.skipped;
+        out.eligible = syncResult.eligible;
+        out.failed = syncResult.failed;
+        out.memberSpreadsheetId = syncResult.memberSpreadsheetId;
+        out.memberSpreadsheetUrl = getMemberSpreadsheetMeta_().url;
         out.message = syncResult.message;
         return jsonOutput(out);
       }
@@ -3754,12 +3761,12 @@ function getMemberSpreadsheet_(fallbackSs) {
 
 function getMemberSpreadsheetMeta_() {
   var id = (CONFIG.memberSpreadsheetId || "").toString().trim();
-  if (!id) return { id: "", name: "" };
+  if (!id) return { id: "", name: "", url: "" };
   try {
     var ss = SpreadsheetApp.openById(id);
-    return { id: ss.getId(), name: ss.getName() };
+    return { id: ss.getId(), name: ss.getName(), url: "https://docs.google.com/spreadsheets/d/" + ss.getId() + "/edit" };
   } catch (err) {
-    return { id: id, name: "", error: String(err) };
+    return { id: id, name: "", url: "https://docs.google.com/spreadsheets/d/" + id + "/edit", error: String(err) };
   }
 }
 
@@ -3921,6 +3928,71 @@ function getMembers(sheet) {
   return list;
 }
 
+function findFirstMemberDataRow_(sheet) {
+  ensureMemberHeaderRow_(sheet);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var lastCol = Math.max(sheet.getLastColumn(), getStandardMemberHeaders_().length);
+  var display = sheet.getRange(1, 1, lastRow, lastCol).getDisplayValues();
+  var headers = display[0].map(function(h) { return (h || "").toString().trim(); });
+  var cardCol = findMemberCardColumnIndex_(headers);
+  if (cardCol < 0) cardCol = 0;
+  for (var r = 1; r < display.length; r++) {
+    var row = display[r];
+    var card = normalizeMemberCardNo_(row[cardCol]);
+    if (!isValidMemberCardNo_(card)) {
+      card = extractMemberCardFromRowCells_(null, row);
+    }
+    if (isValidMemberCardNo_(card)) return r + 1;
+    if ((row[1] || row[2] || row[3] || "").toString().trim() !== "") return r + 1;
+  }
+  return 0;
+}
+
+function compactMemberSheetDataToRow2_(sheet) {
+  var members = getMembers(sheet);
+  if (!members.length) return 0;
+  var firstRow = findFirstMemberDataRow_(sheet);
+  if (firstRow <= 0 || firstRow <= 2) return 0;
+  var width = getStandardMemberHeaders_().length;
+  var rows = members.map(function(m) { return buildRowFromMemberRecord_(m); });
+  var lastRow = Math.max(sheet.getLastRow(), findLastMemberDataRow_(sheet));
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, width).clearContent();
+  }
+  sheet.getRange(2, 1, rows.length, width).setValues(rows);
+  return members.length;
+}
+
+function findLastMemberDataRow_(sheet) {
+  ensureMemberHeaderRow_(sheet);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 1;
+  var lastCol = Math.max(sheet.getLastColumn(), getStandardMemberHeaders_().length);
+  var display = sheet.getRange(1, 1, lastRow, lastCol).getDisplayValues();
+  var headers = display[0].map(function(h) { return (h || "").toString().trim(); });
+  var cardCol = findMemberCardColumnIndex_(headers);
+  if (cardCol < 0) cardCol = 0;
+  var lastData = 1;
+  for (var r = 1; r < display.length; r++) {
+    var row = display[r];
+    var card = normalizeMemberCardNo_(row[cardCol]);
+    if (!isValidMemberCardNo_(card)) {
+      card = extractMemberCardFromRowCells_(null, row);
+    }
+    if (isValidMemberCardNo_(card)) lastData = r + 1;
+    else if ((row[1] || row[2] || row[3] || "").toString().trim() !== "") {
+      lastData = r + 1;
+    }
+  }
+  return lastData;
+}
+
+function getMemberSheetAppendRow_(sheet) {
+  var lastData = findLastMemberDataRow_(sheet);
+  return Math.max(lastData + 1, 2);
+}
+
 function findMemberRowByCard_(sheet, card) {
   card = normalizeMemberCardNo_(card);
   if (!isValidMemberCardNo_(card)) return 0;
@@ -4012,6 +4084,23 @@ function upsertMemberFromOrder_(ss, order) {
   }, ss);
 }
 
+function checkMemberUpsertConflict_(existingMembers, member, card) {
+  card = normalizeMemberCardNo_(card);
+  var n = normalizeCustomerNameForPoints_(member.customerName);
+  var p = normalizePhoneForPoints_(member.phone);
+  for (var i = 0; i < (existingMembers || []).length; i++) {
+    var ex = existingMembers[i];
+    if (normalizeMemberCardNo_(ex.memberCardNo) === card) continue;
+    if (n && normalizeCustomerNameForPoints_(ex.customerName) === n) {
+      return "姓名「" + member.customerName + "」已對應卡號 " + ex.memberCardNo;
+    }
+    if (p && normalizePhoneForPoints_(ex.phone) === p) {
+      return "電話已對應卡號 " + ex.memberCardNo;
+    }
+  }
+  return "";
+}
+
 function upsertMemberRecord_(sheet, member, ss) {
   member = normalizeMemberRecord_(member);
   var card = normalizeMemberCardNo_(member.memberCardNo);
@@ -4019,24 +4108,10 @@ function upsertMemberRecord_(sheet, member, ss) {
     return { error: true, message: "請填寫 13 碼會員卡號" };
   }
   member.memberCardNo = card;
-  var n = normalizeCustomerNameForPoints_(member.customerName);
-  var p = normalizePhoneForPoints_(member.phone);
   var existing = getMembers(sheet);
-  for (var i = 0; i < existing.length; i++) {
-    var ex = existing[i];
-    if (normalizeMemberCardNo_(ex.memberCardNo) === card) continue;
-    if (n && normalizeCustomerNameForPoints_(ex.customerName) === n) {
-      return {
-        error: true,
-        message: "姓名「" + member.customerName + "」已對應卡號 " + ex.memberCardNo + "，請先合併或停用舊卡"
-      };
-    }
-    if (p && normalizePhoneForPoints_(ex.phone) === p) {
-      return {
-        error: true,
-        message: "電話已對應卡號 " + ex.memberCardNo + "，請先確認是否同一人"
-      };
-    }
+  var conflictMsg = checkMemberUpsertConflict_(existing, member, card);
+  if (conflictMsg) {
+    return { error: true, message: conflictMsg };
   }
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
   var rowNum = findMemberRowByCard_(sheet, card);
@@ -4080,10 +4155,9 @@ function syncMembersFromOrders_(ss) {
   var orders = getAllOrdersMerged_(ss);
   var byCard = {};
   var nameToCards = {};
-  var added = 0;
-  var updated = 0;
   var skipped = 0;
   var conflicts = [];
+  var failed = [];
 
   for (var i = 0; i < orders.length; i++) {
     var ord = orders[i];
@@ -4127,19 +4201,76 @@ function syncMembersFromOrders_(ss) {
     }
   });
 
+  var existing = getMembers(sheet);
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
+  var appendRows = [];
+  var updateJobs = [];
+  var added = 0;
+  var updated = 0;
+  var width = getStandardMemberHeaders_().length;
+
   Object.keys(byCard).forEach(function(cardKey) {
-    var result = upsertMemberRecord_(sheet, byCard[cardKey], ss);
-    if (result.error) return;
-    if (result.created) added++;
-    else updated++;
+    var member = normalizeMemberRecord_(byCard[cardKey]);
+    var card = normalizeMemberCardNo_(member.memberCardNo);
+    var conflictMsg = checkMemberUpsertConflict_(existing, member, card);
+    if (conflictMsg) {
+      failed.push({ memberCardNo: card, message: conflictMsg });
+      return;
+    }
+    var rowNum = findMemberRowByCard_(sheet, card);
+    if (rowNum > 0) {
+      var prev = null;
+      for (var p = 0; p < existing.length; p++) {
+        if (normalizeMemberCardNo_(existing[p].memberCardNo) === card) {
+          prev = existing[p];
+          break;
+        }
+      }
+      if (prev) {
+        member = normalizeMemberRecord_(pickRicherMemberRecord_(prev, member));
+        member.memberCardNo = card;
+        if (!member.createdAt) member.createdAt = prev.createdAt || now.slice(0, 10);
+      }
+      member.updatedAt = now;
+      updateJobs.push({ rowNum: rowNum, row: buildRowFromMemberRecord_(member) });
+      updated++;
+    } else {
+      member.createdAt = member.createdAt || now.slice(0, 10);
+      member.updatedAt = now;
+      appendRows.push(buildRowFromMemberRecord_(member));
+      added++;
+    }
   });
+
+  if (appendRows.length) {
+    var startRow = getMembers(sheet).length ? getMemberSheetAppendRow_(sheet) : 2;
+    sheet.getRange(startRow, 1, appendRows.length, width).setValues(appendRows);
+  }
+  for (var u = 0; u < updateJobs.length; u++) {
+    var job = updateJobs[u];
+    sheet.getRange(job.rowNum, 1, 1, job.row.length).setValues([job.row]);
+  }
+
+  var compacted = compactMemberSheetDataToRow2_(sheet);
+
+  var eligible = Object.keys(byCard).length;
+  var msg = "已匯入 " + added + " 筆新會員、更新 " + updated + " 筆";
+  if (skipped > 0) msg += "（略過 " + skipped + " 筆無卡號訂單）";
+  if (failed.length) msg += "（" + failed.length + " 筆因姓名／電話衝突未寫入）";
+  if (conflicts.length) msg += "（" + conflicts.length + " 組同名多卡，請人工確認）";
+  if (compacted > 0) msg += "（已將 " + compacted + " 筆會員整理至第 2 列起，請刷新試算表）";
+  if (eligible > 0 && added === 0 && updated === 0) {
+    msg = "無法寫入 Memberist：請確認試算表已共用「編輯者」給部署 GAS 的 Google 帳號";
+  }
 
   return {
     added: added,
     updated: updated,
     skipped: skipped,
+    eligible: eligible,
+    failed: failed,
     conflicts: conflicts,
-    message: "已匯入 " + added + " 筆新會員、更新 " + updated + " 筆" +
-      (conflicts.length ? "（" + conflicts.length + " 組姓名有多張卡，請人工確認）" : "")
+    memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
+    message: msg
   };
 }
