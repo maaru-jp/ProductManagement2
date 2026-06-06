@@ -1602,7 +1602,7 @@
 
   <script src="js/member-card.js"></script>
   <script src="js/admin-loyalty.js?v=20260526-18"></script>
-  <script src="js/admin-members.js?v=20260526-1"></script>
+  <script src="js/admin-members.js?v=20260607-1"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
   <script>
     (function() {
@@ -1631,6 +1631,7 @@
       function fetchWriteTimeoutMs_(body) {
         var action = body && body.action ? String(body.action) : "";
         if (action === "points_sync") return 240000;
+        if (action === "member_sync_from_orders") return 180000;
         if (action === "order_list" || action === "order_upsert") return 120000;
         return 90000;
       }
@@ -1696,6 +1697,9 @@
 
         return tryCombo(0, 0);
       }
+
+      window.fetchWrite = fetchWrite;
+      window.fetchWriteTimeoutMs_ = fetchWriteTimeoutMs_;
 
       function formatNetworkError(err) {
         var raw = (err && err.message) ? String(err.message) : "網路錯誤";
