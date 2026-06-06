@@ -52,7 +52,7 @@ function doGet(e) {
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"],
-        postRoutes: ["order_list", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "append", "update", "delete"]
+        postRoutes: ["order_list", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "append", "update", "delete"]
       });
     }
     if (action === "points_balance") {
@@ -122,12 +122,26 @@ function doPost(e) {
       return jsonOutput(out);
     }
 
-    // 紅利紀錄：list / sync
-    if (action === "points_list" || action === "points_sync") {
+    // 紅利紀錄：list / sync / repair
+    if (action === "points_list" || action === "points_sync" || action === "points_sheet_repair") {
       var pointsSheet = getPointsSheet(ss);
       if (!pointsSheet) {
         out.error = true;
         out.message = "找不到紅利點數工作表";
+        return jsonOutput(out);
+      }
+      if (action === "points_sheet_repair") {
+        var ordersRepair = getAllOrdersMerged_(ss);
+        var ledgerRepair = getPointsLedger(pointsSheet);
+        ledgerRepair = backfillLedgerMemberCardsFromOrdersByOrderId_(ledgerRepair, ordersRepair);
+        ledgerRepair = enrichPointsLedgerMemberCardsFromOrders_(ledgerRepair, ordersRepair);
+        for (var ri = 0; ri < ledgerRepair.length; ri++) {
+          ledgerRepair[ri] = repairPointLedgerRecordInPlace_(ledgerRepair[ri]);
+        }
+        syncPointsLedger(pointsSheet, ledgerRepair, ordersRepair);
+        out.repaired = true;
+        out.ledgerCount = getPointsLedger(pointsSheet).length;
+        out.message = "已修復紅利點數表（補回會員卡號並重寫）";
         return jsonOutput(out);
       }
       if (action === "points_list") {
@@ -149,7 +163,8 @@ function doPost(e) {
         return jsonOutput(out);
       }
       // 後台已在本機合併 ledger 再上傳；略過逐卡補寫（極慢，易逾時卡住）
-      syncPointsLedger(pointsSheet, ledger, null);
+      var ordersForSync = getAllOrdersMerged_(ss);
+      syncPointsLedger(pointsSheet, ledger, ordersForSync);
       out.message = "已同步 " + getPointsLedger(pointsSheet).length + " 筆至「紅利點數」";
       out.ledgerCount = getPointsLedger(pointsSheet).length;
       return jsonOutput(out);
@@ -834,8 +849,12 @@ function getOrderHeaders_(sheet) {
 
 function orderCanonicalFieldKey_(aliasGroup) {
   if (!aliasGroup || !aliasGroup.length) return "";
-  // 別名陣列第 2 項為 JS 欄位名（例：["客戶姓名","customerName","name"] → customerName）
   return aliasGroup.length > 1 ? aliasGroup[1] : aliasGroup[0];
+}
+
+/** 與 orderCanonicalFieldKey_ 相同：別名陣列第 2 項為 JS 欄位名 */
+function pointsCanonicalFieldKey_(aliasGroup) {
+  return orderCanonicalFieldKey_(aliasGroup);
 }
 
 function normalizeParsedOrderFields_(obj) {
@@ -1695,7 +1714,10 @@ function normalizePointRecordForSheet_(rec) {
     phone: (r.phone != null) ? String(r.phone) : "",
     lineId: (r.lineId != null) ? String(r.lineId) : "",
     customerName: (r.customerName != null) ? String(r.customerName) : "",
-    memberCardNo: normalizeMemberCardNo_(r.memberCardNo != null ? r.memberCardNo : ""),
+    memberCardNo: normalizeMemberCardNo_(
+      r.memberCardNo != null && String(r.memberCardNo).trim() !== "" ? r.memberCardNo :
+      (r.memberCard != null ? r.memberCard : "")
+    ),
     type: type,
     points: (r.points != null && r.points !== "") ? Number(r.points) : "",
     remaining: remainingVal,
@@ -1728,7 +1750,7 @@ function pointsKeyMap_(headers) {
       var group = aliases[a];
       for (var g = 0; g < group.length; g++) {
         if (h === group[g]) {
-          map[c] = group[group.length - 1];
+          map[c] = pointsCanonicalFieldKey_(group);
           break;
         }
       }
@@ -1748,11 +1770,15 @@ function buildRowFromPointRecord_(sheet, rec) {
     var key = keyMap[c];
     var val = "";
     if (key && norm[key] !== undefined && norm[key] !== null && norm[key] !== "") val = norm[key];
-    if (key === "memberCardNo" && val) {
-      val = normalizeMemberCardNo_(val);
+    if ((key === "memberCardNo" || key === "memberCard") && norm.memberCardNo) {
+      val = normalizeMemberCardNo_(norm.memberCardNo);
       if (val) val = "'" + val;
     }
     row.push(val);
+  }
+  var cardCol = findMemberCardColumnIndex_(headers);
+  if (cardCol >= 0 && norm.memberCardNo) {
+    row[cardCol] = "'" + normalizeMemberCardNo_(norm.memberCardNo);
   }
   return row;
 }
@@ -1812,6 +1838,9 @@ function getEffectivePointRemaining_(rec) {
 
 function normalizePointLedgerRecord_(obj) {
   if (!obj) return obj;
+  if ((!obj.memberCardNo || String(obj.memberCardNo).trim() === "") && obj.memberCard != null && String(obj.memberCard).trim() !== "") {
+    obj.memberCardNo = obj.memberCard;
+  }
   if (obj.date != null && obj.date !== "") obj.date = normalizeSheetDateValue_(obj.date);
   if (obj.expireDate != null && obj.expireDate !== "") obj.expireDate = normalizeSheetDateValue_(obj.expireDate);
   if (obj.customerName != null) obj.customerName = String(obj.customerName).trim();
@@ -2051,8 +2080,15 @@ function getPointRecordCustomerName_(rec) {
 }
 
 function getPointRecordMemberCard_(rec) {
+  if (!rec) return "";
   if (rec.memberCardNo != null && String(rec.memberCardNo).trim() !== "") {
     return normalizeMemberCardNo_(rec.memberCardNo);
+  }
+  if (rec.memberCard != null && String(rec.memberCard).trim() !== "") {
+    return normalizeMemberCardNo_(rec.memberCard);
+  }
+  if (rec["會員卡號"] != null && String(rec["會員卡號"]).trim() !== "") {
+    return normalizeMemberCardNo_(rec["會員卡號"]);
   }
   return "";
 }
