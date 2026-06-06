@@ -185,11 +185,20 @@
       stat.textContent = text;
     }
   }
-  function fetchMembersFromApi() {
-    if (typeof fetchWrite !== "function") {
-      return Promise.reject(new Error("API 未就緒"));
+  function getFetchWriteFn() {
+    if (typeof window !== "undefined" && typeof window.fetchWrite === "function") {
+      return window.fetchWrite;
     }
-    return fetchWrite({ action: "member_list" })
+    if (typeof fetchWrite === "function") return fetchWrite;
+    return null;
+  }
+
+  function fetchMembersFromApi() {
+    var fetchWriteFn = getFetchWriteFn();
+    if (!fetchWriteFn) {
+      return Promise.reject(new Error("API 未就緒（請重新整理 admin.html 或改用 http://localhost:3000/admin.html）"));
+    }
+    return fetchWriteFn({ action: "member_list" })
       .then(function (r) {
         return r.text().then(function (t) {
           try {
@@ -258,7 +267,12 @@
       status: document.getElementById("memberFormStatus").value || "有效",
       note: document.getElementById("memberFormNote").value.trim()
     };
-    fetchWrite({ action: "member_upsert", member: member })
+    var fetchWriteFn = getFetchWriteFn();
+    if (!fetchWriteFn) {
+      showMessage("API 未就緒，請重新整理頁面", true);
+      return;
+    }
+    fetchWriteFn({ action: "member_upsert", member: member })
       .then(function (r) {
         return r.text().then(function (t) {
           try {
@@ -282,8 +296,14 @@
   function deleteMember(card) {
     card = normalizeCard(card);
     if (!isValidCard(card)) return;
-    if (!confirm("確定刪除會員卡號 " + formatCardDisplay(card) + "？\n（不會刪除訂單或紅利紀錄）")) return;
-    fetchWrite({ action: "member_delete", memberCardNo: card })
+    if (!confirm("確定刪除會員卡號 " + formatCardDisplay(card) + "？\n（不會刪除訂單；可一併清除紅利試算表紀錄）")) return;
+    var alsoPurge = confirm("是否一併清除「紅利點數」試算表中此卡號的所有紀錄？\n（測試卡號建議選「確定」）");
+    var fetchWriteFn = getFetchWriteFn();
+    if (!fetchWriteFn) {
+      showMessage("API 未就緒，請重新整理頁面", true);
+      return;
+    }
+    fetchWriteFn({ action: "member_delete", memberCardNo: card, purgePoints: alsoPurge })
       .then(function (r) {
         return r.text().then(function (t) {
           try {
@@ -310,7 +330,16 @@
       btn.textContent = "匯入中（約 1～2 分鐘）…";
     }
     showMessage("正在從歷史訂單匯入會員至 Memberist，請稍候勿關閉頁面…", false);
-    fetchWrite({ action: "member_sync_from_orders" }, { timeoutMs: 180000 })
+    var fetchWriteFn = getFetchWriteFn();
+    if (!fetchWriteFn) {
+      showMessage("API 未就緒，請重新整理頁面", true);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "從訂單匯入";
+      }
+      return;
+    }
+    fetchWriteFn({ action: "member_sync_from_orders" }, { timeoutMs: 180000 })
       .then(function (r) {
         return r.text().then(function (t) {
           try {
