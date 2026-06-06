@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>7-11 門市已選擇</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 2rem; text-align: center; color: #334155; }
+  </style>
+</head>
+<body>
+  <p id="msg">正在回傳門市資料…</p>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var store = {
+        storeid: params.get("storeid") || params.get("storeId") || "",
+        storename: params.get("storename") || params.get("storeName") || "",
+        storeaddress: params.get("storeaddress") || params.get("storeAddress") || ""
+      };
+      var msg = document.getElementById("msg");
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: "maaru:cvs711", store: store }, window.location.origin);
+        if (msg) msg.textContent = "已選擇門市，視窗即將關閉…";
+        setTimeout(function () { window.close(); }, 400);
+      } else if (msg) {
+        msg.textContent = store.storename
+          ? ("已選擇：" + store.storename + "（" + store.storeid + "）")
+          : "門市資料已接收，請回到後台視窗";
+      }
+    })();
+  </script>
+</body>
+</html>

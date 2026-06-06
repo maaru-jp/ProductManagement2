@@ -1291,7 +1291,14 @@
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-500 mb-1">門市店號</label>
-              <input type="text" id="orderStoreId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="選填" />
+              <input type="text" id="orderStoreId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="6 碼店號" />
+            </div>
+          </div>
+          <div id="order711StorePickerWrap" class="hidden rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3 space-y-2">
+            <p class="text-xs text-emerald-900">7-11 店到店：可搜尋全台門市，選取後自動帶入名稱、店號與地址。</p>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" id="btnOpen711StorePicker" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-700">選擇 7-11 門市（縣市查詢）</button>
+              <button type="button" id="btnOpen711Emap" class="px-3 py-1.5 rounded-lg border border-emerald-400 bg-white text-emerald-800 text-xs hover:bg-emerald-100">7-11 電子地圖</button>
             </div>
           </div>
           <div>
@@ -1453,6 +1460,40 @@
     </div>
   </div>
 
+  <!-- 7-ELEVEN 門市選擇 Modal -->
+  <div id="sevenElevenStoreModal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-black/50" id="sevenElevenStoreBackdrop" aria-hidden="true"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="p-4 border-b border-slate-200 flex items-center justify-between shrink-0">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">選擇 7-ELEVEN 門市</h3>
+            <p class="text-xs text-slate-500 mt-0.5">資料來源：統一超商電子地圖（全台門市）</p>
+          </div>
+          <button type="button" id="sevenElevenStoreClose" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="關閉">✕</button>
+        </div>
+        <div class="p-4 space-y-3 overflow-y-auto flex-1 min-h-0">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">縣市</label>
+              <select id="711CitySelect" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white"></select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">鄉鎮區</label>
+              <select id="711TownSelect" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white"></select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">搜尋門市（名稱或地址）</label>
+            <input type="text" id="711StoreSearch" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：信義、忠孝東路" />
+          </div>
+          <ul id="711StoreList" class="space-y-2 max-h-72 overflow-y-auto"></ul>
+          <p id="711StoreStatus" class="text-xs text-slate-500"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 顧客訂單總覽 Modal -->
   <div id="customerOverviewModal" class="fixed inset-0 z-[60] hidden">
     <div class="absolute inset-0 bg-black/50" id="customerOverviewBackdrop" aria-hidden="true"></div>
@@ -1493,6 +1534,7 @@
 
   <script src="js/member-card.js"></script>
   <script src="js/admin-loyalty.js?v=20260526-17"></script>
+  <script src="js/admin-711-store.js?v=20260606-1"></script>
   <script>
     (function() {
       // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
@@ -4653,6 +4695,7 @@
           var saved = localStorage.getItem(ORDER_STORAGE_KEY);
           if (saved) orders = JSON.parse(saved);
           if (!Array.isArray(orders)) orders = [];
+          orders.forEach(function(o) { enrichOrderCombineShipPrevFee_(o); });
         } catch (err) { orders = []; }
 
         function saveOrders() {
@@ -4825,6 +4868,7 @@
           if ((!localOrd.items || !localOrd.items.length) && sheetOrd.items && sheetOrd.items.length) {
             out.items = sheetOrd.items;
           }
+          enrichOrderCombineShipPrevFee_(out);
           return out;
         }
 
@@ -4912,6 +4956,99 @@
           return r.indexOf(COMBINE_SHIP_REMARK_PREFIX) >= 0 || (r.indexOf("併箱") >= 0 && r.indexOf("運費") >= 0);
         }
 
+        function parseCombineShipPrevFeeFromRemark_(remark) {
+          var m = String(remark || "").match(/原運費\s*NT?\$?\s*(\d+)/i);
+          if (!m) return null;
+          var n = parseInt(m[1], 10);
+          return (isFinite(n) && n >= 0) ? n : null;
+        }
+
+        function enrichOrderCombineShipPrevFee_(ord) {
+          if (!ord) return ord;
+          if (ord.combineShipPrevFee != null && ord.combineShipPrevFee !== "" && !isNaN(Number(ord.combineShipPrevFee))) {
+            ord.combineShipPrevFee = Math.max(0, Math.floor(Number(ord.combineShipPrevFee)));
+            return ord;
+          }
+          var fromRemark = parseCombineShipPrevFeeFromRemark_(ord.remark);
+          if (fromRemark != null) ord.combineShipPrevFee = fromRemark;
+          return ord;
+        }
+
+        function captureCombineShipPrevFee_(ord) {
+          if (!ord) return DEFAULT_COMBINE_SHIP_FEE;
+          enrichOrderCombineShipPrevFee_(ord);
+          if (ord.combineShipPrevFee != null && ord.combineShipPrevFee !== "" && !isNaN(Number(ord.combineShipPrevFee))) {
+            return Math.max(0, Math.floor(Number(ord.combineShipPrevFee)));
+          }
+          var fromRemark = parseCombineShipPrevFeeFromRemark_(ord.remark);
+          if (fromRemark != null) return fromRemark;
+          var eff = orderEffectiveShippingForOrder(ord);
+          if (eff > 0) return Math.max(0, Math.floor(eff));
+          var raw = ord.shippingFee != null && ord.shippingFee !== "" ? Number(ord.shippingFee) : NaN;
+          if (isFinite(raw) && raw > 0) return Math.max(0, Math.floor(raw));
+          return DEFAULT_COMBINE_SHIP_FEE;
+        }
+
+        function captureCombineShipPrevFeeFromForm_() {
+          var remarkEl = document.getElementById("orderRemark");
+          var fromRemark = parseCombineShipPrevFeeFromRemark_(remarkEl && remarkEl.value);
+          var feeEl = document.getElementById("orderShippingFee");
+          var couponEl = document.getElementById("orderShippingStatusCoupon");
+          if (couponEl && couponEl.checked) {
+            return fromRemark != null ? fromRemark : DEFAULT_COMBINE_SHIP_FEE;
+          }
+          var raw = feeEl && feeEl.value !== "" ? Number(feeEl.value) : NaN;
+          if (isFinite(raw) && raw > 0) return Math.max(0, Math.floor(raw));
+          return fromRemark != null ? fromRemark : DEFAULT_COMBINE_SHIP_FEE;
+        }
+
+        function saveCombineShipPrevFee_(ord, prevFee) {
+          if (!ord) return;
+          ord.combineShipPrevFee = Math.max(0, Math.floor(Number(prevFee) || 0));
+        }
+
+        function clearCombineShipPrevFee_(ord) {
+          if (!ord) return;
+          ord.combineShipPrevFee = "";
+        }
+
+        function restoreCombineShipFee_(ord) {
+          if (!ord) return DEFAULT_COMBINE_SHIP_FEE;
+          enrichOrderCombineShipPrevFee_(ord);
+          var prev = ord.combineShipPrevFee != null && ord.combineShipPrevFee !== "" ? Number(ord.combineShipPrevFee) : null;
+          if (prev == null || isNaN(prev)) prev = parseCombineShipPrevFeeFromRemark_(ord.remark);
+          if (prev == null || isNaN(prev)) prev = DEFAULT_COMBINE_SHIP_FEE;
+          ord.shippingFee = Math.max(0, Math.floor(prev));
+          clearCombineShipPrevFee_(ord);
+          return ord.shippingFee;
+        }
+
+        function formatCombineShipRestoreFeeLabel_(ord) {
+          enrichOrderCombineShipPrevFee_(ord || {});
+          var prev = ord && ord.combineShipPrevFee != null && ord.combineShipPrevFee !== "" ? Number(ord.combineShipPrevFee) : null;
+          if (prev == null || isNaN(prev)) prev = parseCombineShipPrevFeeFromRemark_(ord && ord.remark);
+          if (prev == null || isNaN(prev)) return "NT$" + DEFAULT_COMBINE_SHIP_FEE;
+          return "NT$" + Math.max(0, Math.floor(prev));
+        }
+
+        function restoreCombineShipFeeIfNeeded_(ord) {
+          if (!ord) return null;
+          var shipSt = ord.shippingStatus != null ? String(ord.shippingStatus).trim() : "";
+          if (shipSt && shipSt.indexOf("免運") >= 0) return null;
+          if (orderEffectiveShippingForOrder(ord) > 0) return null;
+          var fee = restoreCombineShipFee_(ord);
+          recalcOrderTotalFromFields_(ord);
+          return fee;
+        }
+
+        function describeSlaveRestoreFees_(slaveIds, group) {
+          group = group || [];
+          return (slaveIds || []).map(function(id) {
+            var ord = group.find(function(o) { return normalizeOrderIdToken_(o.id) === id; });
+            return id + "→" + formatCombineShipRestoreFeeLabel_(ord || {});
+          }).join("、");
+        }
+
         function getActiveCustomerOrders_(customerName, phone, excludeId) {
           var ex = normalizeOrderIdToken_(excludeId);
           return getOrdersByCustomer_(customerName, phone).filter(function(o) {
@@ -4962,11 +5099,314 @@
           };
         }
 
-        function appendCombineShipRemark_(remark, masterId) {
-          var tag = COMBINE_SHIP_REMARK_PREFIX + "，運費併入 " + masterId;
+        function appendCombineShipRemark_(remark, masterId, prevFee) {
+          masterId = normalizeOrderIdToken_(masterId);
+          remark = stripCombineShipRemark_(remark, masterId);
+          var prevPart = "";
+          if (prevFee != null && isFinite(Number(prevFee))) {
+            prevPart = "，原運費 NT$" + Math.max(0, Math.floor(Number(prevFee)));
+          }
+          var tag = COMBINE_SHIP_REMARK_PREFIX + "，運費併入 " + masterId + prevPart;
           remark = String(remark || "").trim();
-          if (remark.indexOf(tag) >= 0) return remark;
           return remark ? (remark + "\n" + tag) : tag;
+        }
+
+        function stripCombineShipRemark_(remark, masterId) {
+          masterId = normalizeOrderIdToken_(masterId);
+          var lines = String(remark || "").split(/\r?\n/);
+          var kept = lines.filter(function(line) {
+            var t = String(line || "").trim();
+            if (!t) return false;
+            if (t.indexOf(COMBINE_SHIP_REMARK_PREFIX) >= 0) return false;
+            if (masterId && t.indexOf("運費併入 " + masterId) >= 0) return false;
+            if (t.indexOf("併箱") >= 0 && t.indexOf("運費") >= 0 && t.indexOf("併入") >= 0) return false;
+            return true;
+          });
+          return kept.join("\n").trim();
+        }
+
+        function groupHasCombineShipSetup_(group) {
+          if (!group || group.length <= 1) return false;
+          return group.some(function(o) {
+            return orderHasCombineShipRemark_(o) || parseLinkedOrderIds_(o && o.linkedOrderIds).length > 0;
+          });
+        }
+
+        function findCombineShipGroupsInRows_(rows) {
+          rows = (rows || []).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
+          var processedIds = {};
+          var groups = [];
+          rows.forEach(function(o) {
+            var id = normalizeOrderIdToken_(o.id);
+            if (!id || processedIds[id]) return;
+            var group = resolveCombineShipPdfOrders_(o).filter(function(g) {
+              return g && !g._missing && g.status !== "已取消";
+            });
+            if (group.length <= 1 || !groupHasCombineShipSetup_(group)) return;
+            group.forEach(function(g) {
+              var gid = normalizeOrderIdToken_(g.id);
+              if (gid) processedIds[gid] = true;
+            });
+            groups.push(group);
+          });
+          return groups;
+        }
+
+        function pickPrimaryCombineShipGroupFromRows_(rows, focusOrderId) {
+          var groups = findCombineShipGroupsInRows_(rows);
+          if (!groups.length) return null;
+          var focusNorm = normalizeOrderIdToken_(focusOrderId);
+          if (focusNorm) {
+            for (var i = 0; i < groups.length; i++) {
+              if (groups[i].some(function(o) { return normalizeOrderIdToken_(o.id) === focusNorm; })) {
+                return groups[i];
+              }
+            }
+          }
+          groups.sort(function(a, b) { return b.length - a.length; });
+          return groups[0];
+        }
+
+        function validateUncombineShipGroup_(group) {
+          var blocked = [];
+          var warned = [];
+          (group || []).forEach(function(o) {
+            if (!o || o._missing) return;
+            var st = String(o.status || "").trim();
+            var id = normalizeOrderIdToken_(o.id);
+            if (!id) return;
+            if (st === "已完成") blocked.push(id);
+            else if (st === "出貨中") warned.push(id);
+          });
+          var message = "";
+          if (blocked.length) {
+            message = "以下訂單已「已完成」，無法取消併箱：" + blocked.join("、");
+          } else if (warned.length) {
+            message = "以下訂單為「出貨中」。若已產生併箱 PDF，取消後請自行作廢舊 PDF：\n" + warned.join("、");
+          }
+          return { ok: blocked.length === 0, blocked: blocked, warned: warned, message: message };
+        }
+
+        function buildUncombineShipConfirmMessage_(group, masterId) {
+          masterId = normalizeOrderIdToken_(masterId || pickCombineShipMasterId_(group));
+          var idList = (group || []).map(function(o) { return normalizeOrderIdToken_(o.id); }).filter(Boolean);
+          var slaveIds = idList.filter(function(id) { return id !== masterId; });
+          return [
+            "將解除整組併箱關聯：",
+            idList.join("、"),
+            "",
+            "· 副單運費恢復：" + (slaveIds.length ? describeSlaveRestoreFees_(slaveIds, group) : ("NT$" + DEFAULT_COMBINE_SHIP_FEE)),
+            "· 主單 " + masterId + " 運費不變",
+            "· 清除併箱備註與「關聯訂單」欄",
+            "",
+            "確定？"
+          ].join("\n");
+        }
+
+        function getCombineShipGroupForOrder_(ord) {
+          if (!ord) return [];
+          return resolveCombineShipPdfOrders_(ord).filter(function(g) {
+            return g && !g._missing && g.status !== "已取消";
+          });
+        }
+
+        function orderIsInActiveCombineShipGroup_(ord) {
+          var group = getCombineShipGroupForOrder_(ord);
+          return group.length > 1 && groupHasCombineShipSetup_(group);
+        }
+
+        function validateUncombineShipOrder_(ord, group) {
+          if (!ord || ord._missing) return { ok: false, message: "找不到訂單" };
+          group = group || getCombineShipGroupForOrder_(ord);
+          var id = normalizeOrderIdToken_(ord.id);
+          if (!id) return { ok: false, message: "無效的訂單編號" };
+          if (group.length <= 1 || !groupHasCombineShipSetup_(group)) {
+            return { ok: false, message: id + " 不在併箱群組中" };
+          }
+          var st = String(ord.status || "").trim();
+          if (st === "已完成") return { ok: false, message: id + " 已「已完成」，無法移出併箱群組" };
+          if (st === "已取消") return { ok: false, message: id + " 已取消，無法移出併箱群組" };
+          if (st === "出貨中") {
+            return {
+              ok: true,
+              warned: true,
+              message: id + " 為「出貨中」。若已產生併箱 PDF，移出後請自行作廢舊 PDF。"
+            };
+          }
+          return { ok: true, warned: false, message: "" };
+        }
+
+        function buildUncombineSingleConfirmMessage_(targetId, group, masterId) {
+          targetId = normalizeOrderIdToken_(targetId);
+          masterId = normalizeOrderIdToken_(masterId || pickCombineShipMasterId_(group));
+          var isSlave = targetId !== masterId;
+          var remaining = (group || []).map(function(o) { return normalizeOrderIdToken_(o.id); }).filter(function(id) {
+            return id && id !== targetId;
+          });
+          var lines = [
+            "將 " + targetId + " 移出併箱群組。",
+            "",
+            "· 本單清除與群組的「關聯訂單」與併箱備註"
+          ];
+          var targetOrd = (group || []).find(function(o) { return normalizeOrderIdToken_(o.id) === targetId; });
+          if (isSlave) lines.push("· 本單運費恢復 " + formatCombineShipRestoreFeeLabel_(targetOrd || {}));
+          else lines.push("· 本單（主單）運費不變");
+          if (remaining.length > 1) {
+            lines.push("· 其餘 " + remaining.join("、") + " 仍保持彼此併箱關聯");
+          } else if (remaining.length === 1) {
+            lines.push("· " + remaining[0] + " 將不再與其他訂單併箱");
+          }
+          lines.push("", "確定？");
+          return lines.join("\n");
+        }
+
+        function persistUncombineShipOrders_(updated) {
+          if (!updated.length) {
+            showOrderMessage("沒有可更新的訂單", true);
+            return Promise.resolve({ count: 0 });
+          }
+          saveOrders();
+          renderOrders();
+          var chain = Promise.resolve();
+          updated.forEach(function(ord) {
+            chain = chain.then(function() {
+              return upsertOrderToSheet(ord).catch(function() { return null; });
+            });
+          });
+          return chain.then(function() { return { count: updated.length }; });
+        }
+
+        function uncombineShipSingleOrder_(targetId, group, masterId) {
+          targetId = normalizeOrderIdToken_(targetId);
+          group = (group || []).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
+          masterId = normalizeOrderIdToken_(masterId || pickCombineShipMasterId_(group));
+          if (!targetId || group.length <= 1) {
+            showOrderMessage("找不到可移出的併箱群組", true);
+            return Promise.resolve({ count: 0 });
+          }
+          var groupIdSet = {};
+          group.forEach(function(o) {
+            var id = normalizeOrderIdToken_(o.id);
+            if (id) groupIdSet[id] = true;
+          });
+          if (!groupIdSet[targetId]) {
+            showOrderMessage(targetId + " 不在此併箱群組中", true);
+            return Promise.resolve({ count: 0 });
+          }
+          var targetRow = group.find(function(o) { return normalizeOrderIdToken_(o.id) === targetId; });
+          var isSlave = targetId !== masterId;
+          var restoreTargetFee = isSlave && targetRow && (
+            orderHasCombineShipRemark_(targetRow) ||
+            parseLinkedOrderIds_(targetRow.linkedOrderIds).indexOf(masterId) >= 0 ||
+            (orderEffectiveShippingForOrder(targetRow) <= 0 && parseLinkedOrderIds_(targetRow.linkedOrderIds).length > 0)
+          );
+          var updated = [];
+          var updatedSeen = {};
+          group.forEach(function(row) {
+            if (row.status === "已完成" || row.status === "已取消") return;
+            var id = normalizeOrderIdToken_(row.id);
+            var ord = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === id; });
+            if (!ord) return;
+            if (id === targetId) {
+              ord.linkedOrderIds = parseLinkedOrderIds_(ord.linkedOrderIds).filter(function(lid) {
+                return !groupIdSet[lid];
+              }).join(", ");
+              ord.remark = stripCombineShipRemark_(ord.remark, masterId);
+              if (restoreTargetFee) restoreCombineShipFeeIfNeeded_(ord);
+              if (!updatedSeen[id]) { updatedSeen[id] = true; updated.push(ord); }
+              return;
+            }
+            var before = parseLinkedOrderIds_(ord.linkedOrderIds);
+            if (before.indexOf(targetId) < 0) return;
+            ord.linkedOrderIds = before.filter(function(lid) { return lid !== targetId; }).join(", ");
+            if (!updatedSeen[id]) { updatedSeen[id] = true; updated.push(ord); }
+          });
+          return persistUncombineShipOrders_(updated).then(function(res) {
+            res.targetId = targetId;
+            res.masterId = masterId;
+            return res;
+          });
+        }
+
+        function runUncombineShipSingleFlow_(targetId, group, masterId, onSuccess) {
+          var ord = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === normalizeOrderIdToken_(targetId); });
+          var validation = validateUncombineShipOrder_(ord, group);
+          if (!validation.ok) {
+            alert(validation.message);
+            return Promise.resolve({ count: 0 });
+          }
+          if (validation.warned && !confirm(validation.message + "\n\n仍要移出併箱群組？")) {
+            return Promise.resolve({ count: 0, cancelled: true });
+          }
+          if (!confirm(buildUncombineSingleConfirmMessage_(targetId, group, masterId))) {
+            return Promise.resolve({ count: 0, cancelled: true });
+          }
+          return uncombineShipSingleOrder_(targetId, group, masterId).then(function(res) {
+            if (res && res.count > 0) {
+              showOrderMessage("已將 " + normalizeOrderIdToken_(targetId) + " 移出併箱群組");
+              if (typeof onSuccess === "function") onSuccess(res);
+            }
+            return res;
+          });
+        }
+
+        function recalcOrderTotalFromFields_(ord) {
+          if (!ord || !orderHasAmountBreakdown(ord)) return ord;
+          var dep = ord.depositAmount != null && ord.depositAmount !== "" ? Number(ord.depositAmount) : 0;
+          if (isNaN(dep) || dep < 0) dep = 0;
+          var gross = orderGrossBeforeDeposit(ord);
+          ord.total = dep > 0 ? Math.max(0, gross - dep) : gross;
+          return ord;
+        }
+
+        function uncombineShipGroup_(group, masterId) {
+          group = (group || []).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
+          masterId = normalizeOrderIdToken_(masterId || pickCombineShipMasterId_(group));
+          if (!masterId || group.length <= 1) {
+            showOrderMessage("找不到可解除的併箱群組", true);
+            return Promise.resolve({ count: 0 });
+          }
+          var groupIdSet = {};
+          group.forEach(function(o) {
+            var id = normalizeOrderIdToken_(o.id);
+            if (id) groupIdSet[id] = true;
+          });
+          var slaveBefore = {};
+          group.forEach(function(o) {
+            var id = normalizeOrderIdToken_(o.id);
+            if (!id || id === masterId) return;
+            slaveBefore[id] = (
+              orderHasCombineShipRemark_(o) ||
+              parseLinkedOrderIds_(o.linkedOrderIds).indexOf(masterId) >= 0 ||
+              (orderEffectiveShippingForOrder(o) <= 0 && parseLinkedOrderIds_(o.linkedOrderIds).length > 0)
+            );
+          });
+          var updated = [];
+          var updatedSeen = {};
+          group.forEach(function(row) {
+            if (row.status === "已完成") return;
+            var id = normalizeOrderIdToken_(row.id);
+            var ord = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === id; });
+            if (!ord) return;
+            ord.linkedOrderIds = parseLinkedOrderIds_(ord.linkedOrderIds).filter(function(lid) {
+              return !groupIdSet[lid];
+            }).join(", ");
+            ord.remark = stripCombineShipRemark_(ord.remark, masterId);
+            if (id !== masterId && slaveBefore[id]) restoreCombineShipFeeIfNeeded_(ord);
+            if (!updatedSeen[id]) {
+              updatedSeen[id] = true;
+              updated.push(ord);
+            }
+          });
+          if (!updated.length) {
+            showOrderMessage("沒有可更新的訂單", true);
+            return Promise.resolve({ count: 0 });
+          }
+          return persistUncombineShipOrders_(updated).then(function(res) {
+            res.masterId = masterId;
+            res.ids = group.map(function(o) { return normalizeOrderIdToken_(o.id); }).filter(Boolean);
+            return res;
+          });
         }
 
         function applyCombineShipFreeToForm_(masterId, otherOrders) {
@@ -4989,7 +5429,128 @@
             });
             linkedEl.value = merged.join(", ");
           }
-          if (remarkEl) remarkEl.value = appendCombineShipRemark_(remarkEl.value, masterId);
+          var prevFee = captureCombineShipPrevFeeFromForm_();
+          if (remarkEl) remarkEl.value = appendCombineShipRemark_(remarkEl.value, masterId, prevFee);
+          updateOrderTotal();
+          refreshCombineShipPanel_();
+        }
+
+        var combineShipUncheckGuard_ = false;
+
+        function parseCombineShipMasterFromRemark_(remark) {
+          var m = String(remark || "").match(/併箱免運[，,]\s*運費併入\s*(ORD\d+)/i);
+          return m ? normalizeOrderIdToken_(m[1]) : "";
+        }
+
+        function setCombineShipCheckboxChecked_(checked) {
+          var combineEl = document.getElementById("orderCombineShipFree");
+          if (!combineEl) return;
+          combineShipUncheckGuard_ = true;
+          combineEl.checked = !!checked;
+          combineShipUncheckGuard_ = false;
+        }
+
+        function applyUncombineShipToFormFields_(masterId, groupIdSet) {
+          masterId = normalizeOrderIdToken_(masterId);
+          var feeEl = document.getElementById("orderShippingFee");
+          var linkedEl = document.getElementById("orderLinkedOrderIds");
+          var remarkEl = document.getElementById("orderRemark");
+          var couponEl = document.getElementById("orderShippingStatusCoupon");
+          var shipCouponOn = !!(couponEl && couponEl.checked);
+          var prevFee = parseCombineShipPrevFeeFromRemark_(remarkEl && remarkEl.value);
+          if (prevFee == null) prevFee = DEFAULT_COMBINE_SHIP_FEE;
+          if (feeEl && !shipCouponOn && Number(feeEl.value) === 0) {
+            feeEl.value = String(prevFee);
+          }
+          if (linkedEl) {
+            var linked = parseLinkedOrderIds_(linkedEl.value);
+            if (groupIdSet) {
+              linked = linked.filter(function(lid) { return !groupIdSet[lid]; });
+            } else if (masterId) {
+              linked = linked.filter(function(lid) { return lid !== masterId; });
+            }
+            linkedEl.value = linked.join(", ");
+          }
+          if (remarkEl) remarkEl.value = stripCombineShipRemark_(remarkEl.value, masterId);
+          updateOrderTotal();
+        }
+
+        function resolveCombineShipMasterForForm_(selfId, selfOrd, group) {
+          group = group || (selfOrd ? getCombineShipGroupForOrder_(selfOrd) : []);
+          var masterId = pickCombineShipMasterId_(group);
+          if (masterId) return masterId;
+          var remarkEl = document.getElementById("orderRemark");
+          var linkedEl = document.getElementById("orderLinkedOrderIds");
+          masterId = parseCombineShipMasterFromRemark_(remarkEl && remarkEl.value);
+          if (masterId) return masterId;
+          var linked = parseLinkedOrderIds_(linkedEl && linkedEl.value);
+          if (linked.length) return linked[0];
+          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
+          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
+          var others = getActiveCustomerOrders_(customerName, phone, selfId).filter(function(o) { return o.status !== "已完成"; });
+          return pickCombineShipMasterId_(others) || "";
+        }
+
+        function handleCombineShipUnchecked_(combineEl) {
+          var editId = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id")) || "";
+          var selfId = normalizeOrderIdToken_((document.getElementById("orderId") && document.getElementById("orderId").value) || editId);
+          var selfOrd = selfId ? orders.find(function(o) { return normalizeOrderIdToken_(o.id) === selfId; }) : null;
+          var group = selfOrd ? getCombineShipGroupForOrder_(selfOrd) : [];
+          var inSavedGroup = !!(selfOrd && orderIsInActiveCombineShipGroup_(selfOrd));
+          var masterId = resolveCombineShipMasterForForm_(selfId, selfOrd, group);
+          var remarkEl = document.getElementById("orderRemark");
+          var linkedEl = document.getElementById("orderLinkedOrderIds");
+          var feeEl = document.getElementById("orderShippingFee");
+          var hasFormCombine = (
+            orderHasCombineShipRemark_({ remark: remarkEl && remarkEl.value }) ||
+            parseLinkedOrderIds_(linkedEl && linkedEl.value).length > 0
+          );
+
+          if (inSavedGroup) {
+            var validation = validateUncombineShipOrder_(selfOrd, group);
+            if (!validation.ok) {
+              alert(validation.message);
+              setCombineShipCheckboxChecked_(true);
+              return;
+            }
+            if (validation.warned && !confirm(validation.message + "\n\n仍要取消併箱並移出群組？")) {
+              setCombineShipCheckboxChecked_(true);
+              return;
+            }
+            if (!confirm(buildUncombineSingleConfirmMessage_(selfId, group, masterId))) {
+              setCombineShipCheckboxChecked_(true);
+              return;
+            }
+            combineEl.disabled = true;
+            uncombineShipSingleOrder_(selfId, group, masterId).then(function(res) {
+              if (res && res.count > 0) {
+                showOrderMessage("已將 " + selfId + " 移出併箱群組");
+                var updated = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === selfId; });
+                if (updated) setFormFromOrder(updated);
+                else applyUncombineShipToFormFields_(masterId);
+                refreshCombineShipPanel_();
+              }
+            }).finally(function() { combineEl.disabled = false; });
+            return;
+          }
+
+          if (hasFormCombine || (feeEl && Number(feeEl.value) === 0)) {
+            var formRestoreFee = captureCombineShipPrevFeeFromForm_();
+            if (!confirm(
+              "是否清除併箱關聯與備註" +
+              (masterId ? ("（運費併入 " + masterId + "）") : "") +
+              "，並恢復運費 NT$" + formRestoreFee +
+              "？\n\n（尚未儲存，僅更新表單）"
+            )) {
+              setCombineShipCheckboxChecked_(true);
+              return;
+            }
+            applyUncombineShipToFormFields_(masterId);
+            refreshCombineShipPanel_();
+            return;
+          }
+
+          if (feeEl && Number(feeEl.value) === 0) feeEl.value = String(DEFAULT_COMBINE_SHIP_FEE);
           updateOrderTotal();
           refreshCombineShipPanel_();
         }
@@ -5020,6 +5581,10 @@
           } else {
             lines.push("<button type=\"button\" id=\"btnApplyCombineShipToForm\" class=\"mt-1 px-2 py-1 rounded border border-sky-300 bg-white text-sky-800 hover:bg-sky-100\">套用併箱免運（本單運費改 0）</button>");
           }
+          var selfOrd = selfId ? orders.find(function(o) { return normalizeOrderIdToken_(o.id) === selfId; }) : null;
+          if (selfOrd && orderIsInActiveCombineShipGroup_(selfOrd)) {
+            lines.push("<button type=\"button\" id=\"btnUncombineShipFromForm\" class=\"mt-1 px-2 py-1 rounded border border-rose-300 bg-white text-rose-800 hover:bg-rose-50\">移出併箱群組（僅本單）</button>");
+          }
           banner.innerHTML = lines.join("<br>");
           banner.classList.remove("hidden");
           var btn = document.getElementById("btnApplyCombineShipToForm");
@@ -5027,6 +5592,20 @@
             btn.addEventListener("click", function() {
               applyCombineShipFreeToForm_(masterId, others);
               showOrderMessage("已套用併箱免運：本單運費 0，已關聯 " + masterId);
+            });
+          }
+          var uncombineFormBtn = document.getElementById("btnUncombineShipFromForm");
+          if (uncombineFormBtn && selfOrd) {
+            uncombineFormBtn.addEventListener("click", function() {
+              var group = getCombineShipGroupForOrder_(selfOrd);
+              var groupMasterId = pickCombineShipMasterId_(group);
+              uncombineFormBtn.disabled = true;
+              runUncombineShipSingleFlow_(selfId, group, groupMasterId, function() {
+                var updated = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === selfId; });
+                if (updated) setFormFromOrder(updated);
+                refreshCombineShipPanel_();
+                updateOrderTotal();
+              }).finally(function() { uncombineFormBtn.disabled = false; });
             });
           }
         }
@@ -5046,9 +5625,11 @@
             var ord = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === id; });
             if (!ord) return;
             if (orderEffectiveShippingForOrder(ord) <= 0 && orderHasCombineShipRemark_(ord)) return;
+            var prevFee = captureCombineShipPrevFee_(ord);
+            saveCombineShipPrevFee_(ord, prevFee);
             ord.shippingFee = 0;
             if (ord.shippingStatus && String(ord.shippingStatus).indexOf("免運") >= 0) ord.shippingStatus = "";
-            ord.remark = appendCombineShipRemark_(ord.remark, masterId);
+            ord.remark = appendCombineShipRemark_(ord.remark, masterId, prevFee);
             var linked = parseLinkedOrderIds_(ord.linkedOrderIds);
             if (linked.indexOf(masterId) < 0) linked.unshift(masterId);
             ord.linkedOrderIds = linked.join(", ");
@@ -5082,27 +5663,37 @@
         function renderCustomerOverviewShippingBanner_(rows, stats) {
           var el = document.getElementById("customerOverviewShippingBanner");
           if (!el) return;
-          if (!stats || stats.activeCount <= 1) {
+          var combineGroup = pickPrimaryCombineShipGroupFromRows_(rows, customerOverviewFocusOrderId);
+          var hasCombineSetup = combineGroup && groupHasCombineShipSetup_(combineGroup);
+          if ((!stats || stats.activeCount <= 1) && !hasCombineSetup) {
             el.classList.add("hidden");
             el.innerHTML = "";
             return;
           }
-          var masterId = stats.recommendedMasterId || "";
-          var cls = stats.ok ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900";
-          var statusLine = stats.ok
-            ? ("本批併箱<strong>應收運費 1 次</strong>（NT$" + stats.expectedOnceFee + "）· 目前 " + stats.chargedCount + " 筆含運費")
-            : ("⚠ 本批<strong>應收運費 1 次</strong>，但目前 " + stats.chargedCount + " 筆各收運費（合計 NT$" + stats.totalShippingCharged + "）");
+          var masterId = (stats && stats.recommendedMasterId) || pickCombineShipMasterId_(combineGroup || rows) || "";
+          if (combineGroup && combineGroup.length) {
+            masterId = pickCombineShipMasterId_(combineGroup) || masterId;
+          }
+          var cls = stats && stats.ok ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900";
+          var statusLine = !stats || stats.activeCount <= 1
+            ? ("已設定併箱關聯" + (masterId ? " · 主單 <span class=\"font-mono font-semibold\">" + escapeHtml(masterId) + "</span>" : ""))
+            : (stats.ok
+              ? ("本批併箱<strong>應收運費 1 次</strong>（NT$" + stats.expectedOnceFee + "）· 目前 " + stats.chargedCount + " 筆含運費")
+              : ("⚠ 本批<strong>應收運費 1 次</strong>，但目前 " + stats.chargedCount + " 筆各收運費（合計 NT$" + stats.totalShippingCharged + "）"));
           el.className = "rounded-xl border px-4 py-3 text-sm leading-relaxed " + cls;
           el.innerHTML =
             "<div class=\"font-semibold mb-1\">併箱運費</div>" +
-            "<p>" + statusLine + (masterId ? " · 建議主單 <span class=\"font-mono font-semibold\">" + escapeHtml(masterId) + "</span>" : "") + "</p>" +
+            "<p>" + statusLine + (masterId && stats && stats.activeCount > 1 ? " · 建議主單 <span class=\"font-mono font-semibold\">" + escapeHtml(masterId) + "</span>" : "") + "</p>" +
             "<button type=\"button\" id=\"btnOverviewCombinePdf\" class=\"mt-2 mr-2 px-3 py-1.5 rounded-lg border border-sky-400 bg-white text-sky-900 text-xs hover:bg-sky-50\">產生併箱 PDF（合併明細）</button>" +
-            (stats.ok ? "" : ("<button type=\"button\" id=\"btnOverviewApplyCombineShip\" class=\"mt-2 px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-amber-900 text-xs hover:bg-amber-100\">副單運費改 0（併箱免運）</button>"));
+            (stats && !stats.ok ? ("<button type=\"button\" id=\"btnOverviewApplyCombineShip\" class=\"mt-2 mr-2 px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-amber-900 text-xs hover:bg-amber-100\">副單運費改 0（併箱免運）</button>") : "") +
+            (hasCombineSetup ? ("<button type=\"button\" id=\"btnOverviewUncombineShip\" class=\"mt-2 px-3 py-1.5 rounded-lg border border-rose-300 bg-white text-rose-800 text-xs hover:bg-rose-50\">取消併箱關聯（整組）</button>") : "");
           el.classList.remove("hidden");
           var pdfBtn = document.getElementById("btnOverviewCombinePdf");
           if (pdfBtn) {
             pdfBtn.addEventListener("click", function() {
-              var group = (rows || []).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
+              var group = combineGroup && combineGroup.length
+                ? combineGroup.slice()
+                : (rows || []).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
               var pending = collectCombineShipPendingItems_(group);
               if (!pending.length) {
                 alert("沒有「待出貨」品項可產生併箱 PDF。\n\n請先把各單要出的品項設為「待出貨」並儲存。");
@@ -5124,6 +5715,28 @@
                   renderCustomerOverviewModal_(customerOverviewLastName_, customerOverviewLastPhone_, customerOverviewFocusOrderId);
                 }
               }).finally(function() { btn.disabled = false; });
+            });
+          }
+          var uncombineBtn = document.getElementById("btnOverviewUncombineShip");
+          if (uncombineBtn && combineGroup) {
+            uncombineBtn.addEventListener("click", function() {
+              var validation = validateUncombineShipGroup_(combineGroup);
+              if (!validation.ok) {
+                alert(validation.message);
+                return;
+              }
+              var confirmMsg = buildUncombineShipConfirmMessage_(combineGroup, masterId);
+              if (validation.warned && validation.warned.length) {
+                if (!confirm(validation.message + "\n\n仍要繼續取消併箱關聯？")) return;
+              }
+              if (!confirm(confirmMsg)) return;
+              uncombineBtn.disabled = true;
+              uncombineShipGroup_(combineGroup, masterId).then(function(res) {
+                if (res && res.count > 0) {
+                  showOrderMessage("已取消併箱關聯（" + (res.ids || []).join("、") + "）");
+                  renderCustomerOverviewModal_(customerOverviewLastName_, customerOverviewLastPhone_, customerOverviewFocusOrderId);
+                }
+              }).finally(function() { uncombineBtn.disabled = false; });
             });
           }
         }
@@ -5748,6 +6361,8 @@
               var status = missing ? "（不存在）" : (o.status || "—");
               var due = missing ? "—" : ("NT$ " + orderAmountDue(o));
               var shipCell = missing ? "—" : formatOrderShippingOverviewCell_(o);
+              var inCombineGroup = !missing && orderIsInActiveCombineShipGroup_(o);
+              var canUncombine = inCombineGroup && o.status !== "已完成" && o.status !== "已取消";
               return "<tr class=\"border-b border-slate-100" + rowClass + "\" data-overview-order-id=\"" + escapeHtml(id) + "\">" +
                 "<td class=\"py-2.5 px-3 font-mono text-slate-800\">" + escapeHtml(id) + (missing ? " <span class=\"text-rose-600 text-xs\">未找到</span>" : "") + "</td>" +
                 "<td class=\"py-2.5 px-3 text-slate-600\">" + escapeHtml(status) + "</td>" +
@@ -5756,10 +6371,24 @@
                 "<td class=\"py-2.5 px-3 text-xs text-slate-500\">" + escapeHtml(linkedText) + "</td>" +
                 "<td class=\"py-2.5 px-3 whitespace-nowrap\">" +
                 (missing ? "<span class=\"text-xs text-slate-400\">—</span>" :
+                  (canUncombine ? "<button type=\"button\" class=\"customer-overview-uncombine-btn text-rose-700 hover:underline text-xs mr-2\">移出併箱</button>" : "") +
                   "<button type=\"button\" class=\"customer-overview-edit-btn text-rose-600 hover:underline text-xs mr-2\">編輯</button>" +
                   "<button type=\"button\" class=\"customer-overview-filter-btn text-sky-700 hover:underline text-xs\">篩選</button>") +
                 "</td></tr>";
             }).join("");
+            tbody.querySelectorAll(".customer-overview-uncombine-btn").forEach(function(btn) {
+              btn.addEventListener("click", function() {
+                var id = this.closest("tr").getAttribute("data-overview-order-id");
+                var ord = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === id; });
+                if (!ord) return;
+                var group = getCombineShipGroupForOrder_(ord);
+                var masterId = pickCombineShipMasterId_(group);
+                btn.disabled = true;
+                runUncombineShipSingleFlow_(id, group, masterId, function() {
+                  renderCustomerOverviewModal_(customerOverviewLastName_, customerOverviewLastPhone_, customerOverviewFocusOrderId);
+                }).finally(function() { btn.disabled = false; });
+              });
+            });
             tbody.querySelectorAll(".customer-overview-edit-btn").forEach(function(btn) {
               btn.addEventListener("click", function() {
                 var id = this.closest("tr").getAttribute("data-overview-order-id");
@@ -7040,6 +7669,7 @@
         var orderCombineShipFreeEl = document.getElementById("orderCombineShipFree");
         if (orderCombineShipFreeEl) {
           orderCombineShipFreeEl.addEventListener("change", function() {
+            if (combineShipUncheckGuard_) return;
             if (this.checked) {
               var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
               var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
@@ -7058,10 +7688,7 @@
                 refreshCombineShipPanel_();
               }
             } else {
-              var feeElOff = document.getElementById("orderShippingFee");
-              if (feeElOff && Number(feeElOff.value) === 0) feeElOff.value = "38";
-              updateOrderTotal();
-              refreshCombineShipPanel_();
+              handleCombineShipUnchecked_(this);
             }
           });
         }
@@ -7337,6 +7964,15 @@
         if (customerOverviewBackdrop) customerOverviewBackdrop.addEventListener("click", closeCustomerOverviewModal_);
         var btnOrderLinkSuggest = document.getElementById("btnOrderLinkSuggest");
         if (btnOrderLinkSuggest) btnOrderLinkSuggest.addEventListener("click", suggestLinkedOrdersForCurrentForm_);
+        if (typeof window.init711StorePicker === "function") {
+          window.init711StorePicker({
+            shippingMethodEl: document.getElementById("orderShippingMethod"),
+            storeNameEl: document.getElementById("orderStoreName"),
+            storeIdEl: document.getElementById("orderStoreId"),
+            addressEl: document.getElementById("orderAddress"),
+            notify: showOrderMessage
+          });
+        }
         renderOrders();
         processPendingLoyaltyOrders_(true);
         if (!ORDER_LOCAL_ONLY) {
