@@ -522,6 +522,48 @@
     return cfg.earnStatuses.indexOf(status) >= 0;
   }
 
+  function orderHasEarnLedgerEntryForOrder_(ledger, orderId, card) {
+    var oid = normalizeOrderIdToken_(orderId);
+    card = normalizeMemberCardNo(card);
+    if (!oid || !isValidMemberCardNo(card)) return false;
+    for (var i = 0; i < (ledger || []).length; i++) {
+      var rec = ledger[i];
+      if (normalizeOrderIdToken_(rec.orderId) !== oid) continue;
+      if (normalizeMemberCardNo(rec.memberCardNo) !== card) continue;
+      var type = String(rec.type || "").trim();
+      if (type === "發放" && Math.floor(Number(rec.points) || 0) > 0) return true;
+    }
+    return false;
+  }
+
+  function orderHasRedeemLedgerEntryForOrder_(ledger, orderId, card) {
+    var oid = normalizeOrderIdToken_(orderId);
+    card = normalizeMemberCardNo(card);
+    if (!oid || !isValidMemberCardNo(card)) return false;
+    for (var i = 0; i < (ledger || []).length; i++) {
+      var rec = ledger[i];
+      if (normalizeOrderIdToken_(rec.orderId) !== oid) continue;
+      if (normalizeMemberCardNo(rec.memberCardNo) !== card) continue;
+      var type = String(rec.type || "").trim();
+      if (type === "折抵" && Math.floor(Number(rec.points) || 0) < 0) return true;
+    }
+    return false;
+  }
+
+  /** 刪除訂單時一併移除該訂單編號的紅利紀錄（測試單／重開同編號時避免餘額加倍） */
+  function removeLedgerEntriesForOrderId(ledger, orderId) {
+    var oid = normalizeOrderIdToken_(orderId);
+    if (!oid) return { ledger: ledger || [], removed: 0 };
+    ledger = ledger || [];
+    var kept = [];
+    var removed = 0;
+    ledger.forEach(function (rec) {
+      if (normalizeOrderIdToken_(rec.orderId) === oid) removed++;
+      else kept.push(rec);
+    });
+    return { ledger: kept, removed: removed };
+  }
+
   function processOrderPoints(order, previousOrder) {
     if (!order) return { order: order, ledger: getLedger(), message: "" };
     if (order.pointsProcessed === "Y" || order.pointsProcessed === true) {
@@ -538,12 +580,15 @@
 
     var cfg = getConfig();
     var ledger = getLedger();
+    var oid = normalizeOrderIdToken_(order.id);
+    var alreadyEarned = orderHasEarnLedgerEntryForOrder_(ledger, oid, card);
+    var alreadyRedeemed = orderHasRedeemLedgerEntryForOrder_(ledger, oid, card);
     var requestedPts = Math.floor(Number(order.pointsUsed) || 0);
     var pointsUsed = requestedPts;
     var balance = getBalance(card, order.customerName, order.phone, order.lineId, [order]);
     var msg = [];
 
-    if (pointsUsed > 0) {
+    if (pointsUsed > 0 && !alreadyRedeemed) {
       var maxUse = calcMaxRedeemPoints(order, balance, cfg);
       if (pointsUsed > maxUse) pointsUsed = maxUse;
       if (pointsUsed > 0) ledger = redeemPoints(ledger, order, pointsUsed);
@@ -554,17 +599,23 @@
         }
       }
       order.pointsUsed = pointsUsed;
+    } else if (alreadyRedeemed) {
+      order.pointsUsed = Math.max(0, Math.floor(Number(order.pointsUsed) || 0));
     }
 
     var earned = calcEarnPoints(order, cfg);
-    if (earned > 0) {
+    if (earned > 0 && !alreadyEarned) {
       ledger = earnPoints(ledger, order, earned);
       order.pointsEarned = earned;
+    } else if (alreadyEarned) {
+      msg.push("紅利紀錄已有此訂單發放，未重複加點");
     }
 
-    if (pointsUsed > 0 || earned > 0) {
-      order.pointsProcessed = "Y";
-      saveLedger(ledger);
+    if ((pointsUsed > 0 && !alreadyRedeemed) || (earned > 0 && !alreadyEarned) || alreadyEarned || alreadyRedeemed) {
+      if (alreadyEarned || alreadyRedeemed || pointsUsed > 0 || earned > 0) {
+        order.pointsProcessed = "Y";
+        saveLedger(ledger);
+      }
     }
 
     if (pointsUsed > 0) msg.push("折抵 " + pointsUsed + " 點");
@@ -988,6 +1039,7 @@
     calcEarnPoints: calcEarnPoints,
     pointsDiscountAmount: pointsDiscountAmount,
     processOrderPoints: processOrderPoints,
+    removeLedgerEntriesForOrderId: removeLedgerEntriesForOrderId,
     shouldProcessOrder: shouldProcessOrder,
     manualAdjust: manualAdjust,
     runGlobalExpiry: runGlobalExpiry,
