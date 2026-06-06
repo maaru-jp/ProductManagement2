@@ -203,6 +203,12 @@
     </div>
   </div>
 
+  <div id="apiConnectivityBanner" class="hidden bg-amber-50 border-b border-amber-300 text-amber-950 px-4 py-3 text-sm leading-relaxed" role="alert">
+    <strong class="font-semibold">無法連線試算表 API</strong>
+    <span id="apiConnectivityBannerText" class="ml-1"></span>
+    <a id="apiConnectivityBannerLink" href="http://localhost:3000/admin.html" class="ml-2 underline font-medium whitespace-nowrap">改用本機後台</a>
+  </div>
+
   <div id="adminApp" class="flex min-h-screen">
     <!-- 左側導覽 -->
     <div class="admin-sidebar-wrap shrink-0 flex">
@@ -1494,53 +1500,113 @@
       // 步驟：開啟 ProductManagement2 試算表 → 擴充功能 → Apps Script → 貼上 Code.gs →
       // 部署 → 網頁應用程式（執行身分：我、存取：任何人）→ 複製 URL 貼到 API_BASE。
       // 驗證：開啟 API_BASE?action=spreadsheet_info 應見 spreadsheetId 為 14dqpe... 且含 postRoutes。
-      var isLocalHost = (
+      var onLocalDevServer = (
         window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1" ||
-        window.location.protocol === "file:"
+        window.location.hostname === "127.0.0.1"
       );
       var API_BASE = "https://script.google.com/macros/s/AKfycbyyFnwQVNVamiWRD23U4TOIKnR_iHqfO3ObFmFl_lfqepR8tvFgvWvm5YBqxuFWZiaBfw/exec";
-      var API_READ = isLocalHost ? "/api" : API_BASE;
-      var API_WRITE = isLocalHost ? "/api-write" : API_BASE;
+      var API_READ = onLocalDevServer ? "/api" : API_BASE;
+      var API_WRITE = onLocalDevServer ? "/api-write" : API_BASE;
       var CORS_PROXY_PREFIX = "https://corsproxy.io/?";
       // 請與 Code.gs 的 CONFIG.adminWriteToken 設成相同字串
       var ADMIN_WRITE_TOKEN = "CHANGE_ME_TO_A_STRONG_TOKEN_2026";
       var EXPECTED_SHOP_SPREADSHEET_ID = "14dqpeCDpKRA8_Ca2b5Phinh00ydPiaBh3MHKrVYMVOI";
 
+      function getFetchWriteUrls_() {
+        var urls = [];
+        if (onLocalDevServer) urls.push("/api-write");
+        urls.push(API_BASE);
+        return urls;
+      }
+
       function fetchWrite(body) {
         var payload = Object.assign({}, body || {}, { token: ADMIN_WRITE_TOKEN });
-        var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) };
-        var candidates = [];
-        // 1) 先試目前設定（可能是本地代理 /api-write）
-        candidates.push(API_WRITE);
-        // 2) 直打 Apps Script
-        candidates.push(API_BASE);
-        // 3) 走 proxy 的 API_WRITE
-        candidates.push(CORS_PROXY_PREFIX + encodeURIComponent(API_WRITE));
-        // 4) 走 proxy 的 API_BASE
-        candidates.push(CORS_PROXY_PREFIX + encodeURIComponent(API_BASE));
-        function tryAt(i) {
-          if (i >= candidates.length) throw new Error("Failed to fetch");
-          return fetch(candidates[i], opts).then(function(res) {
-            if (!res || !res.ok) return tryAt(i + 1);
+        var jsonBody = JSON.stringify(payload);
+        var urls = getFetchWriteUrls_();
+        var strategies = [
+          { headers: { "Content-Type": "text/plain;charset=utf-8" } },
+          { headers: { "Content-Type": "application/json" } }
+        ];
+        var lastErr = null;
+
+        function tryCombo(urlIndex, strategyIndex) {
+          if (urlIndex >= urls.length) {
+            if (strategyIndex + 1 < strategies.length) return tryCombo(0, strategyIndex + 1);
+            var hint = "";
+            if (window.location.protocol === "file:") {
+              hint = "請執行專案資料夾的 start.bat，改用 http://localhost:3000/admin.html 開啟後台";
+            } else if (!onLocalDevServer) {
+              hint = "若仍失敗，請在本機執行 start.bat，用 http://localhost:3000/admin.html 操作";
+            } else {
+              hint = "請確認已執行 python server.py（或 start.bat），並用 http://localhost:3000/admin.html 開啟";
+            }
+            throw new Error((lastErr && lastErr.message ? lastErr.message : "無法連線 GAS") + "。" + hint);
+          }
+          var url = urls[urlIndex];
+          var opts = {
+            method: "POST",
+            headers: strategies[strategyIndex].headers,
+            body: jsonBody,
+            redirect: "follow",
+            cache: "no-store"
+          };
+          return fetch(url, opts).then(function(res) {
+            if (!res || !res.ok) {
+              lastErr = new Error("HTTP " + (res ? res.status : "?"));
+              return tryCombo(urlIndex + 1, strategyIndex);
+            }
             return res;
-          }).catch(function() {
-            return tryAt(i + 1);
+          }).catch(function(err) {
+            lastErr = err;
+            return tryCombo(urlIndex + 1, strategyIndex);
           });
         }
-        return tryAt(0);
+
+        return tryCombo(0, 0);
       }
 
       function formatNetworkError(err) {
         var raw = (err && err.message) ? String(err.message) : "網路錯誤";
-        if (/failed to fetch/i.test(raw)) {
+        if (/failed to fetch|無法連線|networkerror|load failed/i.test(raw)) {
           if (window.location.protocol === "file:") {
-            return "目前用 file:// 開啟，請改用 http://localhost 開啟 admin.html";
+            return "無法連線。請雙擊專案資料夾的 start.bat，改用 http://localhost:3000/admin.html 開啟後台（勿用 file://）";
           }
-            return "載入失敗：網路連線異常";
+          if (!onLocalDevServer) {
+            return "無法連線 GAS。請在本機雙擊 start.bat，用 http://localhost:3000/admin.html 操作";
+          }
+          return "無法連線。請先執行 start.bat（或 python server.py），再用 http://localhost:3000/admin.html 開啟";
         }
+        if (/start\.bat|localhost:3000/i.test(raw)) return raw;
         return raw;
       }
+
+      function showApiConnectivityBanner_(message) {
+        var wrap = document.getElementById("apiConnectivityBanner");
+        var text = document.getElementById("apiConnectivityBannerText");
+        if (!wrap || !text) return;
+        text.textContent = message || "";
+        wrap.classList.remove("hidden");
+      }
+
+      function checkApiConnectivity_() {
+        if (window.location.protocol === "file:") {
+          showApiConnectivityBanner_("您目前用 file:// 開啟，瀏覽器無法寫入試算表。請雙擊 start.bat，改用");
+          return Promise.resolve(false);
+        }
+        return fetchWrite({ action: "points_list" })
+          .then(function(res) { return res && res.ok; })
+          .catch(function() { return false; })
+          .then(function(ok) {
+            if (!ok) {
+              var msg = onLocalDevServer
+                ? "本機代理未啟動或連線失敗。請雙擊 start.bat 後，用"
+                : "無法連線試算表 API。請在本機雙擊 start.bat，用";
+              showApiConnectivityBanner_(msg);
+            }
+            return ok;
+          });
+      }
+      window.checkApiConnectivity_ = checkApiConnectivity_;
 
       var products = [];
       var productsLoadSeq = 0;
@@ -4437,7 +4503,7 @@
             });
           }).catch(function(err) {
             renderLoyaltyPanel();
-            showLoyaltyMessage("同步失敗：" + (err.message || "請檢查 API 連線與 GAS 部署"), true);
+            showLoyaltyMessage("同步失敗：" + formatNetworkError(err), true);
           }).finally(function() {
             btnSync.disabled = false;
             btnSync.textContent = prevLabel;
@@ -7222,7 +7288,9 @@
           btnSaveOrders.addEventListener("click", function() { loadOrdersFromSheet(); });
         }
         if (window.location.protocol === "file:") {
-          showOrderMessage("目前為 file:// 模式，系統會自動嘗試直連/代理 API。", false);
+          showOrderMessage("file:// 無法同步試算表。請執行 start.bat，改用 http://localhost:3000/admin.html", true);
+        } else {
+          checkApiConnectivity_();
         }
         if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { renderOrders(); });
         if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders(); } });
