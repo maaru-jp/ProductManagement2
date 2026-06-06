@@ -168,6 +168,23 @@
       "</ul>";
   }
 
+  var membersMeta = { url: "", name: "" };
+
+  function updateMembersStatLine(count, extra) {
+    var stat = document.getElementById("membersStatLine");
+    if (!stat) return;
+    var text = "共 " + (count || 0) + " 位會員";
+    if (extra) text += extra;
+    if (membersMeta.url) {
+      stat.innerHTML =
+        escapeHtml(text) +
+        ' · 資料在 <a href="' +
+        escapeHtml(membersMeta.url) +
+        '#gid=0" target="_blank" rel="noopener" class="text-sky-600 underline">Memberist 試算表</a>（第 2 列起）';
+    } else {
+      stat.textContent = text;
+    }
+  }
   function fetchMembersFromApi() {
     if (typeof fetchWrite !== "function") {
       return Promise.reject(new Error("API 未就緒"));
@@ -185,6 +202,8 @@
       .then(function (res) {
         if (res && res.error) throw new Error(res.message || "載入失敗");
         membersCache = res.members || [];
+        if (res.memberSpreadsheetUrl) membersMeta.url = res.memberSpreadsheetUrl;
+        if (res.memberSpreadsheetName) membersMeta.name = res.memberSpreadsheetName;
         return membersCache;
       });
   }
@@ -285,14 +304,19 @@
   }
 
   function syncMembersFromOrders() {
-    showMessage("正在從歷史訂單匯入會員…", false);
-    fetchWrite({ action: "member_sync_from_orders" })
+    var btn = document.getElementById("btnMemberSyncOrders");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "匯入中（約 1～2 分鐘）…";
+    }
+    showMessage("正在從歷史訂單匯入會員至 Memberist，請稍候勿關閉頁面…", false);
+    fetchWrite({ action: "member_sync_from_orders" }, { timeoutMs: 180000 })
       .then(function (r) {
         return r.text().then(function (t) {
           try {
             return t ? JSON.parse(t) : {};
           } catch (e) {
-            return { error: true, message: "回應非 JSON" };
+            return { error: true, message: "回應非 JSON（可能逾時或未部署最新 Code.gs）" };
           }
         });
       })
@@ -302,21 +326,32 @@
         renderConflicts(res.conflicts || []);
         var q = document.getElementById("membersSearchInput");
         renderMembersTable(membersCache, q ? q.value.trim() : "");
-        var stat = document.getElementById("membersStatLine");
-        if (stat) {
-          stat.textContent =
-            "共 " +
-            membersCache.length +
-            " 位會員（新增 " +
-            (res.added || 0) +
-            "、更新 " +
-            (res.updated || 0) +
-            "）";
+        if (res.memberSpreadsheetUrl) membersMeta.url = res.memberSpreadsheetUrl;
+        updateMembersStatLine(
+          membersCache.length,
+          "（新增 " + (res.added || 0) + "、更新 " + (res.updated || 0) + "）"
+        );
+        var msg = res.message || "匯入完成";
+        if ((res.added || 0) + (res.updated || 0) === 0 && (res.eligible || 0) > 0) {
+          msg += "。請將 Memberist 試算表共用「編輯者」給部署 GAS 的 Google 帳號後再試";
         }
-        showMessage(res.message || "匯入完成", false);
+        if (res.failed && res.failed.length) {
+          msg += "；衝突 " + res.failed.length + " 筆";
+        }
+        showMessage(msg, (res.added || 0) + (res.updated || 0) === 0 && (res.eligible || 0) > 0);
       })
       .catch(function (err) {
-        showMessage(err.message || "匯入失敗", true);
+        var msg = err && err.message ? String(err.message) : "匯入失敗";
+        if (/abort|timeout|逾時/i.test(msg)) {
+          msg = "匯入逾時（資料較多需 1～2 分鐘）。請重新部署 Code.gs 後再按一次「從訂單匯入」";
+        }
+        showMessage(msg, true);
+      })
+      .finally(function () {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "從訂單匯入";
+        }
       });
   }
 
@@ -361,8 +396,7 @@
       .then(function (list) {
         var q = document.getElementById("membersSearchInput");
         renderMembersTable(list, q ? q.value.trim() : "");
-        var stat = document.getElementById("membersStatLine");
-        if (stat) stat.textContent = "共 " + list.length + " 位會員";
+        updateMembersStatLine(list.length, "");
         if (!silent) showMessage("已載入 " + list.length + " 位會員", false);
       })
       .catch(function (err) {
