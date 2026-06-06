@@ -220,6 +220,7 @@
         <nav class="p-2 flex-1 flex flex-col justify-center">
           <a href="#" id="navReports" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="總覽報表"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span><span class="nav-text">總覽報表</span></a>
           <a href="#" id="navOrders" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="訂單管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span><span class="nav-text">訂單管理</span></a>
+          <a href="#" id="navMembers" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="會員名單"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="nav-text">會員名單</span></a>
           <a href="#" id="navLoyalty" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="紅利點數"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></span><span class="nav-text">紅利點數</span></a>
           <a href="#" id="navProducts" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-sm bg-white/10 active" title="商品管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span><span class="nav-text">商品管理</span></a>
           <a href="#" id="navLayout" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="首頁排版"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span><span class="nav-text">首頁排版</span></a>
@@ -440,6 +441,108 @@
         </div>
       </section>
 
+      <!-- 會員名單 -->
+      <section id="sectionMembers" class="hidden">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
+          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+            <svg class="section-title-icon text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            會員名單
+          </h2>
+          <div class="flex flex-wrap gap-2 shrink-0">
+            <button type="button" id="btnMemberSyncOrders" class="px-4 py-2 rounded-lg bg-sky-600 text-white text-sm hover:bg-sky-700">從訂單匯入</button>
+            <button type="button" id="btnMemberAdd" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700">新增會員</button>
+            <button type="button" id="btnMemberReload" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">重新載入</button>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5 mb-6">
+          <p class="text-sm font-semibold text-sky-900 mb-2">為什麼需要會員名單？</p>
+          <ul class="text-sm text-slate-700 space-y-1.5 list-disc pl-5">
+            <li><strong>一個顧客 = 一張 13 碼卡</strong>，作為紅利、歷史訂單、會員中心的共同主鍵</li>
+            <li>資料寫入獨立試算表 <strong>Memberist</strong> 的「<strong>會員名單</strong>」分頁（非 ProductManagement2 本簿）</li>
+            <li>訂單儲存至試算表時會<strong>自動更新</strong>會員名單；亦可按「從訂單匯入」一次補齊</li>
+            <li>同名多卡、電話重複時會<strong>提示衝突</strong>，避免顧客查不到點數</li>
+          </ul>
+          <p class="text-xs text-slate-500 mt-3" id="membersStatLine">載入中…</p>
+          <p id="membersMessage" class="text-sm mt-2 hidden" role="status"></p>
+        </div>
+
+        <div id="membersConflictBox" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-4 mb-4"></div>
+
+        <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
+          <div class="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-slate-800">會員清冊</h3>
+            <input type="text" id="membersSearchInput" placeholder="搜尋姓名、電話、卡號" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-52" />
+          </div>
+          <div class="overflow-x-auto max-h-[520px] overflow-y-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 sticky top-0">
+                <tr>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">會員卡號</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">姓名</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">電話</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">Line ID</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">狀態</th>
+                  <th class="text-right py-2 px-3 font-medium text-slate-600">操作</th>
+                </tr>
+              </thead>
+              <tbody id="membersTableBody">
+                <tr><td colspan="6" class="py-10 text-center text-slate-400">載入中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 新增／編輯 Modal -->
+        <div id="memberFormModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-5" role="dialog" aria-labelledby="memberFormTitle">
+            <div class="flex items-center justify-between mb-4">
+              <h3 id="memberFormTitle" class="text-base font-semibold text-slate-800">新增會員</h3>
+              <button type="button" id="btnMemberFormClose" class="text-slate-400 hover:text-slate-600 text-xl leading-none" aria-label="關閉">&times;</button>
+            </div>
+            <form id="memberForm" class="space-y-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">會員卡號 <span class="text-rose-500">*</span></label>
+                <div class="flex gap-2">
+                  <input type="text" id="memberFormCard" required maxlength="13" inputmode="numeric" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" placeholder="13 碼純數字" />
+                  <button type="button" id="btnMemberGenCard" class="shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-700 hover:bg-slate-50">自動產生</button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">姓名</label>
+                <input type="text" id="memberFormName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="客戶姓名" />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">電話</label>
+                  <input type="text" id="memberFormPhone" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">Line ID</label>
+                  <input type="text" id="memberFormLineId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Email</label>
+                <input type="email" id="memberFormEmail" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">狀態</label>
+                <select id="memberFormStatus" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+                  <option value="有效">有效</option>
+                  <option value="停用">停用</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">備註</label>
+                <input type="text" id="memberFormNote" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+              <button type="submit" class="w-full py-2.5 rounded-lg bg-sky-600 text-white text-sm font-medium hover:bg-sky-700">儲存</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
       <!-- 紅利點數區塊 -->
       <section id="sectionLoyalty" class="hidden">
         <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
@@ -471,7 +574,7 @@
             <strong>資料分工：</strong>試算表「<strong>紅利點數</strong>」＝會員中心（餘額＋異動歷程）；「<strong>歷史訂單</strong>」＝每筆交易的獲得／折抵點數與金額。顧客查詢中心分兩個分頁查詢。
           </p>
           <p class="text-xs text-slate-600 mt-2">
-            訂單改「已確認」並寫入「歷史訂單」後，系統會<strong>自動同步紅利至「紅利點數」</strong>；若顧客查不到，請至本頁按「同步至試算表」。
+            訂單改「已確認」並寫入「歷史訂單」後，系統會<strong>自動同步紅利至「紅利點數」</strong>；若顧客查不到，請至本頁按「同步至試算表」。會員卡號請先在側欄<strong>「會員名單」</strong>確認一人一卡通。
           </p>
           <div class="flex flex-wrap gap-2 mt-3">
             <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理未發點訂單</button>
@@ -1498,7 +1601,8 @@
   </div>
 
   <script src="js/member-card.js"></script>
-  <script src="js/admin-loyalty.js?v=20260526-17"></script>
+  <script src="js/admin-loyalty.js?v=20260526-18"></script>
+  <script src="js/admin-members.js?v=20260526-1"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
   <script>
     (function() {
@@ -1690,7 +1794,7 @@
       }
 
       function setNavActive(navId) {
-        var navs = ["navReports", "navOrders", "navLoyalty", "navProducts", "navPurchases", "navLayout", "navSettings"];
+        var navs = ["navReports", "navOrders", "navMembers", "navLoyalty", "navProducts", "navPurchases", "navLayout", "navSettings"];
         navs.forEach(function(id) {
           var el = document.getElementById(id);
           if (!el) return;
@@ -1706,6 +1810,7 @@
         var reportsSection = document.getElementById("sectionReports");
         var productsSection = document.getElementById("sectionProducts");
         var ordersSection = document.getElementById("sectionOrders");
+        var membersSection = document.getElementById("sectionMembers");
         var loyaltySection = document.getElementById("sectionLoyalty");
         var purchasesSection = document.getElementById("sectionPurchases");
         var layoutSection = document.getElementById("sectionLayout");
@@ -1713,12 +1818,19 @@
         if (reportsSection) reportsSection.classList.toggle("hidden", sectionId !== "sectionReports");
         if (productsSection) productsSection.classList.toggle("hidden", sectionId !== "sectionProducts");
         if (ordersSection) ordersSection.classList.toggle("hidden", sectionId !== "sectionOrders");
+        if (membersSection) membersSection.classList.toggle("hidden", sectionId !== "sectionMembers");
         if (loyaltySection) loyaltySection.classList.toggle("hidden", sectionId !== "sectionLoyalty");
         if (purchasesSection) purchasesSection.classList.toggle("hidden", sectionId !== "sectionPurchases");
         if (layoutSection) layoutSection.classList.toggle("hidden", sectionId !== "sectionLayout");
         if (settingsSection) settingsSection.classList.toggle("hidden", sectionId !== "sectionSettings");
         if (sectionId === "sectionReports") setNavActive("navReports");
         else if (sectionId === "sectionOrders") setNavActive("navOrders");
+        else if (sectionId === "sectionMembers") {
+          setNavActive("navMembers");
+          if (window.MaaruMembers && typeof MaaruMembers.loadPanel === "function") {
+            MaaruMembers.loadPanel(false);
+          }
+        }
         else if (sectionId === "sectionLoyalty") {
           setNavActive("navLoyalty");
           if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
@@ -1873,6 +1985,7 @@
         updateReportKPI();
       });
       document.getElementById("navOrders").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionOrders"); });
+      document.getElementById("navMembers").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionMembers"); });
       document.getElementById("navLoyalty").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionLoyalty"); });
       document.getElementById("navProducts").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionProducts"); });
       document.getElementById("navLayout").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionLayout"); });
@@ -4343,6 +4456,11 @@
                   return res;
                 });
             };
+            report("修復試算表紅利欄位…");
+            return fetchWrite({ action: "points_sheet_repair" })
+              .then(parseWriteApiResponse_)
+              .catch(function () { return {}; })
+              .then(function () {
             report("讀取試算表紅利…");
             var loadRemote = fetchWrite({ action: "points_list" })
               .then(parseWriteApiResponse_)
@@ -4362,6 +4480,7 @@
             }
             return Promise.all([loadOrders, loadRemote]).then(function (pair) {
               return prep(pair[0], pair[1]);
+            });
             });
           } catch (err) {
             return Promise.reject(err);
@@ -4399,6 +4518,7 @@
           }
           return list;
         }
+        window.loadAdminOrdersForLoyalty_ = loadAdminOrdersForLoyalty_;
 
         function customerMatchesLoyaltyQuery_(c, q, qDigits) {
           if (!q) return true;
@@ -6931,12 +7051,27 @@
             btn.addEventListener("click", function() {
               var id = this.closest("tr").getAttribute("data-order-id");
               var name = this.getAttribute("data-name") || "此訂單";
-              if (!confirm("確定要刪除訂單「" + name + "」嗎？")) return;
+              if (!confirm("確定要刪除訂單「" + name + "」嗎？\n\n此訂單編號的紅利發放／折抵紀錄也會一併從本機移除（避免重開同編號時餘額加倍）。")) return;
               orders = orders.filter(function(o) { return o.id !== id; });
+              var ledgerMsg = "";
+              if (window.MaaruLoyalty && typeof MaaruLoyalty.removeLedgerEntriesForOrderId === "function") {
+                var lr = MaaruLoyalty.removeLedgerEntriesForOrderId(MaaruLoyalty.getLedger(), id);
+                if (lr.removed > 0) {
+                  MaaruLoyalty.saveLedger(lr.ledger);
+                  ledgerMsg = "，已移除 " + lr.removed + " 筆紅利紀錄";
+                }
+              }
               saveOrders();
               renderOrders();
               deleteOrderFromSheet(id).then(function() {
-                showOrderMessage("已刪除訂單（試算表已同步）");
+                var syncChain = Promise.resolve();
+                if (ledgerMsg && typeof window.syncPointsLedgerToSheet === "function") {
+                  syncChain = window.syncPointsLedgerToSheet().catch(function() { return null; });
+                }
+                syncChain.then(function() {
+                  showOrderMessage("已刪除訂單（試算表已同步）" + ledgerMsg);
+                  if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+                });
               }).catch(function(err) {
                 showOrderMessage("刪除試算表訂單失敗：" + (err.message || "網路錯誤"), true);
               });
