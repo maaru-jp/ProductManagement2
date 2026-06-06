@@ -49,13 +49,13 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-05-26-member-row2-fix",
+        apiVersion: "2026-06-07-member-points-consistency",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"],
-        postRoutes: ["order_list", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
+        postRoutes: ["order_list", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
         memberSpreadsheetName: getMemberSpreadsheetMeta_().name
@@ -178,7 +178,7 @@ function doPost(e) {
     }
 
     // 會員名單：list / upsert / delete / sync
-    if (action === "member_list" || action === "member_upsert" || action === "member_delete" || action === "member_sync_from_orders") {
+    if (action === "member_list" || action === "member_upsert" || action === "member_delete" || action === "member_sync_from_orders" || action === "points_purge_card") {
       var memberSheet = getMemberSheet(ss);
       if (!memberSheet) {
         out.error = true;
@@ -215,8 +215,30 @@ function doPost(e) {
           out.message = "缺少有效會員卡號";
           return jsonOutput(out);
         }
+        var purgePoints = body.purgePoints === true || body.purgePoints === "true" || body.purgePoints === 1;
         var removed = deleteMemberByCard_(memberSheet, delCard);
-        out.message = removed ? ("已刪除會員 " + delCard) : ("找不到會員 " + delCard);
+        var ledgerRemoved = 0;
+        if (purgePoints) ledgerRemoved = removeLedgerEntriesForMemberCard_(ss, delCard);
+        out.ledgerRemoved = ledgerRemoved;
+        if (removed) {
+          out.message = "已刪除會員 " + delCard + (ledgerRemoved ? "，並清除 " + ledgerRemoved + " 筆紅利紀錄" : "");
+        } else if (ledgerRemoved) {
+          out.message = "會員名單已無此卡，已清除 " + ledgerRemoved + " 筆紅利紀錄";
+        } else {
+          out.message = "找不到會員 " + delCard;
+        }
+        return jsonOutput(out);
+      }
+      if (action === "points_purge_card") {
+        var purgeCard = normalizeMemberCardNo_(body.memberCardNo || body.card || "");
+        if (!isValidMemberCardNo_(purgeCard)) {
+          out.error = true;
+          out.message = "缺少有效會員卡號";
+          return jsonOutput(out);
+        }
+        var purged = removeLedgerEntriesForMemberCard_(ss, purgeCard);
+        out.ledgerRemoved = purged;
+        out.message = purged ? ("已清除卡號 " + purgeCard + " 的 " + purged + " 筆紅利紀錄") : "此卡號在紅利分頁無紀錄";
         return jsonOutput(out);
       }
       if (action === "member_upsert") {
@@ -260,7 +282,11 @@ function doPost(e) {
           return jsonOutput(out);
         }
         var deleted = deleteOrderById(orderSheet, delId);
-        out.message = deleted ? ("已刪除訂單 " + delId) : ("找不到訂單 " + delId);
+        var ledgerRemoved = deleted ? removeLedgerEntriesForOrderId_(ss, delId) : 0;
+        out.ledgerRemoved = ledgerRemoved;
+        out.message = deleted
+          ? ("已刪除訂單 " + delId + (ledgerRemoved ? "，並清除 " + ledgerRemoved + " 筆紅利紀錄" : ""))
+          : ("找不到訂單 " + delId);
         return jsonOutput(out);
       }
       if (action === "order_sheet_repair") {
@@ -2765,6 +2791,94 @@ function normalizePublicPointNote_(note) {
     .replace(/\(不含運費、訂金\)/g, "（不含運費）");
 }
 
+function buildOrderIdIndex_(allOrders) {
+  var map = {};
+  for (var i = 0; i < (allOrders || []).length; i++) {
+    var oid = normalizeOrderId_(allOrders[i] && allOrders[i].id);
+    if (oid) map[oid] = true;
+  }
+  return map;
+}
+
+/** 公開查詢：剔除 orderId 已不在「歷史訂單」的紅利列（孤兒紀錄，常見於測試刪單後） */
+function filterOrphanLedgerEntriesForPublic_(ledger, allOrders) {
+  var orderIds = buildOrderIdIndex_(allOrders);
+  var kept = [];
+  var dropped = 0;
+  for (var i = 0; i < (ledger || []).length; i++) {
+    var rec = ledger[i];
+    var oid = normalizeOrderId_(rec && rec.orderId);
+    if (oid && !orderIds[oid]) {
+      dropped++;
+      continue;
+    }
+    kept.push(rec);
+  }
+  return { ledger: kept, orphanCount: dropped };
+}
+
+function getMemberCardRosterStatus_(ss, card) {
+  card = normalizeMemberCardNo_(card);
+  if (!isValidMemberCardNo_(card)) {
+    return { exists: false, status: "", active: false };
+  }
+  try {
+    var members = getMembers(getMemberSheet(ss));
+    for (var i = 0; i < members.length; i++) {
+      if (normalizeMemberCardNo_(members[i].memberCardNo) === card) {
+        var st = String(members[i].status || "有效").trim();
+        return { exists: true, status: st, active: st !== "停用" };
+      }
+    }
+  } catch (err) {
+    Logger.log("[getMemberCardRosterStatus_] " + err);
+  }
+  return { exists: false, status: "", active: false };
+}
+
+function removeLedgerEntriesForOrderId_(ss, orderId) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var pointsSheet = getPointsSheet(ss);
+  if (!pointsSheet) return 0;
+  var oid = normalizeOrderId_(orderId);
+  if (!oid) return 0;
+  var ledger = getPointsLedger(pointsSheet);
+  var filtered = [];
+  var removed = 0;
+  for (var i = 0; i < ledger.length; i++) {
+    if (normalizeOrderId_(ledger[i].orderId) === oid) removed++;
+    else filtered.push(ledger[i]);
+  }
+  if (!removed) return 0;
+  syncPointsLedger(pointsSheet, filtered, getAllOrdersMerged_(ss));
+  return removed;
+}
+
+function removeLedgerEntriesForMemberCard_(ss, card) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var pointsSheet = getPointsSheet(ss);
+  if (!pointsSheet) return 0;
+  card = normalizeMemberCardNo_(card);
+  if (!isValidMemberCardNo_(card)) return 0;
+  var allOrders = getAllOrdersMerged_(ss);
+  var ledger = getPointsLedger(pointsSheet);
+  var identityIndex = buildMemberCardIdentityIndex_(allOrders, ledger);
+  var linkedNames = collectCustomerNamesForMemberCard_(allOrders, card, ledger);
+  var filtered = [];
+  var removed = 0;
+  for (var i = 0; i < ledger.length; i++) {
+    var rec = ledger[i];
+    if (recordMatchesMemberCardExtended_(rec, card, linkedNames, identityIndex)) {
+      removed++;
+      continue;
+    }
+    filtered.push(rec);
+  }
+  if (!removed) return 0;
+  syncPointsLedger(pointsSheet, filtered, allOrders);
+  return removed;
+}
+
 function sanitizePublicPointRecord_(rec) {
   var r = rec || {};
   var pts = Math.floor(Number(r.points) || 0);
@@ -2872,6 +2986,8 @@ function buildSyntheticHistoryFromOrders_(cardOrders, card, allOrders) {
 function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet, debugExtra) {
   allOrders = allOrders || [];
   ledger = backfillLedgerMemberCardsFromOrdersByOrderId_(ledger, allOrders);
+  var orphanFilter = filterOrphanLedgerEntriesForPublic_(ledger, allOrders);
+  ledger = orphanFilter.ledger;
   ledger = augmentLedgerFromOrders_(ledger, card, allOrders);
   ledger = (ledger || []).map(function(rec) {
     var copy = {};
@@ -2914,7 +3030,8 @@ function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet, debugEx
     ledgerForCard: countLedgerRowsForMemberCard_(ledger, card, allOrders || []),
     ordersForCard: cardOrders.length,
     orderPointsEarned: orderEarned,
-    orderPointsUsed: orderUsed
+    orderPointsUsed: orderUsed,
+    orphanLedgerDropped: orphanFilter.orphanCount
   };
   if (debugExtra) {
     for (var dk in debugExtra) {
@@ -2976,9 +3093,17 @@ function getPointsBalancePublic_(params) {
     return { error: true, message: "找不到紅利點數工作表" };
   }
   if (isValidMemberCardNo_(card)) {
-    return buildPointsBalanceResult_(ctx.ledger, card, ctx.allOrders, pointsSheet, {
-      ledgerSyncedFromOrders: 0
+    var roster = getMemberCardRosterStatus_(ss, card);
+    var result = buildPointsBalanceResult_(ctx.ledger, card, ctx.allOrders, pointsSheet, {
+      ledgerSyncedFromOrders: 0,
+      memberInRoster: roster.exists,
+      memberStatus: roster.status || (roster.exists ? "有效" : "")
     });
+    if (!roster.exists && result.debug && result.debug.ordersForCard === 0 &&
+        result.balance <= 0 && !(result.history && result.history.length)) {
+      result.message = "此卡號不在會員名單，且無有效訂單／紅利紀錄";
+    }
+    return result;
   }
   var ledger = getPointsLedger(pointsSheet);
   var allOrders = parsePublicOrdersFast_(ss);
@@ -3104,6 +3229,7 @@ function getCustomerOrdersPublic_(params) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var orderSheet = getOrderSheet(ss);
   var all = parsePublicOrdersFast_(ss);
+  var roster = getMemberCardRosterStatus_(ss, card);
   var matched = findOrdersForMemberCard_(all, card);
   var ordersWithCard = 0;
   for (var c = 0; c < all.length; c++) {
@@ -3145,9 +3271,11 @@ function getCustomerOrdersPublic_(params) {
       orderSheetName: orderSheet ? orderSheet.getName() : "",
       orderSheetRows: all.length,
       ordersWithMemberCard: ordersWithCard,
-      orderSourceSheets: listOrderSourceSheets_(ss)
+      orderSourceSheets: listOrderSourceSheets_(ss),
+      memberInRoster: roster.exists,
+      memberStatus: roster.status || (roster.exists ? "有效" : "")
     },
-    message: publicOrders.length ? "OK" : "目前尚無訂單紀錄"
+    message: publicOrders.length ? "OK" : (roster.exists ? "目前尚無訂單紀錄" : "此卡號不在會員名單，且無訂單紀錄")
   };
 }
 
