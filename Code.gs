@@ -670,6 +670,14 @@ function parseOrdersFromSheetData_(sheet) {
     if (obj.memberCardNo != null && obj.memberCardNo !== "") {
       obj.memberCardNo = normalizeMemberCardNo_(obj.memberCardNo);
     }
+    normalizeParsedOrderFields_(obj);
+    // 標準欄位 D「客戶姓名」仍空時，直接讀第 4 欄（避免別名表頭錯位）
+    if ((!obj.customerName || String(obj.customerName).trim() === "") && row[3] != null && String(row[3]).trim() !== "") {
+      var col3 = String(row[3]).trim();
+      if (col3 !== "紀錄ID" && col3 !== "類型" && !/^ORD\d+$/i.test(col3)) {
+        obj.customerName = col3;
+      }
+    }
     list.push(obj);
   }
   list.sort(function(a, b) {
@@ -824,6 +832,44 @@ function getOrderHeaders_(sheet) {
   return row1.map(function(h) { return (h || "").toString().trim(); });
 }
 
+function orderCanonicalFieldKey_(aliasGroup) {
+  if (!aliasGroup || !aliasGroup.length) return "";
+  // 別名陣列第 2 項為 JS 欄位名（例：["客戶姓名","customerName","name"] → customerName）
+  return aliasGroup.length > 1 ? aliasGroup[1] : aliasGroup[0];
+}
+
+function normalizeParsedOrderFields_(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+  if ((!obj.customerName || String(obj.customerName).trim() === "") && obj.name != null && String(obj.name).trim() !== "") {
+    obj.customerName = String(obj.name).trim();
+  }
+  if ((!obj.id || String(obj.id).trim() === "") && obj.ID != null && String(obj.ID).trim() !== "") {
+    obj.id = String(obj.ID).trim();
+  }
+  if ((!obj.lineId || String(obj.lineId).trim() === "") && obj.LineID != null && String(obj.LineID).trim() !== "") {
+    obj.lineId = String(obj.LineID).trim();
+  }
+  if ((!obj.memberCardNo || String(obj.memberCardNo).trim() === "") && obj.memberCard != null && String(obj.memberCard).trim() !== "") {
+    obj.memberCardNo = String(obj.memberCard).trim();
+  }
+  if ((!obj.linkedOrderIds || String(obj.linkedOrderIds).trim() === "") && obj.linkedOrders != null && String(obj.linkedOrders).trim() !== "") {
+    obj.linkedOrderIds = String(obj.linkedOrders).trim();
+  }
+  if ((!obj.itemsJson || String(obj.itemsJson).trim() === "") && obj.items != null && typeof obj.items !== "object") {
+    obj.itemsJson = obj.items;
+  }
+  if ((!obj.trackingHistory || String(obj.trackingHistory).trim() === "") && obj.deliveryHistory != null && String(obj.deliveryHistory).trim() !== "") {
+    obj.trackingHistory = obj.deliveryHistory;
+  }
+  if ((!obj.updated || String(obj.updated).trim() === "") && obj.updatedAt != null && String(obj.updatedAt).trim() !== "") {
+    obj.updated = String(obj.updatedAt).trim();
+  }
+  if ((!obj.updated || String(obj.updated).trim() === "") && obj.lastUpdated != null && String(obj.lastUpdated).trim() !== "") {
+    obj.updated = String(obj.lastUpdated).trim();
+  }
+  return obj;
+}
+
 function orderKeyMap_(headers) {
   var map = {};
   var aliases = [
@@ -877,7 +923,7 @@ function orderKeyMap_(headers) {
       var group = aliases[a];
       for (var g = 0; g < group.length; g++) {
         if (h === group[g] || h.toLowerCase() === String(group[g]).toLowerCase()) {
-          map[c] = group[group.length - 1];
+          map[c] = orderCanonicalFieldKey_(group);
           break;
         }
       }
@@ -1031,12 +1077,27 @@ function buildRowFromOrder_(sheet, order) {
   return row;
 }
 
+function mergeOrderRowPreserveExisting_(existingRow, newRow) {
+  existingRow = existingRow || [];
+  newRow = newRow || [];
+  var len = Math.max(existingRow.length, newRow.length);
+  var out = [];
+  for (var c = 0; c < len; c++) {
+    var nv = c < newRow.length ? newRow[c] : "";
+    var ov = c < existingRow.length ? existingRow[c] : "";
+    if (nv === "" || nv == null) out.push(ov != null ? ov : "");
+    else out.push(nv);
+  }
+  return out;
+}
+
 function upsertOrder(sheet, order) {
   ensureOrderHeaderRow_(sheet);
   var headers = getOrderHeaders_(sheet);
   var id = normalizeOrderId_(order && order.id != null ? order.id : "");
   if (!id) return;
   if (order && order.id != null) order.id = id;
+  normalizeParsedOrderFields_(order);
   var row = buildRowFromOrder_(sheet, order);
   var stdLen = getStandardOrderHeaders_().length;
   if (row.length < stdLen) {
@@ -1047,6 +1108,12 @@ function upsertOrder(sheet, order) {
   var existingRows = findOrderRowsById_(sheet, id, headers);
   if (existingRows.length > 0) {
     var keepRow = existingRows[0];
+    var colCount = Math.max(row.length, headers.length, stdLen);
+    var existingValues = sheet.getRange(keepRow, 1, 1, colCount).getValues()[0];
+    row = mergeOrderRowPreserveExisting_(existingValues, row);
+    if (row.length < colCount) {
+      while (row.length < colCount) row.push("");
+    }
     sheet.getRange(keepRow, 1, 1, row.length).setValues([row]);
     // 若有重複訂單編號，保留第一筆、刪除其餘
     if (existingRows.length > 1) {

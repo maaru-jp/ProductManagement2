@@ -4660,7 +4660,7 @@
           var saved = localStorage.getItem(ORDER_STORAGE_KEY);
           if (saved) orders = JSON.parse(saved);
           if (!Array.isArray(orders)) orders = [];
-          orders.forEach(function(o) { enrichOrderCombineShipPrevFee_(o); });
+          orders.forEach(function(o) { enrichOrderCombineShipPrevFee_(o); normalizeOrderFieldsForAdmin_(o); });
         } catch (err) { orders = []; }
 
         function saveOrders() {
@@ -4794,6 +4794,7 @@
             return Promise.resolve({ localOnly: true, orders: orders });
           }
           showOrderMessage("載入訂單中...");
+          return repairOrderSheetOnServer_().catch(function () { return {}; }).then(function () {
           return fetchWrite({ action: "order_list" })
             .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
             .then(function(res) {
@@ -4801,6 +4802,7 @@
               var list = res.orders || [];
               var sheetOrders = Array.isArray(list) ? list : [];
               orders = mergeOrdersPreferLocal_(sheetOrders, orders);
+              orders.forEach(function(o) { normalizeOrderFieldsForAdmin_(o); });
               saveOrders();
               backfillMissingMemberCards_({ syncSheet: true, silent: true });
               processPendingLoyaltyOrders_(true);
@@ -4814,27 +4816,42 @@
             })
             .catch(function(err) {
               showOrderMessage("載入失敗：" + formatNetworkError(err), true);
+              renderOrders();
               throw err;
             });
+          });
+        }
+
+        function normalizeOrderFieldsForAdmin_(ord) {
+          if (!ord) return ord;
+          if ((!ord.customerName || String(ord.customerName).trim() === "") && ord.name != null && String(ord.name).trim() !== "") {
+            ord.customerName = String(ord.name).trim();
+          }
+          if ((!ord.linkedOrderIds || String(ord.linkedOrderIds).trim() === "") && ord.linkedOrders != null) {
+            ord.linkedOrderIds = String(ord.linkedOrders).trim();
+          }
+          if ((!ord.lineId || String(ord.lineId).trim() === "") && ord.LineID != null) {
+            ord.lineId = String(ord.LineID).trim();
+          }
+          enrichOrderCombineShipPrevFee_(ord);
+          return ord;
         }
 
         function mergeOrderRecordPreferComplete_(sheetOrd, localOrd) {
-          if (!localOrd) return sheetOrd;
-          if (!sheetOrd) return localOrd;
-          var out = Object.assign({}, sheetOrd, localOrd);
-          ["memberCardNo", "customerName", "phone", "email", "lineId", "pointsEarned", "pointsUsed", "pointsProcessed",
-            "subtotal", "discount", "total", "shippingFee", "depositAmount", "remark", "updated"].forEach(function (key) {
+          if (!localOrd) return normalizeOrderFieldsForAdmin_(sheetOrd);
+          if (!sheetOrd) return normalizeOrderFieldsForAdmin_(localOrd);
+          // 以試算表為底，本機僅覆寫「有值」欄位，避免空的本機快取蓋掉姓名等資料
+          var out = Object.assign({}, sheetOrd);
+          Object.keys(localOrd).forEach(function (key) {
             var lv = localOrd[key];
-            var sv = sheetOrd[key];
-            var localEmpty = lv === "" || lv == null || lv === undefined;
-            var sheetHas = sv !== "" && sv != null && sv !== undefined;
-            if (localEmpty && sheetHas) out[key] = sv;
+            if (lv === "" || lv == null || lv === undefined) return;
+            if (key === "items") {
+              if (Array.isArray(lv) && lv.length) out.items = lv;
+              return;
+            }
+            out[key] = lv;
           });
-          if ((!localOrd.items || !localOrd.items.length) && sheetOrd.items && sheetOrd.items.length) {
-            out.items = sheetOrd.items;
-          }
-          enrichOrderCombineShipPrevFee_(out);
-          return out;
+          return normalizeOrderFieldsForAdmin_(out);
         }
 
         function mergeOrdersPreferLocal_(sheetOrders, localOrders) {
@@ -4843,9 +4860,8 @@
           (Array.isArray(sheetOrders) ? sheetOrders : []).forEach(function(o) {
             var id = (o && o.id != null) ? String(o.id).trim() : "";
             if (!id) return;
-            byId[id.toUpperCase()] = o;
+            byId[id.toUpperCase()] = normalizeOrderFieldsForAdmin_(o);
           });
-          // 先放雲端，再用本機覆蓋同 ID（保留雙方較完整欄位）
           Object.keys(byId).forEach(function(k) { out.push(byId[k]); });
           (Array.isArray(localOrders) ? localOrders : []).forEach(function(o) {
             var id = (o && o.id != null) ? String(o.id).trim() : "";
@@ -4853,7 +4869,7 @@
             var key = id.toUpperCase();
             var idx = out.findIndex(function(x) { return String(x.id || "").trim().toUpperCase() === key; });
             if (idx >= 0) out[idx] = mergeOrderRecordPreferComplete_(out[idx], o);
-            else out.push(o);
+            else out.push(normalizeOrderFieldsForAdmin_(o));
           });
           out.sort(function(a, b) {
             var ad = a && a.date ? new Date(a.date).getTime() : 0;
@@ -6152,9 +6168,13 @@
           return parseLinkedOrderIds_(raw).filter(function(id) { return !selfNorm || id !== selfNorm; }).join(", ");
         }
 
+        function orderCustomerName_(ord) {
+          return String((ord && (ord.customerName || ord.name)) || "").trim();
+        }
+
         function orderMatchesCustomer_(ord, customerName, phone) {
           var n = normalizeCustomerNameForOrders_(customerName);
-          if (n) return normalizeCustomerNameForOrders_(ord && ord.customerName) === n;
+          if (n) return normalizeCustomerNameForOrders_(orderCustomerName_(ord)) === n;
           var p = String(phone || "").replace(/\D/g, "");
           if (p) return String(ord && ord.phone || "").replace(/\D/g, "") === p;
           return false;
@@ -6685,7 +6705,7 @@
           if (linkedEl) linkedEl.value = formatLinkedOrderIds_(o.linkedOrderIds || "");
           var cardEl = document.getElementById("orderMemberCardNo");
           if (cardEl) cardEl.value = (o.memberCardNo || "");
-          document.getElementById("orderCustomerName").value = o.customerName || "";
+          document.getElementById("orderCustomerName").value = o.customerName || o.name || "";
           document.getElementById("orderPhone").value = o.phone || "";
           document.getElementById("orderEmail").value = o.email || "";
           document.getElementById("orderLineId").value = o.lineId || "";
@@ -6831,7 +6851,7 @@
           var list = orders.filter(function(ord) {
             if (filterStatus && ord.status !== filterStatus) return false;
             if (searchQ) {
-              var text = (ord.id || "") + (ord.customerName || "") + (ord.phone || "") + (ord.email || "") + (ord.linkedOrderIds || "");
+              var text = (ord.id || "") + orderCustomerName_(ord) + (ord.phone || "") + (ord.email || "") + (ord.linkedOrderIds || "");
               if (text.toLowerCase().indexOf(searchQ) < 0) return false;
             }
             return true;
@@ -6852,7 +6872,7 @@
           }
           orderTableBody.innerHTML = list.map(function(ord) {
             var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-            var customerNameOnly = (ord.customerName || "").trim() || "—";
+            var customerNameOnly = orderCustomerName_(ord) || "—";
             var customerSub = ord.phone ? ("<span class=\"block text-xs text-slate-500\">" + escapeHtml(ord.phone) + "</span>") : "";
             return "<tr class=\"border-b border-slate-100 hover:bg-slate-50\" data-order-id=\"" + escapeHtml(ord.id) + "\">" +
               "<td class=\"py-3 px-4 font-medium text-slate-800\"><span class=\"font-mono\">" + escapeHtml(ord.id) + "</span>" + renderLinkedOrderBadge_(ord) + "</td>" +
@@ -6867,7 +6887,7 @@
               "<td class=\"py-3 px-4 text-slate-700\">" +
               "<div class=\"flex flex-wrap items-center gap-2\">" +
               "<span>" + escapeHtml(customerNameOnly) + "</span>" +
-              "<button type=\"button\" class=\"order-customer-overview-btn px-2 py-0.5 rounded border border-sky-200 bg-sky-50 text-sky-800 text-[11px] hover:bg-sky-100\" data-customer-name=\"" + escapeHtml(ord.customerName || "") + "\" data-customer-phone=\"" + escapeHtml(ord.phone || "") + "\" data-order-id=\"" + escapeHtml(ord.id) + "\">總覽</button>" +
+              "<button type=\"button\" class=\"order-customer-overview-btn px-2 py-0.5 rounded border border-sky-200 bg-sky-50 text-sky-800 text-[11px] hover:bg-sky-100\" data-customer-name=\"" + escapeHtml(orderCustomerName_(ord)) + "\" data-customer-phone=\"" + escapeHtml(ord.phone || "") + "\" data-order-id=\"" + escapeHtml(ord.id) + "\">總覽</button>" +
               "</div>" + customerSub + "</td>" +
               "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(ord.shippingMethod || "-") + "</td>" +
               "<td class=\"py-3 px-4 font-medium text-slate-800\">NT$ " + orderAmountDue(ord) + "</td>" +
