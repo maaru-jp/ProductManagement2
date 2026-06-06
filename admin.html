@@ -1295,10 +1295,10 @@
             </div>
           </div>
           <div id="order711StorePickerWrap" class="hidden rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3 space-y-2">
-            <p class="text-xs text-emerald-900">7-11 店到店：可搜尋全台門市，選取後自動帶入名稱、店號與地址。</p>
+            <p class="text-xs text-emerald-900">7-11 店到店：後台可直接選店自動帶入；或至 <a href="https://www.ibon.com.tw/mobile/retail_inquiry.aspx" target="_blank" rel="noopener noreferrer" class="underline font-medium">ibon 門市查詢</a> 查地址後手動填寫。</p>
             <div class="flex flex-wrap gap-2">
-              <button type="button" id="btnOpen711StorePicker" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-700">選擇 7-11 門市（縣市查詢）</button>
-              <button type="button" id="btnOpen711Emap" class="px-3 py-1.5 rounded-lg border border-emerald-400 bg-white text-emerald-800 text-xs hover:bg-emerald-100">7-11 電子地圖</button>
+              <button type="button" id="btnOpen711StorePicker" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-700">選擇 7-11 門市（自動帶入）</button>
+              <button type="button" id="btnOpenIbonRetailInquiry" class="px-3 py-1.5 rounded-lg border border-emerald-400 bg-white text-emerald-800 text-xs hover:bg-emerald-100">ibon 門市查詢</button>
             </div>
           </div>
           <div>
@@ -1467,8 +1467,8 @@
       <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
         <div class="p-4 border-b border-slate-200 flex items-center justify-between shrink-0">
           <div>
-            <h3 class="text-lg font-semibold text-slate-800">選擇 7-ELEVEN 門市</h3>
-            <p class="text-xs text-slate-500 mt-0.5">資料來源：統一超商電子地圖（全台門市）</p>
+            <h3 class="text-lg font-semibold text-slate-800">選擇 7-11 門市</h3>
+            <p class="text-xs text-slate-500 mt-0.5">選取後自動帶入名稱、店號、地址 · 亦可改用 <a href="https://www.ibon.com.tw/mobile/retail_inquiry.aspx" target="_blank" rel="noopener noreferrer" class="text-sky-700 underline">ibon 門市查詢</a></p>
           </div>
           <button type="button" id="sevenElevenStoreClose" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="關閉">✕</button>
         </div>
@@ -1534,7 +1534,7 @@
 
   <script src="js/member-card.js"></script>
   <script src="js/admin-loyalty.js?v=20260526-17"></script>
-  <script src="js/admin-711-store.js?v=20260606-1"></script>
+  <script src="js/admin-711-store.js?v=20260606-3"></script>
   <script>
     (function() {
       // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
