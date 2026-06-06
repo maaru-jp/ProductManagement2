@@ -436,12 +436,15 @@
 
       <!-- 紅利點數區塊 -->
       <section id="sectionLoyalty" class="hidden">
-        <div class="flex items-center justify-between mb-6">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
           <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
             <svg class="section-title-icon text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
             紅利點數
           </h2>
-          <button type="button" id="btnSyncPointsSheet" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">同步至試算表</button>
+          <div class="flex flex-col items-end gap-2 shrink-0">
+            <button type="button" id="btnSyncPointsSheet" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">同步至試算表</button>
+            <p id="loyaltyMessage" class="text-sm text-right max-w-sm hidden" role="status" aria-live="polite"></p>
+          </div>
         </div>
 
         <div class="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5 mb-6">
@@ -469,7 +472,6 @@
             <button type="button" id="btnLoyaltyExpireAll" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">執行到期失效檢查</button>
             <button type="button" id="btnLoyaltyReload" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">重新載入</button>
           </div>
-          <p id="loyaltyMessage" class="mt-3 text-sm text-slate-500 hidden"></p>
         </div>
 
         <div class="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5 mb-6">
@@ -4141,9 +4143,11 @@
           var el = document.getElementById("loyaltyMessage");
           if (!el) return;
           el.textContent = text;
-          el.className = "mt-3 text-sm " + (isError ? "text-red-600" : "text-slate-600");
+          el.className = "text-sm text-right max-w-sm " + (isError ? "text-red-600 font-medium" : "text-emerald-700 font-medium");
           el.classList.remove("hidden");
-          setTimeout(function() { el.classList.add("hidden"); }, 4000);
+          try { el.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (scrollErr) {}
+          if (showLoyaltyMessage._hideTimer) clearTimeout(showLoyaltyMessage._hideTimer);
+          showLoyaltyMessage._hideTimer = setTimeout(function() { el.classList.add("hidden"); }, isError ? 10000 : 8000);
         }
         window.showLoyaltyMessage = showLoyaltyMessage;
 
@@ -4216,7 +4220,9 @@
         }
 
         function syncPointsLedgerToSheet(orders) {
-          if (typeof fetchWrite !== "function") return Promise.resolve();
+          if (typeof fetchWrite !== "function") {
+            return Promise.reject(new Error("API 寫入功能未就緒"));
+          }
           try {
             var prep = function (ordList, remoteRows) {
               ordList = ordList || loadAdminOrdersForLoyalty_();
@@ -4414,21 +4420,27 @@
 
         var btnSync = document.getElementById("btnSyncPointsSheet");
         if (btnSync) btnSync.addEventListener("click", function() {
+          var prevLabel = btnSync.textContent;
           btnSync.disabled = true;
+          btnSync.textContent = "同步中…";
+          showLoyaltyMessage("正在同步至試算表「紅利點數」…", false);
           syncPointsLedgerToSheet().then(function(res) {
             return fetchOrdersForLoyalty_().then(function(orders) {
               renderLoyaltyPanel(orders);
               if (res && res.skipped) {
-                showLoyaltyMessage("尚無紅利紀錄可同步");
+                showLoyaltyMessage("尚無紅利紀錄可同步（請先將訂單改為「已確認」，或按「補處理未發點訂單」）", true);
               } else {
-                showLoyaltyMessage("已同步至試算表「紅利點數」，會員餘額已重新整理");
+                var extra = (res && res.message && String(res.message).indexOf("OK") < 0) ? (" " + res.message) : "";
+                var count = res && res.ledgerCount != null ? ("（共 " + res.ledgerCount + " 筆）") : "";
+                showLoyaltyMessage("已同步至試算表「紅利點數」" + count + extra, false);
               }
             });
           }).catch(function(err) {
             renderLoyaltyPanel();
-            showLoyaltyMessage("同步失敗：" + (err.message || ""), true);
+            showLoyaltyMessage("同步失敗：" + (err.message || "請檢查 API 連線與 GAS 部署"), true);
           }).finally(function() {
             btnSync.disabled = false;
+            btnSync.textContent = prevLabel;
           });
         });
         var btnExpire = document.getElementById("btnLoyaltyExpireAll");
