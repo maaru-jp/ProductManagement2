@@ -1295,9 +1295,9 @@
             </div>
           </div>
           <div id="order711StorePickerWrap" class="hidden rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3 space-y-2">
-            <p class="text-xs text-emerald-900">7-11 店到店：可搜尋全台門市，選取後自動帶入名稱、店號與地址。</p>
+            <p class="text-xs text-emerald-900">7-11 店到店：請至 <a href="https://www.ibon.com.tw/mobile/retail_inquiry.aspx#gsc.tab=0" target="_blank" rel="noopener noreferrer" class="underline font-medium">ibon 門市查詢</a> 選定門市後，手動填入店名、店號與地址。</p>
             <div class="flex flex-wrap gap-2">
-              <button type="button" id="btnOpen711StorePicker" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-700">選擇 7-11 門市（縣市查詢）</button>
+              <button type="button" id="btnOpenIbonRetailInquiry" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-700">ibon 門市查詢</button>
             </div>
           </div>
           <div>
@@ -1459,40 +1459,6 @@
     </div>
   </div>
 
-  <!-- 7-ELEVEN 門市選擇 Modal -->
-  <div id="sevenElevenStoreModal" class="fixed inset-0 z-[70] hidden">
-    <div class="absolute inset-0 bg-black/50" id="sevenElevenStoreBackdrop" aria-hidden="true"></div>
-    <div class="absolute inset-0 flex items-center justify-center p-4">
-      <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div class="p-4 border-b border-slate-200 flex items-center justify-between shrink-0">
-          <div>
-            <h3 class="text-lg font-semibold text-slate-800">選擇 7-11 門市</h3>
-            <p class="text-xs text-slate-500 mt-0.5">資料來源：統一超商門市查詢（全台門市）</p>
-          </div>
-          <button type="button" id="sevenElevenStoreClose" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="關閉">✕</button>
-        </div>
-        <div class="p-4 space-y-3 overflow-y-auto flex-1 min-h-0">
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1">縣市</label>
-              <select id="711CitySelect" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white"></select>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1">鄉鎮區</label>
-              <select id="711TownSelect" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white"></select>
-            </div>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">搜尋門市（名稱或地址）</label>
-            <input type="text" id="711StoreSearch" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：信義、忠孝東路" />
-          </div>
-          <ul id="711StoreList" class="space-y-2 max-h-72 overflow-y-auto"></ul>
-          <p id="711StoreStatus" class="text-xs text-slate-500"></p>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- 顧客訂單總覽 Modal -->
   <div id="customerOverviewModal" class="fixed inset-0 z-[60] hidden">
     <div class="absolute inset-0 bg-black/50" id="customerOverviewBackdrop" aria-hidden="true"></div>
@@ -1533,7 +1499,7 @@
 
   <script src="js/member-card.js"></script>
   <script src="js/admin-loyalty.js?v=20260526-17"></script>
-  <script src="js/admin-711-store.js?v=20260606-4"></script>
+  <script src="js/admin-711-store.js?v=20260606-5"></script>
   <script>
     (function() {
       // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
