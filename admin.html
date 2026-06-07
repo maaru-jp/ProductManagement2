@@ -5906,6 +5906,7 @@
           var shipStatus = (o.shipStatus != null && String(o.shipStatus).trim() !== "") ? String(o.shipStatus).trim() : "待出貨";
           var shipBatch = (o.shipBatch != null && o.shipBatch !== "" && !isNaN(Number(o.shipBatch))) ? parseInt(o.shipBatch, 10) : null;
           if (shipStatus === "已出貨" && shipBatch == null) shipBatch = 1; // 避免未帶 batch 導致檔名難區分
+          if (shipStatus !== "已出貨" && shipBatch != null) shipBatch = null; // 非已出貨不保留舊批次，避免 PDF 誤判為第 N+1 次
           return {
             lineName: (o.lineName != null ? String(o.lineName) : "").trim(),
             qty: qty,
@@ -6046,6 +6047,11 @@
             var t = e.target;
             if (!t) return;
             if (t.classList.contains("order-item-ship-status")) {
+              var statusRow = t.closest("tr[data-item-index]");
+              if (statusRow && String(t.value || "").trim() !== "已出貨") {
+                var batchInput = statusRow.querySelector(".order-item-ship-batch");
+                if (batchInput) batchInput.value = "";
+              }
               syncOrderItemsStateFromEditor_();
               return;
             }
@@ -6396,6 +6402,16 @@
           return st;
         }
 
+        function getMaxShippedItemBatch_(items) {
+          var maxBatch = 0;
+          (items || []).forEach(function(it) {
+            if (getOrderItemShipStatus_(it) !== "已出貨") return;
+            var b = it && it.shipBatch != null && !isNaN(Number(it.shipBatch)) ? parseInt(Number(it.shipBatch), 10) : null;
+            if (b != null && isFinite(b) && b > maxBatch) maxBatch = b;
+          });
+          return maxBatch;
+        }
+
         function getOrderPdfBaseStyles_() {
           return "@page{size:A4 portrait;margin:10mm 10mm 22mm 10mm;} " +
             "*{-webkit-print-color-adjust:exact;print-color-adjust:exact;} " +
@@ -6697,13 +6713,9 @@
           }
           var masterId = pickCombineShipMasterId_(orderGroup);
           var masterOrd = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === masterId; }) || triggerOrd;
-          var maxBatch = 0;
-          itemsByOrder.forEach(function(entry) {
-            (entry.itemsAll || []).forEach(function(it) {
-              var b = it && it.shipBatch != null && !isNaN(Number(it.shipBatch)) ? parseInt(Number(it.shipBatch), 10) : null;
-              if (b != null && isFinite(b) && b > maxBatch) maxBatch = b;
-            });
-          });
+          var maxBatch = getMaxShippedItemBatch_(itemsByOrder.reduce(function(acc, entry) {
+            return acc.concat(entry.itemsAll || []);
+          }, []));
           var shipmentBatch = maxBatch + 1;
           var fileNameBase = buildCombineShipPdfFileName_(masterOrd, orderGroup, shipmentBatch);
           var built = buildCombineShipPdfHtml_(orderGroup, masterOrd, itemsByOrder, shipmentBatch, { fileNameBase: fileNameBase });
@@ -6816,11 +6828,7 @@
             return;
           }
 
-          var maxBatch = 0;
-          itemsAll.forEach(function(it) {
-            var b = it && it.shipBatch != null && !isNaN(Number(it.shipBatch)) ? parseInt(Number(it.shipBatch), 10) : null;
-            if (b != null && isFinite(b) && b > maxBatch) maxBatch = b;
-          });
+          var maxBatch = getMaxShippedItemBatch_(itemsAll);
           var shipmentBatch = hasItemList ? (maxBatch + 1) : null;
           var itemsForPdf = hasItemList ? itemsToShip : itemsAll;
           var fileNameBase = buildOrderPdfFileName_(ord, shipmentBatch);
