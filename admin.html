@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <title>後台管理 - Maaru Admin</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -221,7 +222,6 @@
           <a href="#" id="navReports" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="總覽報表"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span><span class="nav-text">總覽報表</span></a>
           <a href="#" id="navOrders" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="訂單管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span><span class="nav-text">訂單管理</span></a>
           <a href="#" id="navMembers" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="會員名單"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="nav-text">會員名單</span></a>
-          <a href="#" id="navLoyalty" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="紅利點數"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></span><span class="nav-text">紅利點數</span></a>
           <a href="#" id="navProducts" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-sm bg-white/10 active" title="商品管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span><span class="nav-text">商品管理</span></a>
           <a href="#" id="navLayout" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="首頁排版"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span><span class="nav-text">首頁排版</span></a>
           <a href="#" id="navPurchases" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="採買統計"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4l-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></span><span class="nav-text">採買統計</span></a>
@@ -395,19 +395,19 @@
 
         <div id="orderMessage" class="mb-3 text-sm hidden"></div>
         <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
-          <p class="font-semibold text-emerald-900">建議訂單流程（狀態 · PDF · 紅利）</p>
+          <p class="font-semibold text-emerald-900">建議訂單流程（狀態 · PDF）</p>
           <ol class="list-decimal list-inside space-y-1.5 ml-0.5">
             <li><strong>待處理</strong> — 建立訂單、編輯品項與金額</li>
-            <li><strong>已確認</strong> — 接單且金額定案 → <span class="text-amber-800 font-semibold">自動發放／折抵紅利（每筆僅一次）</span>；同步試算表後顧客可查點數</li>
-            <li><strong>出貨中</strong> — 備貨／安排出貨（選用，不影響紅利）</li>
-            <li><strong>產生 PDF</strong> — 出貨明細給客人（可多次；<span class="font-medium">不會</span>自動發點）</li>
-            <li><strong>已完成</strong> — 結案归档（若已在「已確認」發過點，<span class="font-medium">不會</span>再發第二次）</li>
+            <li><strong>已確認</strong> — 接單且金額定案；同步試算表後顧客可查配送進度</li>
+            <li><strong>出貨中</strong> — 備貨／安排出貨（選用）</li>
+            <li><strong>產生 PDF</strong> — 出貨明細給客人（可多次）</li>
+            <li><strong>已完成</strong> — 結案归档</li>
           </ol>
-          <p class="text-amber-800 border-t border-emerald-200/80 pt-2"><strong>速記：</strong>已確認＝發點 · PDF／出貨中＝出貨 · 已完成＝結案</p>
+          <p class="text-emerald-800 border-t border-emerald-200/80 pt-2"><strong>速記：</strong>已確認＝定案 · PDF／出貨中＝出貨 · 已完成＝結案</p>
         </div>
         <div class="mb-4 rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
-          <p class="font-semibold text-sky-900">訂單合併與紅利（追加商品時）</p>
-          <p><strong>做法 A｜同一訂單編號：</strong>用「追加」併入原單。<span class="text-amber-800">請等全部併完再改「已確認」</span>，否則發點後再追加，不會自動補發差額點數。</p>
+          <p class="font-semibold text-sky-900">訂單合併（追加商品時）</p>
+          <p><strong>做法 A｜同一訂單編號：</strong>用「追加」併入原單。<span class="text-sky-800">請等全部併完再改「已確認」</span>，避免金額與品項不一致。</p>
           <p><strong>做法 B｜不同訂單編號（推薦加單）：</strong>同顧客開新 ORD、同一會員卡；<strong>併箱免運</strong>時新單勾選「併箱出貨」、運費填 0，運費只留在出貨主單。點 <strong>總覽</strong> 可看「本批應收運費 1 次」。</p>
         </div>
 
@@ -436,7 +436,7 @@
           <span class="text-slate-500 text-lg">💡</span>
           <div class="text-sm text-slate-700 space-y-2">
             <p><strong>產生 PDF：</strong>每筆訂單「操作」欄 → 列印視窗選「另存為 PDF」。僅含「待出貨」品項；<strong>併箱出貨</strong>可產生併箱 PDF 或於<strong>顧客總覽</strong>操作。</p>
-            <p><strong>狀態與紅利：</strong><strong>已確認</strong>＝發點（建議金額定案後再改）· <strong>出貨中／PDF</strong>＝出貨作業 · <strong>已完成</strong>＝結案（不重複發點）。</p>
+            <p><strong>狀態：</strong><strong>已確認</strong>＝金額定案 · <strong>出貨中／PDF</strong>＝出貨作業 · <strong>已完成</strong>＝結案。</p>
           </div>
         </div>
       </section>
@@ -458,10 +458,10 @@
         <div class="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5 mb-6">
           <p class="text-sm font-semibold text-sky-900 mb-2">為什麼需要會員名單？</p>
           <ul class="text-sm text-slate-700 space-y-1.5 list-disc pl-5">
-            <li><strong>一個顧客 = 一張 13 碼卡</strong>，作為紅利、歷史訂單、會員中心的共同主鍵</li>
+            <li><strong>一個顧客 = 一張 13 碼卡</strong>，作為歷史訂單、會員中心的共同主鍵</li>
             <li>資料寫入獨立試算表 <strong>Memberist</strong> 的「<strong>會員名單</strong>」分頁（非 ProductManagement2 本簿）</li>
             <li>訂單儲存至試算表時會<strong>自動更新</strong>會員名單；亦可按「從訂單匯入」一次補齊</li>
-            <li>同名多卡、電話重複時會<strong>提示衝突</strong>，避免顧客查不到點數</li>
+            <li>同名多卡、電話重複時會<strong>提示衝突</strong>，避免顧客查不到訂單</li>
           </ul>
           <p class="text-xs text-slate-500 mt-3" id="membersStatLine">載入中…</p>
           <p id="membersMessage" class="text-sm mt-2 hidden" role="status"></p>
@@ -539,133 +539,6 @@
               </div>
               <button type="submit" class="w-full py-2.5 rounded-lg bg-sky-600 text-white text-sm font-medium hover:bg-sky-700">儲存</button>
             </form>
-          </div>
-        </div>
-      </section>
-
-      <!-- 紅利點數區塊 -->
-      <section id="sectionLoyalty" class="hidden">
-        <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
-          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
-            <svg class="section-title-icon text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            紅利點數
-          </h2>
-          <div class="flex flex-col items-end gap-2 shrink-0">
-            <button type="button" id="btnSyncPointsSheet" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">同步至試算表</button>
-            <p id="loyaltyMessage" class="text-sm text-right max-w-sm hidden" role="status" aria-live="polite"></p>
-          </div>
-        </div>
-
-        <div class="rounded-xl border border-slate-200 bg-white p-5 mb-6">
-          <h3 class="text-sm font-semibold text-slate-800 mb-3">發點時機</h3>
-          <p class="text-sm text-slate-600"><strong>主要：</strong>訂單改為 <strong>已確認</strong> 時，依會員卡號自動發放／折抵紅利（每筆訂單僅處理一次）。請在品項與金額定案後再改狀態，顧客較早可查點數。</p>
-          <p class="text-sm text-slate-600 mt-2"><strong>備用：</strong>若從未改過「已確認」、直接改 <strong>已完成</strong>，也會發點一次，但不會重複發放。</p>
-          <p class="text-sm text-slate-600 mt-2"><strong>不發點：</strong>「產生 PDF」、狀態「出貨中」本身<strong>不會</strong>觸發紅利；「已完成」僅作結案，若已在「已確認」發過點則不再發。</p>
-          <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-            <strong>資料分工：</strong>試算表「<strong>紅利點數</strong>」＝後台餘額與異動；「<strong>歷史訂單</strong>」＝每筆交易金額與狀態。顧客查詢中心「會員中心」僅顯示歷史訂單。
-          </p>
-          <p class="text-xs text-slate-600 mt-2">
-            訂單改「已確認」並寫入「歷史訂單」後，系統會<strong>自動同步紅利至「紅利點數」</strong>；若顧客查不到，請至本頁按「同步至試算表」。會員卡號請先在側欄<strong>「會員名單」</strong>確認一人一卡通。
-            <strong class="text-sky-800">進入本頁會自動從試算表重新載入，餘額與會員中心一致。</strong>
-          </p>
-          <div class="flex flex-wrap gap-2 mt-3">
-            <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理未發點訂單</button>
-            <button type="button" id="btnLoyaltyMergeDupEarn" class="px-3 py-1.5 rounded-lg border border-rose-300 text-sm text-rose-800 hover:bg-rose-50">合併重複發放</button>
-            <button type="button" id="btnLoyaltyExpireAll" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">執行到期失效檢查</button>
-            <button type="button" id="btnLoyaltyReload" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">重新載入</button>
-          </div>
-        </div>
-
-        <div class="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5 mb-6">
-          <h3 class="text-sm font-semibold text-slate-800 mb-2">查詢客戶會員卡號</h3>
-          <p class="text-xs text-slate-500 mb-3">依訂單資料查詢，可輸入客戶姓名、電話或卡號（部分關鍵字即可）</p>
-          <div class="flex flex-wrap gap-2 items-end">
-            <div class="flex-1 min-w-[220px]">
-              <label class="block text-xs text-slate-500 mb-1">客戶姓名、電話或卡號</label>
-              <input type="text" id="loyaltyCardLookupInput" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：王小明 或 0912" />
-            </div>
-            <button type="button" id="btnLoyaltyCardLookup" class="px-4 py-2 rounded-lg bg-sky-600 text-white text-sm hover:bg-sky-700">查詢卡號</button>
-          </div>
-          <div id="loyaltyCardLookupResult" class="mt-3 hidden"></div>
-        </div>
-
-        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-          <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-              <h3 class="text-sm font-semibold text-slate-800">會員餘額</h3>
-              <input type="text" id="loyaltySearchInput" placeholder="搜尋卡號、姓名或電話" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-44" />
-            </div>
-            <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
-              <table class="w-full text-sm">
-                <thead class="bg-slate-50 sticky top-0">
-                  <tr>
-                    <th class="text-left py-2 px-3 font-medium text-slate-600">會員卡號</th>
-                    <th class="text-left py-2 px-3 font-medium text-slate-600">可用點數</th>
-                    <th class="text-left py-2 px-3 font-medium text-slate-600">最近到期</th>
-                  </tr>
-                </thead>
-                <tbody id="loyaltyCustomerBody">
-                  <tr><td colspan="3" class="py-8 text-center text-slate-400">尚無資料</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 class="text-sm font-semibold text-slate-800 mb-3">手動調整點數</h3>
-            <form id="loyaltyAdjustForm" class="space-y-3">
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">會員卡號 <span class="text-rose-500">*</span></label>
-                <input type="text" id="loyaltyAdjustCard" required maxlength="13" inputmode="numeric" pattern="\d{13}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" placeholder="13 碼純數字" />
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">客戶姓名（選填）</label>
-                <input type="text" id="loyaltyAdjustName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="備註用" />
-              </div>
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-xs text-slate-500 mb-1">電話（選填）</label>
-                  <input type="text" id="loyaltyAdjustPhone" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                </div>
-                <div>
-                  <label class="block text-xs text-slate-500 mb-1">Line ID（選填）</label>
-                  <input type="text" id="loyaltyAdjustLineId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                </div>
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">調整點數（正數增加、負數扣除）</label>
-                <input type="number" id="loyaltyAdjustPoints" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：10 或 -5" />
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">備註</label>
-                <input type="text" id="loyaltyAdjustNote" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="例：補登、客訴補償" />
-              </div>
-              <button type="submit" class="w-full py-2 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600">確認調整</button>
-            </form>
-          </div>
-        </div>
-
-        <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
-          <div class="px-4 py-3 border-b border-slate-200">
-            <h3 class="text-sm font-semibold text-slate-800">紅利異動紀錄</h3>
-          </div>
-          <div class="overflow-x-auto max-h-[420px] overflow-y-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-50 sticky top-0">
-                <tr>
-                  <th class="text-left py-2 px-3 font-medium text-slate-600">日期</th>
-                  <th class="text-left py-2 px-3 font-medium text-slate-600">客戶</th>
-                  <th class="text-left py-2 px-3 font-medium text-slate-600">類型</th>
-                  <th class="text-left py-2 px-3 font-medium text-slate-600">點數</th>
-                  <th class="text-left py-2 px-3 font-medium text-slate-600">到期日</th>
-                  <th class="text-left py-2 px-3 font-medium text-slate-600">訂單</th>
-                  <th class="text-left py-2 px-3 font-medium text-slate-600">備註</th>
-                </tr>
-              </thead>
-              <tbody id="loyaltyLedgerBody">
-                <tr><td colspan="7" class="py-8 text-center text-slate-400">尚無紀錄</td></tr>
-              </tbody>
-            </table>
           </div>
         </div>
       </section>
@@ -1347,7 +1220,7 @@
               <div class="col-span-2">
                 <label class="block text-xs font-medium text-slate-500 mb-1">會員卡號 <span class="text-rose-500">*</span></label>
                 <div class="flex gap-2">
-                  <input type="text" id="orderMemberCardNo" maxlength="13" inputmode="numeric" pattern="\d{13}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" placeholder="13 碼純數字（顧客查詢訂單／紅利用）" />
+                  <input type="text" id="orderMemberCardNo" maxlength="13" inputmode="numeric" pattern="\d{13}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" placeholder="13 碼純數字（顧客查詢訂單用）" />
                   <button type="button" id="btnGenerateMemberCard" class="shrink-0 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50">自動產生</button>
                 </div>
                 <p class="text-xs text-slate-400 mt-1">每位顧客唯一卡號；同客戶或編輯原訂單時按「自動產生」會沿用原卡號，新客才產生新卡號</p>
@@ -1425,24 +1298,6 @@
               <input type="number" id="orderFixedDiscount" min="0" value="0" class="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
               <span class="text-sm text-slate-600">元</span>
             </div>
-            <div class="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <span class="text-sm font-medium text-amber-900">⭐ 紅利點數</span>
-                <span class="text-xs text-amber-800">可用：<strong id="orderPointsBalance">0</strong> 點</span>
-              </div>
-              <p class="text-[11px] text-amber-900/70">1 點折 NT$1（商品淨額滿 NT$350 可折抵）</p>
-              <div class="flex flex-wrap items-center gap-2">
-                <label class="inline-flex items-center gap-2">
-                  <input type="checkbox" id="orderUsePointsCheck" class="rounded border-amber-300" />
-                  <span class="text-sm text-slate-700">使用紅利折抵</span>
-                </label>
-                <input type="number" id="orderPointsUsed" min="0" value="0" step="1" class="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
-                <span class="text-sm text-slate-600">點（- NT$ <span id="orderPointsDiscountAmount">0</span>）</span>
-                <button type="button" id="btnOrderPointsMax" class="px-2 py-1 rounded border border-amber-300 text-xs text-amber-800 hover:bg-amber-100">全部折抵</button>
-              </div>
-              <p id="orderPointsHint" class="text-xs text-amber-800 hidden"></p>
-              <p id="orderPointsProcessedHint" class="text-xs text-rose-600 hidden">此訂單紅利已處理，無法再修改折抵點數</p>
-            </div>
             <div>
               <label class="block text-xs font-medium text-slate-500 mb-1">運費</label>
               <div class="flex items-center gap-2">
@@ -1483,7 +1338,7 @@
             <div class="rounded-lg border border-slate-200 bg-white p-3">
               <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
                 <p class="text-xs text-slate-500">
-                  設定品項出貨狀態；「產生 PDF」只含「待出貨」品項（並標記為已出貨）。此為出貨明細，<strong>不會</strong>觸發紅利發放。
+                  設定品項出貨狀態；「產生 PDF」只含「待出貨」品項（並標記為已出貨）。此為出貨明細。
                 </p>
                 <button type="button" id="btnOrderItemsAdd" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-xs hover:bg-slate-50">+ 新增品項</button>
               </div>
@@ -1585,14 +1440,14 @@
               </tbody>
             </table>
           </div>
-          <p class="text-xs text-slate-500">同一顧客以「客戶姓名」彙總；紅利點數共用。關聯訂單可在各單編輯畫面設定。</p>
+          <p class="text-xs text-slate-500">同一顧客以「客戶姓名」彙總。關聯訂單可在各單編輯畫面設定。</p>
         </div>
       </div>
     </div>
   </div>
 
   <script src="js/member-card.js?v=20260607-canonical"></script>
-  <script src="js/admin-loyalty.js?v=20260607-min350"></script>
+  <script src="js/admin-loyalty.js?v=20260526-disabled"></script>
   <script src="js/admin-members.js?v=20260607-2"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
   <script>
@@ -1789,7 +1644,7 @@
       }
 
       function setNavActive(navId) {
-        var navs = ["navReports", "navOrders", "navMembers", "navLoyalty", "navProducts", "navPurchases", "navLayout", "navSettings"];
+        var navs = ["navReports", "navOrders", "navMembers", "navProducts", "navPurchases", "navLayout", "navSettings"];
         navs.forEach(function(id) {
           var el = document.getElementById(id);
           if (!el) return;
@@ -1806,7 +1661,6 @@
         var productsSection = document.getElementById("sectionProducts");
         var ordersSection = document.getElementById("sectionOrders");
         var membersSection = document.getElementById("sectionMembers");
-        var loyaltySection = document.getElementById("sectionLoyalty");
         var purchasesSection = document.getElementById("sectionPurchases");
         var layoutSection = document.getElementById("sectionLayout");
         var settingsSection = document.getElementById("sectionSettings");
@@ -1814,7 +1668,6 @@
         if (productsSection) productsSection.classList.toggle("hidden", sectionId !== "sectionProducts");
         if (ordersSection) ordersSection.classList.toggle("hidden", sectionId !== "sectionOrders");
         if (membersSection) membersSection.classList.toggle("hidden", sectionId !== "sectionMembers");
-        if (loyaltySection) loyaltySection.classList.toggle("hidden", sectionId !== "sectionLoyalty");
         if (purchasesSection) purchasesSection.classList.toggle("hidden", sectionId !== "sectionPurchases");
         if (layoutSection) layoutSection.classList.toggle("hidden", sectionId !== "sectionLayout");
         if (settingsSection) settingsSection.classList.toggle("hidden", sectionId !== "sectionSettings");
@@ -1824,20 +1677,6 @@
           setNavActive("navMembers");
           if (window.MaaruMembers && typeof MaaruMembers.loadPanel === "function") {
             MaaruMembers.loadPanel(false);
-          }
-        }
-        else if (sectionId === "sectionLoyalty") {
-          setNavActive("navLoyalty");
-          if (typeof window.loadPointsFromSheet === "function") {
-            window.loadPointsFromSheet()
-              .then(function () {
-                if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
-              })
-              .catch(function () {
-                if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
-              });
-          } else if (typeof window.renderLoyaltyPanel === "function") {
-            window.renderLoyaltyPanel();
           }
         }
         else if (sectionId === "sectionPurchases") {
@@ -1991,7 +1830,6 @@
       });
       document.getElementById("navOrders").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionOrders"); });
       document.getElementById("navMembers").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionMembers"); });
-      document.getElementById("navLoyalty").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionLoyalty"); });
       document.getElementById("navProducts").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionProducts"); });
       document.getElementById("navLayout").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionLayout"); });
       document.getElementById("navSettings").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionSettings"); });
@@ -4343,459 +4181,9 @@
         showMessage("已匯出 CSV");
       });
 
-      (function initLoyaltySection() {
-        if (!window.MaaruLoyalty) return;
-
-        function escapeHtmlLoyalty(s) {
-          var div = document.createElement("div");
-          div.textContent = s == null ? "" : String(s);
-          return div.innerHTML;
-        }
-
-        function showLoyaltyMessage(text, isError) {
-          var el = document.getElementById("loyaltyMessage");
-          if (!el) return;
-          el.textContent = text;
-          el.className = "text-sm text-right max-w-sm " + (isError ? "text-red-600 font-medium" : "text-emerald-700 font-medium");
-          el.classList.remove("hidden");
-          try { el.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (scrollErr) {}
-          if (showLoyaltyMessage._hideTimer) clearTimeout(showLoyaltyMessage._hideTimer);
-          showLoyaltyMessage._hideTimer = setTimeout(function() { el.classList.add("hidden"); }, isError ? 10000 : 8000);
-        }
-        window.showLoyaltyMessage = showLoyaltyMessage;
-
-        function parseWriteApiResponse_(r) {
-          return r.text().then(function(t) {
-            if (!t || !String(t).trim()) return { error: true, message: "API 回傳空白" };
-            try {
-              return JSON.parse(t);
-            } catch (e) {
-              var preview = String(t).trim().slice(0, 240);
-              if (/^<!DOCTYPE|^<html/i.test(preview)) {
-                return { error: true, message: "API 回傳 HTML，請確認 Code.gs 已重新部署" };
-              }
-              return { error: true, message: "API 回傳非 JSON：" + preview };
-            }
-          });
-        }
-
-        function backfillLedgerSafe_(ledger, orders, persist) {
-          ledger = ledger || (window.MaaruLoyalty ? MaaruLoyalty.getLedger() : []);
-          orders = orders || loadAdminOrdersForLoyalty_();
-          if (window.MaaruLoyalty && typeof MaaruLoyalty.consolidateLedgerMemberCards === "function") {
-            return MaaruLoyalty.consolidateLedgerMemberCards(ledger, orders, persist);
-          }
-          if (window.MaaruLoyalty && typeof MaaruLoyalty.backfillLedgerMemberCards === "function") {
-            return MaaruLoyalty.backfillLedgerMemberCards(ledger, orders, persist);
-          }
-          if (persist !== false && window.MaaruLoyalty && typeof MaaruLoyalty.saveLedger === "function") {
-            MaaruLoyalty.saveLedger(ledger);
-          }
-          return { ledger: ledger, changed: false };
-        }
-
-        function mergeOrdersForLoyalty_(sheetOrders, localOrders) {
-          var out = [];
-          var byId = {};
-          (Array.isArray(sheetOrders) ? sheetOrders : []).forEach(function (o) {
-            var id = (o && o.id != null) ? String(o.id).trim() : "";
-            if (!id) return;
-            byId[id.toUpperCase()] = o;
-          });
-          Object.keys(byId).forEach(function (k) { out.push(byId[k]); });
-          (Array.isArray(localOrders) ? localOrders : []).forEach(function (o) {
-            var id = (o && o.id != null) ? String(o.id).trim() : "";
-            if (!id) return;
-            var key = id.toUpperCase();
-            var idx = out.findIndex(function (x) { return String(x.id || "").trim().toUpperCase() === key; });
-            if (idx >= 0) out[idx] = o;
-            else out.push(o);
-          });
-          return out;
-        }
-
-        function fetchOrdersForLoyalty_() {
-          var local = loadAdminOrdersForLoyalty_();
-          if (typeof fetchWrite !== "function") return Promise.resolve(local);
-          return fetchWrite({ action: "order_list" })
-            .then(parseWriteApiResponse_)
-            .then(function (res) {
-              if (res && res.error) throw new Error(res.message || "載入訂單失敗");
-              return mergeOrdersForLoyalty_(res.orders || [], local);
-            })
-            .catch(function () { return local; });
-        }
-
-        function preparePointsLedgerForSync_(orders) {
-          if (!window.MaaruLoyalty) return [];
-          orders = orders || loadAdminOrdersForLoyalty_();
-          return backfillLedgerSafe_(MaaruLoyalty.getLedger(), orders, true).ledger;
-        }
-
-        function syncPointsLedgerToSheet(orders, onProgress) {
-          if (typeof fetchWrite !== "function") {
-            return Promise.reject(new Error("API 寫入功能未就緒"));
-          }
-          var report = function (msg) {
-            if (typeof onProgress === "function") onProgress(msg);
-          };
-          try {
-            var prep = function (ordList, remoteRows) {
-              ordList = ordList || loadAdminOrdersForLoyalty_();
-              report("合併本機紅利…");
-              var remote = window.MaaruLoyalty
-                ? MaaruLoyalty.normalizeLedgerFromApi(remoteRows || [])
-                : [];
-              var local = preparePointsLedgerForSync_(ordList);
-              var merged = window.MaaruLoyalty
-                ? MaaruLoyalty.mergeLedgers(local, remote)
-                : (remote.length ? remote : local);
-              var bf = backfillLedgerSafe_(merged, ordList, true);
-              if (window.MaaruLoyalty) MaaruLoyalty.saveLedger(bf.ledger);
-              if (!bf.ledger.length) return Promise.resolve({ skipped: true, message: "尚無紅利紀錄" });
-              report("上傳至試算表（共 " + bf.ledger.length + " 筆）…");
-              return fetchWrite({ action: "points_sync", ledger: bf.ledger })
-                .then(parseWriteApiResponse_)
-                .then(function (res) {
-                  if (res && res.error) throw new Error(res.message || "同步失敗");
-                  return res;
-                });
-            };
-            report("修復試算表紅利欄位…");
-            return fetchWrite({ action: "points_sheet_repair" })
-              .then(parseWriteApiResponse_)
-              .catch(function () { return {}; })
-              .then(function () {
-            report("讀取試算表紅利…");
-            var loadRemote = fetchWrite({ action: "points_list" })
-              .then(parseWriteApiResponse_)
-              .then(function (res) {
-                if (res && res.error) throw new Error(res.message || "讀取紅利失敗");
-                return res.ledger || [];
-              })
-              .catch(function () { return []; });
-            var loadOrders = Array.isArray(orders)
-              ? Promise.resolve(orders)
-              : (function () {
-                report("讀取訂單…");
-                return fetchOrdersForLoyalty_();
-              })();
-            if (Array.isArray(orders)) {
-              return loadRemote.then(function (remote) { return prep(orders, remote); });
-            }
-            return Promise.all([loadOrders, loadRemote]).then(function (pair) {
-              return prep(pair[0], pair[1]);
-            });
-            });
-          } catch (err) {
-            return Promise.reject(err);
-          }
-        }
-
-        function loadPointsFromSheet() {
-          if (typeof fetchWrite !== "function") return Promise.resolve();
-          return fetchOrdersForLoyalty_().then(function(orders) {
-            return fetchWrite({ action: "points_list" })
-              .then(parseWriteApiResponse_)
-              .then(function(res) {
-                if (res && res.error) throw new Error(res.message || "載入失敗");
-                var remote = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
-                var cleaned = MaaruLoyalty.normalizeLedgerForDisplay(remote, orders);
-                var bf = backfillLedgerSafe_(cleaned, orders, true);
-                MaaruLoyalty.saveLedger(bf.ledger);
-                return { ledger: bf.ledger, orders: orders };
-              });
-          });
-        }
-
-        function loadAdminOrdersForLoyalty_() {
-          var list = [];
-          try {
-            var saved = localStorage.getItem("adminOrders");
-            if (saved) {
-              list = JSON.parse(saved);
-            }
-          } catch (e) {}
-          if (!Array.isArray(list)) list = [];
-          if (typeof window.getAdminOrdersSnapshot_ === "function") {
-            var live = window.getAdminOrdersSnapshot_();
-            if (Array.isArray(live) && live.length >= list.length) list = live;
-          }
-          return list;
-        }
-        window.loadAdminOrdersForLoyalty_ = loadAdminOrdersForLoyalty_;
-
-        function customerMatchesLoyaltyQuery_(c, q, qDigits) {
-          if (!q) return true;
-          if ((c.memberCardNo || "").toLowerCase().indexOf(q) >= 0) return true;
-          if (qDigits.length >= 4 && (c.memberCardNo || "").indexOf(qDigits) >= 0) return true;
-          if ((c.customerName || "").toLowerCase().indexOf(q) >= 0) return true;
-          if ((c.phone || "").toLowerCase().indexOf(q) >= 0) return true;
-          if (qDigits.length >= 4 && String(c.phone || "").replace(/\D/g, "").indexOf(qDigits) >= 0) return true;
-          if ((c.lineId || "").toLowerCase().indexOf(q) >= 0) return true;
-          return false;
-        }
-
-        function renderLoyaltyCardLookupResult_(query) {
-          var box = document.getElementById("loyaltyCardLookupResult");
-          if (!box) return;
-          query = String(query || "").trim();
-          if (!query) {
-            box.classList.add("hidden");
-            box.innerHTML = "";
-            return;
-          }
-          var orders = loadAdminOrdersForLoyalty_();
-          var rows = [];
-          if (window.MaaruMemberCard && MaaruMemberCard.lookupMembersByQuery) {
-            rows = MaaruMemberCard.lookupMembersByQuery(
-              orders,
-              query,
-              window.MaaruLoyalty ? MaaruLoyalty.getLedger() : []
-            );
-          }
-          if (!rows.length) {
-            box.classList.remove("hidden");
-            box.innerHTML = "<p class=\"text-sm text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2\">找不到符合「" + escapeHtmlLoyalty(query) + "」的訂單客戶。請確認訂單是否已填寫會員卡號，或至訂單管理新增／編輯該客戶訂單。</p>";
-            return;
-          }
-          box.classList.remove("hidden");
-          box.innerHTML =
-            "<div class=\"overflow-x-auto rounded-lg border border-sky-100 bg-white\">" +
-            "<table class=\"w-full text-sm\"><thead class=\"bg-sky-50\"><tr>" +
-            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">客戶姓名</th>" +
-            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">會員卡號</th>" +
-            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">電話</th>" +
-            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">紅利餘額</th>" +
-            "<th class=\"text-left py-2 px-3 font-medium text-slate-600\">操作</th>" +
-            "</tr></thead><tbody>" +
-            rows.map(function(row) {
-              var card = row.memberCardNo || "";
-              var balance = card && MaaruLoyalty ? MaaruLoyalty.getBalance(card, row.customerName, row.phone, row.lineId, orders) : 0;
-              var cardHtml = card
-                ? "<span class=\"font-mono text-xs tracking-wider text-slate-800\">" + escapeHtmlLoyalty(card) + "</span>"
-                : "<span class=\"text-amber-700 text-xs\">尚無卡號（請至訂單編輯並儲存以自動產生）</span>";
-              var copyBtn = card
-                ? "<button type=\"button\" class=\"loyalty-copy-card text-xs text-sky-700 hover:underline\" data-card=\"" + escapeHtmlLoyalty(card) + "\">複製卡號</button>"
-                : "—";
-              return "<tr class=\"border-b border-slate-100\">" +
-                "<td class=\"py-2 px-3 font-medium text-slate-800\">" + escapeHtmlLoyalty(row.customerName || "（未填姓名）") + "</td>" +
-                "<td class=\"py-2 px-3\">" + cardHtml + "</td>" +
-                "<td class=\"py-2 px-3 text-slate-600\">" + escapeHtmlLoyalty(row.phone || "—") + "</td>" +
-                "<td class=\"py-2 px-3 font-semibold text-amber-700\">" + balance + " 點</td>" +
-                "<td class=\"py-2 px-3\">" + copyBtn + "</td></tr>";
-            }).join("") +
-            "</tbody></table></div>";
-          box.querySelectorAll(".loyalty-copy-card").forEach(function(btn) {
-            btn.addEventListener("click", function() {
-              var card = btn.getAttribute("data-card") || "";
-              if (!card) return;
-              if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(card).then(function() {
-                  showLoyaltyMessage("已複製卡號 " + card);
-                }).catch(function() {
-                  showLoyaltyMessage("複製失敗，請手動複製", true);
-                });
-              } else {
-                showLoyaltyMessage("卡號：" + card);
-              }
-            });
-          });
-        }
-
-        function renderLoyaltyPanel(orders) {
-          orders = orders || loadAdminOrdersForLoyalty_();
-          if (window.MaaruLoyalty && typeof MaaruLoyalty.normalizeLedgerForDisplay === "function") {
-            var cleaned = MaaruLoyalty.normalizeLedgerForDisplay(MaaruLoyalty.getLedger(), orders);
-            MaaruLoyalty.saveLedger(cleaned);
-          }
-          MaaruLoyalty.runGlobalExpiry(orders);
-          var q = (document.getElementById("loyaltySearchInput") && document.getElementById("loyaltySearchInput").value || "").trim().toLowerCase();
-          var qDigits = q.replace(/\D/g, "");
-          var customers = MaaruLoyalty.summarizeCustomersWithOrders(MaaruLoyalty.getLedger(), orders);
-          if (q) {
-            customers = customers.filter(function(c) {
-              return customerMatchesLoyaltyQuery_(c, q, qDigits);
-            });
-          }
-          var custBody = document.getElementById("loyaltyCustomerBody");
-          if (custBody) {
-            if (!customers.length) {
-              custBody.innerHTML = "<tr><td colspan=\"3\" class=\"py-8 text-center text-slate-400\">尚無會員資料</td></tr>";
-            } else {
-              custBody.innerHTML = customers.map(function(c) {
-                var exp = c.nextExpireDate ? (c.nextExpireDate + "（" + c.nextExpirePoints + "點）") : "—";
-                var displayCard = c.memberCardNo || (c.key && c.key.indexOf("C:") === 0 ? c.key.slice(2) : "") || "—";
-                var nameHint = c.customerName ? " <span class=\"text-slate-400 font-normal\">(" + escapeHtmlLoyalty(c.customerName) + ")</span>" : "";
-                return "<tr class=\"border-b border-slate-100\"><td class=\"py-2 px-3 font-medium font-mono text-xs tracking-wider\">" + escapeHtmlLoyalty(displayCard) + nameHint + "</td>" +
-                  "<td class=\"py-2 px-3 font-semibold text-amber-700\">" + (c.balance || 0) + "</td>" +
-                  "<td class=\"py-2 px-3 text-xs text-slate-500\">" + escapeHtmlLoyalty(exp) + "</td></tr>";
-              }).join("");
-            }
-          }
-          var ledger = MaaruLoyalty.getLedger().slice().reverse();
-          var ledBody = document.getElementById("loyaltyLedgerBody");
-          if (ledBody) {
-            if (!ledger.length) {
-              ledBody.innerHTML = "<tr><td colspan=\"7\" class=\"py-8 text-center text-slate-400\">尚無紀錄</td></tr>";
-            } else {
-              ledBody.innerHTML = ledger.slice(0, 200).map(function(r) {
-                var pts = Number(r.points) || 0;
-                var ptsClass = pts >= 0 ? "text-emerald-600" : "text-red-600";
-                return "<tr class=\"border-b border-slate-100\"><td class=\"py-2 px-3 text-xs\">" + escapeHtmlLoyalty(String(r.date || "").slice(0, 10)) + "</td>" +
-                  "<td class=\"py-2 px-3 text-xs font-mono\">" + escapeHtmlLoyalty(r.memberCardNo || r.customerName || r.phone || r.lineId || "—") + "</td>" +
-                  "<td class=\"py-2 px-3\">" + escapeHtmlLoyalty(r.type || "") + "</td>" +
-                  "<td class=\"py-2 px-3 font-medium " + ptsClass + "\">" + (pts > 0 ? "+" : "") + pts + "</td>" +
-                  "<td class=\"py-2 px-3 text-xs\">" + escapeHtmlLoyalty(r.expireDate || "—") + "</td>" +
-                  "<td class=\"py-2 px-3 text-xs font-mono\">" + escapeHtmlLoyalty(r.orderId || "—") + "</td>" +
-                  "<td class=\"py-2 px-3 text-xs text-slate-500\">" + escapeHtmlLoyalty(r.note || "") + "</td></tr>";
-              }).join("");
-            }
-          }
-        }
-        window.renderLoyaltyPanel = renderLoyaltyPanel;
-        window.syncPointsLedgerToSheet = syncPointsLedgerToSheet;
-        window.loadPointsFromSheet = loadPointsFromSheet;
-        window.backfillLedgerSafe_ = backfillLedgerSafe_;
-
-        var btnSync = document.getElementById("btnSyncPointsSheet");
-        if (btnSync) btnSync.addEventListener("click", function() {
-          var prevLabel = btnSync.textContent;
-          btnSync.disabled = true;
-          btnSync.textContent = "同步中…";
-          showLoyaltyMessage("正在同步至試算表「紅利點數」…", false);
-          syncPointsLedgerToSheet(null, function(step) {
-            showLoyaltyMessage(step, false);
-          }).then(function(res) {
-            return fetchOrdersForLoyalty_().then(function(orders) {
-              renderLoyaltyPanel(orders);
-              if (res && res.skipped) {
-                showLoyaltyMessage("尚無紅利紀錄可同步（請先將訂單改為「已確認」，或按「補處理未發點訂單」）", true);
-              } else {
-                var extra = (res && res.message && String(res.message).indexOf("OK") < 0) ? (" " + res.message) : "";
-                var count = res && res.ledgerCount != null ? ("（共 " + res.ledgerCount + " 筆）") : "";
-                showLoyaltyMessage("已同步至試算表「紅利點數」" + count + extra, false);
-              }
-            });
-          }).catch(function(err) {
-            renderLoyaltyPanel();
-            showLoyaltyMessage("同步失敗：" + formatNetworkError(err), true);
-          }).finally(function() {
-            btnSync.disabled = false;
-            btnSync.textContent = prevLabel;
-          });
-        });
-        var btnExpire = document.getElementById("btnLoyaltyExpireAll");
-        if (btnExpire) btnExpire.addEventListener("click", function() {
-          MaaruLoyalty.runGlobalExpiry(loadAdminOrdersForLoyalty_());
-          renderLoyaltyPanel();
-          syncPointsLedgerToSheet().catch(function() {});
-          showLoyaltyMessage("已完成到期失效檢查");
-        });
-        var btnMergeDupEarn = document.getElementById("btnLoyaltyMergeDupEarn");
-        if (btnMergeDupEarn) btnMergeDupEarn.addEventListener("click", function() {
-          if (!confirm("合併試算表「紅利點數」中同一訂單編號的重複「發放」列？\n（保留較早／後台集點那一筆，刪除 order_upsert 重複列）")) return;
-          var prevLabel = btnMergeDupEarn.textContent;
-          btnMergeDupEarn.disabled = true;
-          btnMergeDupEarn.textContent = "合併中…";
-          fetchWrite({ action: "points_merge_duplicate_earn" })
-            .then(parseWriteApiResponse_)
-            .then(function(res) {
-              if (res && res.error) throw new Error(res.message || "合併失敗");
-              return loadPointsFromSheet().then(function() {
-                renderLoyaltyPanel();
-                showLoyaltyMessage(res.message || "已合併重複發放");
-              });
-            })
-            .catch(function(err) {
-              showLoyaltyMessage((err && err.message) || "合併失敗", true);
-            })
-            .finally(function() {
-              btnMergeDupEarn.disabled = false;
-              btnMergeDupEarn.textContent = prevLabel;
-            });
-        });
-        var btnProcessOrders = document.getElementById("btnLoyaltyProcessOrders");
-        if (btnProcessOrders) btnProcessOrders.addEventListener("click", function() {
-          if (typeof window.processPendingLoyaltyOrders_ === "function") {
-            var res = window.processPendingLoyaltyOrders_(false);
-            if (!res.processed) showLoyaltyMessage("沒有需要補處理的訂單（需為已確認／已完成且尚未發點）");
-          }
-        });
-        var btnReload = document.getElementById("btnLoyaltyReload");
-        if (btnReload) btnReload.addEventListener("click", function() {
-          btnReload.disabled = true;
-          loadPointsFromSheet().then(function(result) {
-            renderLoyaltyPanel(result && result.orders ? result.orders : null);
-            showLoyaltyMessage("已重新載入並合併會員資料");
-          }).catch(function(err) {
-            renderLoyaltyPanel();
-            showLoyaltyMessage("載入失敗：" + (err.message || ""), true);
-          }).finally(function() {
-            btnReload.disabled = false;
-          });
-        });
-        var searchInp = document.getElementById("loyaltySearchInput");
-        if (searchInp) searchInp.addEventListener("input", renderLoyaltyPanel);
-        var cardLookupInp = document.getElementById("loyaltyCardLookupInput");
-        var btnCardLookup = document.getElementById("btnLoyaltyCardLookup");
-        function runLoyaltyCardLookup_() {
-          var query = cardLookupInp ? cardLookupInp.value : "";
-          renderLoyaltyCardLookupResult_(query);
-          if (searchInp && query.trim()) {
-            searchInp.value = query.trim();
-            renderLoyaltyPanel();
-          }
-        }
-        if (btnCardLookup) btnCardLookup.addEventListener("click", runLoyaltyCardLookup_);
-        if (cardLookupInp) {
-          cardLookupInp.addEventListener("keydown", function(e) {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              runLoyaltyCardLookup_();
-            }
-          });
-        }
-        var loyaltyCardInputEl = document.getElementById("loyaltyAdjustCard");
-        if (loyaltyCardInputEl) {
-          loyaltyCardInputEl.addEventListener("input", function() {
-            var v = String(this.value || "").replace(/\D/g, "").slice(0, 13);
-            if (this.value !== v) this.value = v;
-          });
-        }
-        var adjForm = document.getElementById("loyaltyAdjustForm");
-        if (adjForm) adjForm.addEventListener("submit", function(e) {
-          e.preventDefault();
-          try {
-            var ledger = MaaruLoyalty.getLedger();
-            ledger = MaaruLoyalty.manualAdjust(ledger, {
-              memberCardNo: document.getElementById("loyaltyAdjustCard").value,
-              phone: document.getElementById("loyaltyAdjustPhone").value,
-              lineId: document.getElementById("loyaltyAdjustLineId").value,
-              customerName: document.getElementById("loyaltyAdjustName").value,
-              points: document.getElementById("loyaltyAdjustPoints").value,
-              note: document.getElementById("loyaltyAdjustNote").value
-            });
-            MaaruLoyalty.saveLedger(ledger);
-            renderLoyaltyPanel();
-            syncPointsLedgerToSheet().catch(function() {});
-            showLoyaltyMessage("已調整點數");
-            adjForm.reset();
-          } catch (err) {
-            showLoyaltyMessage(err.message || "調整失敗", true);
-          }
-        });
-
-        loadPointsFromSheet().then(function(result) {
-          renderLoyaltyPanel(result && result.orders ? result.orders : null);
-        }).catch(function() {
-          renderLoyaltyPanel();
-        });
-      })();
-
       (function initOrderSection() {
         var ORDER_STORAGE_KEY = "adminOrders";
-        var ORDER_LOCAL_ONLY = false; // 訂單管理：本機 + 試算表自動同步
+        var ORDER_LOCAL_ONLY = false;
         var orderModal = document.getElementById("orderModal");
         var orderModalBackdrop = document.getElementById("orderModalBackdrop");
         var orderModalClose = document.getElementById("orderModalClose");
@@ -4961,10 +4349,6 @@
               orders.forEach(function(o) { normalizeOrderFieldsForAdmin_(o); });
               saveOrders();
               backfillMissingMemberCards_({ syncSheet: true, silent: true });
-              processPendingLoyaltyOrders_(true);
-              if (typeof window.loadPointsFromSheet === "function") {
-                window.loadPointsFromSheet().catch(function() {});
-              }
               renderOrders();
               showOrderMessage("已從試算表載入訂單");
               syncLocalOrdersToSheet_(sheetOrders, orders);
@@ -5886,9 +5270,7 @@
         }
 
         function orderPointsDiscountForOrder(ord) {
-          if (!window.MaaruLoyalty) return 0;
-          var pts = Number(ord && ord.pointsUsed) || 0;
-          return MaaruLoyalty.pointsDiscountAmount(pts);
+          return 0;
         }
 
         function orderGrossBeforeDeposit(ord) {
@@ -6044,54 +5426,7 @@
         }
 
         function refreshOrderPointsPanel_(processedFlag, callback) {
-          function doRefresh() {
-            if (!window.MaaruLoyalty) {
-              if (typeof callback === "function") callback();
-              return;
-            }
-            var memberCardNo = getOrderMemberCardFromForm_();
-            var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
-            var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
-            var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-            var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId, getOrdersForLoyaltyLookup_());
-            var balEl = document.getElementById("orderPointsBalance");
-            if (balEl) balEl.textContent = String(balance);
-            var processed = processedFlag === true || processedFlag === "Y";
-            var hint = document.getElementById("orderPointsProcessedHint");
-            var useCheck = document.getElementById("orderUsePointsCheck");
-            var ptsInput = document.getElementById("orderPointsUsed");
-            var maxBtn = document.getElementById("btnOrderPointsMax");
-            if (hint) hint.classList.toggle("hidden", !processed);
-            if (useCheck) useCheck.disabled = processed;
-            if (ptsInput) ptsInput.disabled = processed;
-            if (maxBtn) maxBtn.disabled = processed;
-            var amounts = getOrderDiscountFromForm_();
-            var draftOrder = {
-              subtotal: amounts.subtotal,
-              discount: amounts.discount,
-              pointsUsed: (useCheck && useCheck.checked) ? (Number(ptsInput && ptsInput.value) || 0) : 0
-            };
-            var maxPts = MaaruLoyalty.calcMaxRedeemPoints(draftOrder, balance);
-            if (useCheck && useCheck.checked && ptsInput) {
-              var v = Math.floor(Number(ptsInput.value) || 0);
-              if (v > maxPts) { v = maxPts; ptsInput.value = String(v); }
-            }
-            var used = (useCheck && useCheck.checked) ? Math.floor(Number(ptsInput && ptsInput.value) || 0) : 0;
-            var discAmt = MaaruLoyalty.pointsDiscountAmount(used);
-            var discEl = document.getElementById("orderPointsDiscountAmount");
-            if (discEl) discEl.textContent = String(discAmt);
-            draftOrder.pointsUsed = used;
-            var earnEl = document.getElementById("orderPointsEarnPreview");
-            if (earnEl) earnEl.textContent = String(MaaruLoyalty.calcEarnPoints(draftOrder));
-            var earnBaseEl = document.getElementById("orderPointsEarnBase");
-            if (earnBaseEl) earnBaseEl.textContent = "NT$" + MaaruLoyalty.earnPointsBase(draftOrder);
-            if (typeof callback === "function") callback({ balance: balance, maxPts: maxPts, processed: processed });
-          }
-          if (typeof window.loadPointsFromSheet === "function") {
-            window.loadPointsFromSheet().then(doRefresh).catch(doRefresh);
-          } else {
-            doRefresh();
-          }
+          if (typeof callback === "function") callback();
         }
 
         function applyOrderPointsRedeem_(opts) {
@@ -6186,68 +5521,20 @@
         }
 
         function applyLoyaltyToOrder_(ord, prevOrd) {
-          if (!window.MaaruLoyalty || !ord) return { order: ord, pointsChanged: false };
-          if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) {
-            return { order: ord, pointsChanged: false };
-          }
-          ord = ensureOrderMemberCardOnOrder_(ord);
-          try {
-            var result = MaaruLoyalty.processOrderPoints(ord, prevOrd || null);
-            if (result.message) {
-              if (typeof showOrderMessage === "function") showOrderMessage("紅利：" + result.message);
-              if (typeof window.showLoyaltyMessage === "function") window.showLoyaltyMessage(result.message);
-            }
-            var pointsChanged = result.order.pointsProcessed === "Y" || result.order.pointsProcessed === true;
-            if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
-            return { order: result.order, pointsChanged: pointsChanged };
-          } catch (err) {
-            if (typeof showOrderMessage === "function") showOrderMessage("紅利處理失敗：" + (err.message || ""), true);
-            if (typeof window.showLoyaltyMessage === "function") window.showLoyaltyMessage("處理失敗：" + (err.message || ""), true);
-            return { order: ord, pointsChanged: false };
-          }
+          return { order: ord, pointsChanged: false };
         }
 
         function orderNeedsPointsSheetSync_(ord) {
-          if (!ord) return false;
-          var st = String(ord.status || "").trim();
-          if (st !== "已確認" && st !== "已完成") return false;
-          if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) return true;
-          return Math.floor(Number(ord.pointsEarned) || 0) > 0 || Math.floor(Number(ord.pointsUsed) || 0) > 0;
+          return false;
         }
 
         function upsertOrderWithPointsSync_(ord, pointsChanged, successMsg) {
-          var syncPoints = !!(pointsChanged || orderNeedsPointsSheetSync_(ord));
-          return upsertOrderToSheet(ord, { syncPoints: syncPoints }).then(function(res) {
+          return upsertOrderToSheet(ord).then(function(res) {
             var sheetHint = (res && res.sheetName) ? ("「" + res.sheetName + "」") : "試算表";
-            var msg = successMsg || ("訂單已寫入 " + sheetHint);
-            if (pointsChanged) {
-              if (res && res.pointsSynced) msg += "；紅利已同步（" + res.pointsSynced + " 筆）";
-              else if (res && res.pointsAppended) msg += "；已補寫紅利 " + res.pointsAppended + " 筆";
-              else msg += "；紅利已同步";
-              if (typeof window.loadPointsFromSheet === "function") {
-                window.loadPointsFromSheet().then(function () {
-                  if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
-                }).catch(function () {});
-              }
-              if (typeof window.showLoyaltyMessage === "function") {
-                window.showLoyaltyMessage("紅利已寫入試算表，顧客可查詢");
-              }
-            }
-            showOrderMessage(msg);
+            showOrderMessage(successMsg || ("訂單已寫入 " + sheetHint));
             return res;
           }).catch(function(err) {
             showOrderMessage("寫入試算表失敗：" + (err.message || "網路錯誤"), true);
-            if (pointsChanged && typeof window.syncPointsLedgerToSheet === "function") {
-              window.syncPointsLedgerToSheet().then(function() {
-                if (typeof window.showLoyaltyMessage === "function") {
-                  window.showLoyaltyMessage("訂單已寫入，紅利已另行同步至試算表");
-                }
-              }).catch(function(syncErr) {
-                if (typeof window.showLoyaltyMessage === "function") {
-                  window.showLoyaltyMessage("紅利同步失敗：" + (syncErr.message || "請至紅利點數頁手動同步"), true);
-                }
-              });
-            }
             throw err;
           });
         }
@@ -6484,10 +5771,8 @@
           }
           if (summary) {
             summary.innerHTML =
-              "<div class=\"rounded-lg border border-amber-200 bg-amber-50 px-3 py-2\"><p class=\"text-[10px] text-amber-800/70\">紅利餘額</p><p class=\"text-lg font-bold text-amber-900\">" + stats.balance + " 點</p></div>" +
               "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">待結清合計</p><p class=\"text-lg font-bold text-slate-800\">NT$ " + stats.totalDue + "</p><p class=\"text-[10px] text-slate-400 mt-0.5\">不含已完成</p></div>" +
-              "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">有效訂單</p><p class=\"text-lg font-bold text-slate-800\">" + stats.activeCount + " 筆</p></div>" +
-              "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">累計獲得紅利</p><p class=\"text-lg font-bold text-slate-800\">" + stats.earnedPts + " 點</p></div>";
+              "<div class=\"rounded-lg border border-slate-200 bg-slate-50 px-3 py-2\"><p class=\"text-[10px] text-slate-500\">有效訂單</p><p class=\"text-lg font-bold text-slate-800\">" + stats.activeCount + " 筆</p></div>";
           }
           if (!rows.length) {
             tbody.innerHTML = "<tr><td colspan=\"6\" class=\"py-8 text-center text-slate-500\">找不到此顧客的訂單</td></tr>";
@@ -6572,11 +5857,7 @@
           function afterLoad() {
             renderCustomerOverviewModal_(name, ph, focusOrderId);
           }
-          if (typeof window.loadPointsFromSheet === "function") {
-            window.loadPointsFromSheet().then(afterLoad).catch(afterLoad);
-          } else {
-            afterLoad();
-          }
+          afterLoad();
         }
 
         function closeCustomerOverviewModal_() {
@@ -6786,21 +6067,7 @@
         }
 
         function getValidatedOrderPointsUsed_(subtotal, discount) {
-          var usePtsCheck = document.getElementById("orderUsePointsCheck");
-          var pointsUsed = (usePtsCheck && usePtsCheck.checked)
-            ? Math.floor(Number(document.getElementById("orderPointsUsed").value) || 0)
-            : 0;
-          if (!window.MaaruLoyalty || pointsUsed <= 0) return pointsUsed;
-          var memberCardNo = getOrderMemberCardFromForm_();
-          var customerName = (document.getElementById("orderCustomerName") && document.getElementById("orderCustomerName").value) || "";
-          var phone = (document.getElementById("orderPhone") && document.getElementById("orderPhone").value) || "";
-          var lineId = (document.getElementById("orderLineId") && document.getElementById("orderLineId").value) || "";
-          var balance = MaaruLoyalty.getBalance(memberCardNo, customerName, phone, lineId, getOrdersForLoyaltyLookup_());
-          var maxPts = MaaruLoyalty.calcMaxRedeemPoints(
-            { subtotal: subtotal, discount: discount, pointsUsed: 0 },
-            balance
-          );
-          return Math.min(pointsUsed, maxPts);
+          return 0;
         }
 
         function getOrderFromForm() {
@@ -6815,13 +6082,12 @@
           var discount = 0;
           if (rateCheck && rateVal >= 0 && rateVal <= 100) discount = Math.ceil(subtotal * (1 - rateVal / 100));
           if (fixedCheck) discount = Math.ceil(fixedVal);
-          var pointsUsed = getValidatedOrderPointsUsed_(subtotal, discount);
-          var pointsDiscount = window.MaaruLoyalty ? MaaruLoyalty.pointsDiscountAmount(pointsUsed) : pointsUsed;
+          var pointsUsed = 0;
           var effectiveShipping = shipCouponOn ? 0 : shipping;
           var depEl = document.getElementById("orderDepositAmount");
           var depositNum = (depEl && depEl.value !== "" && !isNaN(Number(depEl.value))) ? Number(depEl.value) : 0;
           if (isNaN(depositNum) || depositNum < 0) depositNum = 0;
-          var gross = Math.max(0, Math.ceil(subtotal - discount - pointsDiscount + effectiveShipping));
+          var gross = Math.max(0, Math.ceil(subtotal - discount + effectiveShipping));
           var total = depositNum > 0 ? Math.max(0, gross - depositNum) : gross;
           var editIdForLink = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id")) || "";
           var selfIdForLink = editIdForLink || ((document.getElementById("orderId") && document.getElementById("orderId").value) || "");
@@ -6887,13 +6153,7 @@
           if (depEl) depEl.value = o.depositAmount != null && o.depositAmount !== "" ? String(o.depositAmount) : "0";
           document.getElementById("orderPreorderDate").value = o.preorderDate || "";
           document.getElementById("orderShipDate").value = o.shipDate || "";
-          var usePts = Number(o.pointsUsed) > 0;
-          var usePtsCheck = document.getElementById("orderUsePointsCheck");
-          var ptsInput = document.getElementById("orderPointsUsed");
-          if (usePtsCheck) usePtsCheck.checked = usePts;
-          if (ptsInput) ptsInput.value = usePts ? String(Math.floor(Number(o.pointsUsed))) : "0";
           renderOrderItemsEditor_(o.items || []);
-          refreshOrderPointsPanel_(o.pointsProcessed === "Y" || o.pointsProcessed === true);
           updateOrderTotal();
           refreshOrderMemberCardHint_();
           refreshCombineShipPanel_();
@@ -6908,7 +6168,6 @@
           if (editOrder) {
             document.querySelector("#orderModal h3").textContent = "編輯訂單";
             setFormFromOrder(editOrder);
-            refreshOrderPointsPanel_(editOrder.pointsProcessed === "Y" || editOrder.pointsProcessed === true);
           } else {
             document.querySelector("#orderModal h3").textContent = "訂單詳情 (新訂單)";
             var orderIdEl = document.getElementById("orderId");
@@ -6943,12 +6202,7 @@
             document.getElementById("orderShipDate").value = "";
             var linkedElNew = document.getElementById("orderLinkedOrderIds");
             if (linkedElNew) linkedElNew.value = "";
-            var usePtsCheckNew = document.getElementById("orderUsePointsCheck");
-            var ptsInputNew = document.getElementById("orderPointsUsed");
-            if (usePtsCheckNew) usePtsCheckNew.checked = false;
-            if (ptsInputNew) ptsInputNew.value = "0";
             renderOrderItemsEditor_(window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) ? window.__lastPastedOrderItems : []);
-            refreshOrderPointsPanel_(false);
             updateOrderTotal();
             refreshOrderMemberCardHint_();
           }
@@ -6981,10 +6235,9 @@
             document.getElementById("orderDiscountRateAmount").textContent = "0";
           }
 
-          var pointsUsed = getValidatedOrderPointsUsed_(subtotal, discount);
-          var pointsDiscount = window.MaaruLoyalty ? MaaruLoyalty.pointsDiscountAmount(pointsUsed) : pointsUsed;
+          var pointsUsed = 0;
 
-          var total = subtotal - discount - pointsDiscount + (shipCouponOn ? 0 : shipping);
+          var total = subtotal - discount + (shipCouponOn ? 0 : shipping);
           total = Math.ceil(total);
           if (total < 0) total = 0;
           var depositEl = document.getElementById("orderDepositAmount");
@@ -7087,7 +6340,7 @@
             btn.addEventListener("click", function() {
               var id = this.closest("tr").getAttribute("data-order-id");
               var name = this.getAttribute("data-name") || "此訂單";
-              if (!confirm("確定要刪除訂單「" + name + "」嗎？\n\n此訂單編號的紅利發放／折抵紀錄也會一併從本機移除（避免重開同編號時餘額加倍）。")) return;
+              if (!confirm("確定要刪除訂單「" + name + "」嗎？")) return;
               orders = orders.filter(function(o) { return o.id !== id; });
               var ledgerMsg = "";
               if (window.MaaruLoyalty && typeof MaaruLoyalty.removeLedgerEntriesForOrderId === "function") {
@@ -7754,9 +7007,6 @@
             if (pasteOrderAppendOrderId) {
               var ord = orders.find(function(o) { return o.id === pasteOrderAppendOrderId; });
               if (ord) {
-                if (ord.pointsProcessed === "Y" || ord.pointsProcessed === true) {
-                  if (!confirm("此訂單紅利已處理（改「已確認」時已發點）。追加商品後不會自動補發差額點數。\n\n若需分次集點，建議改開新訂單並填相同客戶姓名；若仍要併入本單請按「確定」。")) return;
-                }
                 var newItems = window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) ? window.__lastPastedOrderItems : [];
                 ord.items = (ord.items && Array.isArray(ord.items) ? ord.items : []).concat(newItems);
                 ord.subtotal = (Number(ord.subtotal) || 0) + (parsed.subtotal || 0);
@@ -7802,7 +7052,7 @@
           });
         }
 
-        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount", "orderDepositAmount", "orderShippingStatusCoupon", "orderMemberCardNo", "orderCustomerName", "orderPhone", "orderLineId", "orderPointsUsed"].forEach(function(id) {
+        ["orderSubtotal", "orderShippingFee", "orderDiscountRate", "orderFixedDiscount", "orderDepositAmount", "orderShippingStatusCoupon", "orderMemberCardNo", "orderCustomerName", "orderPhone", "orderLineId"].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) { el.addEventListener("input", updateOrderTotal); el.addEventListener("change", updateOrderTotal); }
         });
@@ -7879,39 +7129,6 @@
               showOrderMessage(msg);
             } catch (err) {
               showOrderMessage(err.message || "產生失敗", true);
-            }
-          });
-        }
-        var usePtsCheckEl = document.getElementById("orderUsePointsCheck");
-        if (usePtsCheckEl) {
-          usePtsCheckEl.addEventListener("change", function() {
-            if (!this.checked) {
-              var ptsInputOff = document.getElementById("orderPointsUsed");
-              if (ptsInputOff) ptsInputOff.value = "0";
-              showOrderPointsHint_("", false);
-              updateOrderTotal();
-              return;
-            }
-            function afterLoad() {
-              applyOrderPointsRedeem_({ autoOnCheck: true });
-            }
-            if (typeof window.loadPointsFromSheet === "function") {
-              window.loadPointsFromSheet().then(afterLoad).catch(afterLoad);
-            } else {
-              afterLoad();
-            }
-          });
-        }
-        var btnPtsMax = document.getElementById("btnOrderPointsMax");
-        if (btnPtsMax) {
-          btnPtsMax.addEventListener("click", function() {
-            function afterLoad() {
-              applyOrderPointsRedeem_({ useMax: true });
-            }
-            if (typeof window.loadPointsFromSheet === "function") {
-              window.loadPointsFromSheet().then(afterLoad).catch(afterLoad);
-            } else {
-              afterLoad();
             }
           });
         }
@@ -8130,14 +7347,11 @@
           });
         }
         renderOrders();
-        processPendingLoyaltyOrders_(true);
         if (!ORDER_LOCAL_ONLY) {
           verifyShopApiBinding_().then(function(ok) {
             if (!ok) return;
             return loadOrdersFromSheet();
-          }).catch(function() {}).finally(function() {
-            processPendingLoyaltyOrders_(true);
-          });
+          }).catch(function() {});
         }
       })();
 
