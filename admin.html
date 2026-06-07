@@ -578,6 +578,7 @@
           </p>
           <div class="flex flex-wrap gap-2 mt-3">
             <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理未發點訂單</button>
+            <button type="button" id="btnLoyaltyMergeDupEarn" class="px-3 py-1.5 rounded-lg border border-rose-300 text-sm text-rose-800 hover:bg-rose-50">合併重複發放</button>
             <button type="button" id="btnLoyaltyExpireAll" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">執行到期失效檢查</button>
             <button type="button" id="btnLoyaltyReload" class="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">重新載入</button>
           </div>
@@ -1601,7 +1602,7 @@
   </div>
 
   <script src="js/member-card.js"></script>
-  <script src="js/admin-loyalty.js?v=20260526-18"></script>
+  <script src="js/admin-loyalty.js?v=20260607-dedupe"></script>
   <script src="js/admin-members.js?v=20260607-1"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
   <script>
@@ -4682,6 +4683,29 @@
           renderLoyaltyPanel();
           syncPointsLedgerToSheet().catch(function() {});
           showLoyaltyMessage("已完成到期失效檢查");
+        });
+        var btnMergeDupEarn = document.getElementById("btnLoyaltyMergeDupEarn");
+        if (btnMergeDupEarn) btnMergeDupEarn.addEventListener("click", function() {
+          if (!confirm("合併試算表「紅利點數」中同一訂單編號的重複「發放」列？\n（保留較早／後台集點那一筆，刪除 order_upsert 重複列）")) return;
+          var prevLabel = btnMergeDupEarn.textContent;
+          btnMergeDupEarn.disabled = true;
+          btnMergeDupEarn.textContent = "合併中…";
+          fetchWrite({ action: "points_merge_duplicate_earn" })
+            .then(parseWriteApiResponse_)
+            .then(function(res) {
+              if (res && res.error) throw new Error(res.message || "合併失敗");
+              return loadPointsFromSheet().then(function() {
+                renderLoyaltyPanel();
+                showLoyaltyMessage(res.message || "已合併重複發放");
+              });
+            })
+            .catch(function(err) {
+              showLoyaltyMessage((err && err.message) || "合併失敗", true);
+            })
+            .finally(function() {
+              btnMergeDupEarn.disabled = false;
+              btnMergeDupEarn.textContent = prevLabel;
+            });
         });
         var btnProcessOrders = document.getElementById("btnLoyaltyProcessOrders");
         if (btnProcessOrders) btnProcessOrders.addEventListener("click", function() {

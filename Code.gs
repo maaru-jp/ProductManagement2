@@ -49,13 +49,13 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-06-07-member-points-consistency",
+        apiVersion: "2026-06-07-dedupe-earn",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"],
-        postRoutes: ["order_list", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
+        postRoutes: ["order_list", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
         memberSpreadsheetName: getMemberSpreadsheetMeta_().name
@@ -129,7 +129,7 @@ function doPost(e) {
     }
 
     // 紅利紀錄：list / sync / repair
-    if (action === "points_list" || action === "points_sync" || action === "points_sheet_repair") {
+    if (action === "points_list" || action === "points_sync" || action === "points_sheet_repair" || action === "points_merge_duplicate_earn") {
       var pointsSheet = getPointsSheet(ss);
       if (!pointsSheet) {
         out.error = true;
@@ -153,6 +153,17 @@ function doPost(e) {
       if (action === "points_list") {
         out.ledger = getPointsLedger(pointsSheet);
         out.message = "OK";
+        return jsonOutput(out);
+      }
+      if (action === "points_merge_duplicate_earn") {
+        var mergeResult = mergeDuplicateEarnLedgerEntries_(ss);
+        out.removed = mergeResult.removed;
+        out.groups = mergeResult.groups;
+        out.ledgerCount = mergeResult.ledgerCount;
+        out.message = mergeResult.message;
+        if (mergeResult.error) {
+          out.error = true;
+        }
         return jsonOutput(out);
       }
       if (action === "points_sync") {
@@ -325,6 +336,7 @@ function doPost(e) {
       var pointsNote = "";
       var pointsAppended = 0;
       var pointsSyncedCount = 0;
+      var ledgerSyncedFromBody = false;
       if (body.ledger && Array.isArray(body.ledger) && body.ledger.length) {
         var pointsSheetSync = getPointsSheet(ss);
         var ordersForLedger = getAllOrdersMerged_(ss);
@@ -332,11 +344,14 @@ function doPost(e) {
         pointsSyncedCount = getPointsLedger(pointsSheetSync).length;
         pointsNote = "；紅利點數 " + pointsSyncedCount + " 筆";
         out.pointsSynced = pointsSyncedCount;
+        ledgerSyncedFromBody = true;
       }
-      pointsAppended = ensurePointsLedgerEntriesFromOrder_(ss, order);
-      var cardForSync = normalizeMemberCardNo_(order.memberCardNo);
-      if (isValidMemberCardNo_(cardForSync)) {
-        pointsAppended += syncMissingLedgerEntriesForMemberCard_(ss, cardForSync, getAllOrdersMerged_(ss));
+      if (!ledgerSyncedFromBody) {
+        pointsAppended = ensurePointsLedgerEntriesFromOrder_(ss, order);
+        var cardForSync = normalizeMemberCardNo_(order.memberCardNo);
+        if (isValidMemberCardNo_(cardForSync)) {
+          pointsAppended += syncMissingLedgerEntriesForMemberCard_(ss, cardForSync, getAllOrdersMerged_(ss));
+        }
       }
       if (pointsAppended > 0) {
         out.pointsAppended = pointsAppended;
@@ -2446,38 +2461,99 @@ function orderHasPointsLedgerEntries_(ledger, orderId) {
   return false;
 }
 
-/** 依訂單編號 + 會員卡號，判斷是否已有對應發放列（避免無卡號舊列阻擋補寫） */
-function orderHasEarnLedgerEntryForCard_(ledger, orderId, card, allOrders) {
+/** 同一訂單編號是否已有發放列（防 JS + GAS 雙寫重複） */
+function orderHasEarnLedgerEntryForOrderId_(ledger, orderId) {
   var oid = normalizeOrderId_(orderId);
-  card = normalizeMemberCardNo_(card);
-  if (!oid || !isValidMemberCardNo_(card)) return false;
-  var linkedNames = collectCustomerNamesForMemberCard_(allOrders, card, ledger);
-  var identityIndex = buildMemberCardIdentityIndex_(allOrders, ledger);
+  if (!oid) return false;
   for (var i = 0; i < (ledger || []).length; i++) {
     var rec = ledger[i];
     if (normalizeOrderId_(rec.orderId) !== oid) continue;
-    if (!recordMatchesMemberCardExtended_(rec, card, linkedNames, identityIndex)) continue;
     var type = normalizePointLedgerType_(rec.type);
     if (type === "發放" && Math.floor(Number(rec.points) || 0) > 0) return true;
   }
   return false;
 }
 
-/** 依訂單編號 + 會員卡號，判斷是否已有對應折抵列 */
-function orderHasRedeemLedgerEntryForCard_(ledger, orderId, card, allOrders) {
+/** 同一訂單編號是否已有折抵列 */
+function orderHasRedeemLedgerEntryForOrderId_(ledger, orderId) {
   var oid = normalizeOrderId_(orderId);
-  card = normalizeMemberCardNo_(card);
-  if (!oid || !isValidMemberCardNo_(card)) return false;
-  var linkedNames = collectCustomerNamesForMemberCard_(allOrders, card, ledger);
-  var identityIndex = buildMemberCardIdentityIndex_(allOrders, ledger);
+  if (!oid) return false;
   for (var i = 0; i < (ledger || []).length; i++) {
     var rec = ledger[i];
     if (normalizeOrderId_(rec.orderId) !== oid) continue;
-    if (!recordMatchesMemberCardExtended_(rec, card, linkedNames, identityIndex)) continue;
     var type = normalizePointLedgerType_(rec.type);
     if (type === "折抵" && Math.floor(Number(rec.points) || 0) < 0) return true;
   }
   return false;
+}
+
+/** 依訂單編號判斷是否已有發放列（相容舊函式名） */
+function orderHasEarnLedgerEntryForCard_(ledger, orderId, card, allOrders) {
+  return orderHasEarnLedgerEntryForOrderId_(ledger, orderId);
+}
+
+/** 依訂單編號判斷是否已有折抵列（相容舊函式名） */
+function orderHasRedeemLedgerEntryForCard_(ledger, orderId, card, allOrders) {
+  return orderHasRedeemLedgerEntryForOrderId_(ledger, orderId);
+}
+
+/** 合併「同一訂單編號」重複發放列，保留較早／後台發點那一筆 */
+function mergeDuplicateEarnLedgerEntries_(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var pointsSheet = getPointsSheet(ss);
+  if (!pointsSheet) {
+    return { error: true, removed: 0, groups: 0, ledgerCount: 0, message: "找不到紅利點數工作表" };
+  }
+  var allOrders = getAllOrdersMerged_(ss);
+  var ledger = getPointsLedger(pointsSheet);
+  ledger = backfillLedgerMemberCardsFromOrdersByOrderId_(ledger, allOrders);
+  var earnByOrder = {};
+  for (var i = 0; i < ledger.length; i++) {
+    var rec = ledger[i];
+    var type = normalizePointLedgerType_(rec.type);
+    if (type !== "發放") continue;
+    if (Math.floor(Number(rec.points) || 0) <= 0) continue;
+    var oid = normalizeOrderId_(rec.orderId);
+    if (!oid) continue;
+    if (!earnByOrder[oid]) earnByOrder[oid] = [];
+    earnByOrder[oid].push(rec);
+  }
+  var removeIds = {};
+  var groups = 0;
+  Object.keys(earnByOrder).forEach(function(oid) {
+    var list = earnByOrder[oid];
+    if (list.length <= 1) return;
+    groups++;
+    list.sort(function(a, b) {
+      var pa = String(a.note || "").indexOf("消費滿") >= 0 ? 0 : 1;
+      var pb = String(b.note || "").indexOf("消費滿") >= 0 ? 0 : 1;
+      if (pa !== pb) return pa - pb;
+      var da = String(a.date || "").localeCompare(String(b.date || ""));
+      if (da !== 0) return da;
+      return String(a.id || "").localeCompare(String(b.id || ""));
+    });
+    for (var j = 1; j < list.length; j++) {
+      var rid = String(list[j].id || "").trim();
+      if (rid) removeIds[rid] = { orderId: oid, id: rid };
+    }
+  });
+  var removed = 0;
+  var merged = [];
+  for (var k = 0; k < ledger.length; k++) {
+    var id = String(ledger[k].id || "").trim();
+    if (id && removeIds[id]) {
+      removed++;
+      continue;
+    }
+    merged.push(ledger[k]);
+  }
+  if (removed > 0) {
+    syncPointsLedger(pointsSheet, merged, allOrders);
+  }
+  var msg = removed > 0
+    ? ("已合併 " + groups + " 組重複發放，刪除 " + removed + " 筆（試算表剩 " + merged.length + " 筆）")
+    : ("未發現重複發放（共 " + ledger.length + " 筆）");
+  return { removed: removed, groups: groups, ledgerCount: merged.length, message: msg };
 }
 
 /** 紅利列缺會員卡號時，依訂單編號從歷史訂單補上（記憶體） */
