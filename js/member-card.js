@@ -315,6 +315,7 @@
     generateUniqueMemberCardNo: generateUniqueMemberCardNo,
     collectUsedMemberCardsFromLedger: collectUsedMemberCardsFromLedger,
     collectUsedMemberCardsFromOrders: collectUsedMemberCardsFromOrders,
+    mergeUsedSets: mergeUsedSets,
     findMemberCardForCustomer: findMemberCardForCustomer,
     lookupMembersByQuery: lookupMembersByQuery,
     isSameCustomerProfile: isSameCustomerProfile,

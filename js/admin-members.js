@@ -386,34 +386,39 @@
 
   function generateMemberCard() {
     if (!global.MaaruMemberCard) {
-      showMessage("會員卡模組未載入", true);
+      showMessage("會員卡模組未載入，請 Ctrl+F5 重新整理", true);
       return;
     }
-    var orderList = [];
+    if (typeof MaaruMemberCard.mergeUsedSets !== "function") {
+      showMessage("會員卡模組版本過舊，請 Ctrl+F5 重新整理", true);
+      return;
+    }
     try {
-      if (typeof loadAdminOrdersForLoyalty_ === "function") {
-        orderList = loadAdminOrdersForLoyalty_();
-      } else if (global.adminOrders && Array.isArray(global.adminOrders)) {
-        orderList = global.adminOrders;
-      }
-    } catch (e) { /* ignore */ }
-    var used = MaaruMemberCard.mergeUsedSets(
-      MaaruMemberCard.collectUsedMemberCardsFromOrders(orderList),
-      MaaruMemberCard.collectUsedMemberCardsFromLedger(
-        global.MaaruLoyalty ? MaaruLoyalty.getLedger() : []
-      )
-    );
-    membersCache.forEach(function (m) {
-      var c = normalizeCard(m.memberCardNo);
-      if (isValidCard(c)) used[c] = true;
-    });
-    try {
+      var orderList = [];
+      try {
+        if (typeof loadAdminOrdersForLoyalty_ === "function") {
+          orderList = loadAdminOrdersForLoyalty_();
+        } else if (global.adminOrders && Array.isArray(global.adminOrders)) {
+          orderList = global.adminOrders;
+        }
+      } catch (e) { /* ignore */ }
+      var used = MaaruMemberCard.mergeUsedSets(
+        MaaruMemberCard.collectUsedMemberCardsFromOrders(orderList),
+        MaaruMemberCard.collectUsedMemberCardsFromLedger(
+          global.MaaruLoyalty ? MaaruLoyalty.getLedger() : []
+        )
+      );
+      membersCache.forEach(function (m) {
+        var c = normalizeCard(m.memberCardNo);
+        if (isValidCard(c)) used[c] = true;
+      });
       var card = MaaruMemberCard.generateUniqueMemberCardNo(used);
       var cardEl = document.getElementById("memberFormCard");
       if (cardEl) {
         cardEl.value = card;
         cardEl.readOnly = false;
       }
+      showMessage("已產生卡號 " + formatCardDisplay(card), false);
     } catch (err) {
       showMessage(err.message || "無法產生卡號", true);
     }
