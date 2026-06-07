@@ -62,7 +62,7 @@ function doGet(e) {
       });
     }
     if (action === "points_balance") {
-      return jsonOutput(getPointsBalancePublic_(params));
+      return jsonOutput({ error: true, message: "紅利功能已停用", disabled: true });
     }
     if (action === "customer_orders") {
       return jsonOutput(getCustomerOrdersPublic_(params));
@@ -328,36 +328,11 @@ function doPost(e) {
         return jsonOutput(out);
       }
       order = enrichOrderForSheetWrite_(order, ss);
-      order = resolveOrderPointsFields_(order, ss);
       upsertOrder(orderSheet, order);
       if (isValidMemberCardNo_(normalizeMemberCardNo_(order.memberCardNo))) {
         upsertMemberFromOrder_(ss, order);
       }
-      var pointsNote = "";
-      var pointsAppended = 0;
-      var pointsSyncedCount = 0;
-      var ledgerSyncedFromBody = false;
-      if (body.ledger && Array.isArray(body.ledger) && body.ledger.length) {
-        var pointsSheetSync = getPointsSheet(ss);
-        var ordersForLedger = getAllOrdersMerged_(ss);
-        syncPointsLedger(pointsSheetSync, body.ledger, ordersForLedger);
-        pointsSyncedCount = getPointsLedger(pointsSheetSync).length;
-        pointsNote = "；紅利點數 " + pointsSyncedCount + " 筆";
-        out.pointsSynced = pointsSyncedCount;
-        ledgerSyncedFromBody = true;
-      }
-      if (!ledgerSyncedFromBody) {
-        pointsAppended = ensurePointsLedgerEntriesFromOrder_(ss, order);
-        var cardForSync = normalizeMemberCardNo_(order.memberCardNo);
-        if (isValidMemberCardNo_(cardForSync)) {
-          pointsAppended += syncMissingLedgerEntriesForMemberCard_(ss, cardForSync, getAllOrdersMerged_(ss));
-        }
-      }
-      if (pointsAppended > 0) {
-        out.pointsAppended = pointsAppended;
-        pointsNote += (pointsNote ? "；另補寫 " : "；已補寫 ") + pointsAppended + " 筆紅利至「紅利點數」";
-      }
-      out.message = "已寫入訂單 " + upId + " →「" + orderSheet.getName() + "」" + pointsNote;
+      out.message = "已寫入訂單 " + upId + " →「" + orderSheet.getName() + "」";
       out.sheetName = orderSheet.getName();
       out.spreadsheetId = ss.getId();
       out.spreadsheetName = ss.getName();
@@ -2438,6 +2413,26 @@ function getActiveLotsForMemberCardExtended_(ledger, allOrders, card) {
   return lots;
 }
 
+/** 最近到期：取「最早到期日」當天會失效的點數（非全部餘額加總） */
+function summarizeNextPointExpiry_(lots) {
+  lots = lots || [];
+  if (!lots.length) return { nextExpireDate: "", nextExpirePoints: 0 };
+  var sorted = lots.slice().sort(function(a, b) {
+    var ea = String(a.expireDate || "");
+    var eb = String(b.expireDate || "");
+    if (ea !== eb) return ea.localeCompare(eb);
+    return String(a.date || "").localeCompare(String(b.date || ""));
+  });
+  var firstExp = String(sorted[0].expireDate || "").trim();
+  if (!firstExp) return { nextExpireDate: "", nextExpirePoints: 0 };
+  var pts = 0;
+  for (var i = 0; i < sorted.length; i++) {
+    if (String(sorted[i].expireDate || "").trim() !== firstExp) break;
+    pts += Math.max(0, Math.floor(Number(sorted[i].remaining) || 0));
+  }
+  return { nextExpireDate: firstExp, nextExpirePoints: pts };
+}
+
 function newPointRecordId_() {
   return "PT" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
@@ -2588,7 +2583,7 @@ function getLoyaltyConfigForServer_() {
   return {
     spendPerPoint: 100,
     pointValue: 1,
-    minRedeemNet: 199,
+    minRedeemNet: 350,
     expireDays: 365,
     earnStatuses: ["已確認", "已完成"]
   };
@@ -2623,36 +2618,12 @@ function orderStatusQualifiesForEarn_(order, cfg) {
   return false;
 }
 
-/** 伺服器端補算獲得紅利（後台未帶 pointsEarned 時，改「已確認」仍自動入帳） */
+/** 紅利功能已停用：不再自動計算或標記發點／折抵 */
 function resolveOrderPointsFields_(order, ss) {
   if (!order) return order;
   var copy = {};
   for (var k in order) {
     if (Object.prototype.hasOwnProperty.call(order, k)) copy[k] = order[k];
-  }
-  if (ss) copy = enrichOrderForSheetWrite_(copy, ss);
-  var card = normalizeMemberCardNo_(copy.memberCardNo);
-  if (!isValidMemberCardNo_(card)) return copy;
-  copy.memberCardNo = card;
-
-  var processed = String(copy.pointsProcessed || "").trim().toUpperCase();
-  var alreadyProcessed = processed === "Y" || processed === "TRUE";
-  var earned = Math.max(0, Math.floor(Number(copy.pointsEarned) || 0));
-  var used = Math.max(0, Math.floor(Number(copy.pointsUsed) || 0));
-
-  if (!orderStatusQualifiesForEarn_(copy)) return copy;
-
-  if (earned <= 0) {
-    var calcEarned = calcEarnPointsForOrder_(copy);
-    if (calcEarned > 0) {
-      copy.pointsEarned = calcEarned;
-      earned = calcEarned;
-    }
-  }
-  if (!alreadyProcessed && (earned > 0 || used > 0)) {
-    copy.pointsProcessed = "Y";
-  } else if (alreadyProcessed && earned > 0 && !copy.pointsProcessed) {
-    copy.pointsProcessed = "Y";
   }
   return copy;
 }
@@ -3075,12 +3046,9 @@ function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet, debugEx
   for (var j = 0; j < lots.length; j++) {
     balance += Number(lots[j].remaining) || 0;
   }
-  var nextExpireDate = "";
-  var nextExpirePoints = 0;
-  if (lots.length > 0) {
-    nextExpireDate = lots[0].expireDate || "";
-    nextExpirePoints = Number(lots[0].remaining) || 0;
-  }
+  var nextExp = summarizeNextPointExpiry_(lots);
+  var nextExpireDate = nextExp.nextExpireDate;
+  var nextExpirePoints = nextExp.nextExpirePoints;
   var cardOrders = findOrdersForMemberCard_(allOrders || [], card);
   var orderEarned = 0;
   var orderUsed = 0;
@@ -3095,8 +3063,9 @@ function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet, debugEx
     if (lots.length === 0 && balance > 0) {
       lots = buildSyntheticLotsFromOrders_(cardOrders, card, allOrders);
       if (lots.length > 0) {
-        nextExpireDate = lots[0].expireDate || "";
-        nextExpirePoints = Number(lots[0].remaining) || 0;
+        nextExp = summarizeNextPointExpiry_(lots);
+        nextExpireDate = nextExp.nextExpireDate;
+        nextExpirePoints = nextExp.nextExpirePoints;
       }
     }
   }
@@ -3132,7 +3101,7 @@ function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet, debugEx
       spendPerPoint: 100,
       pointValue: 1,
       expireDays: 365,
-      minRedeemNet: 199
+      minRedeemNet: 350
     },
     debug: debug,
     message: balance > 0 ? "OK" : (orderEarned > 0 ? "OK" : "目前尚無可用紅利點數")
@@ -3212,7 +3181,7 @@ function getPointsBalancePublic_(params) {
         spendPerPoint: 100,
         pointValue: 1,
         expireDays: 365,
-        minRedeemNet: 199
+        minRedeemNet: 350
       },
       message: nameBalance > 0 ? "OK" : "目前尚無可用紅利點數"
     };
