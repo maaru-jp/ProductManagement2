@@ -80,16 +80,25 @@
     var n = normalizeName(customerName);
     var p = normalizePhoneLocal(phone);
     var exclude = String(excludeOrderId || "").trim().toUpperCase();
+    var cards = {};
     for (var i = 0; i < (orders || []).length; i++) {
       var ord = orders[i];
       if (!ord) continue;
       if (exclude && String(ord.id || "").trim().toUpperCase() === exclude) continue;
       var card = normalizeMemberCardNo(ord.memberCardNo);
       if (!isValidMemberCardNo(card)) continue;
-      if (n && normalizeName(ord.customerName) === n) return card;
-      if (!n && p && normalizePhoneLocal(ord.phone) === p) return card;
+      if (n && normalizeName(ord.customerName) === n) cards[card] = true;
+      else if (!n && p && normalizePhoneLocal(ord.phone) === p) cards[card] = true;
     }
-    return "";
+    var list = Object.keys(cards);
+    if (!list.length) return "";
+    if (list.length === 1) return list[0];
+    if (n && global.MaaruLoyalty && MaaruLoyalty.pickCanonicalMemberCardForCustomer_) {
+      var ledger = MaaruLoyalty.getLedger ? MaaruLoyalty.getLedger() : [];
+      var canonical = MaaruLoyalty.pickCanonicalMemberCardForCustomer_(n, orders, ledger);
+      if (isValidMemberCardNo(canonical)) return canonical;
+    }
+    return list[0];
   }
 
   function validateMemberCardAssignment(card, orders, ledger, customerName, phone, excludeOrderId) {
@@ -192,9 +201,13 @@
     return false;
   }
 
-  function lookupMembersByQuery(orders, query) {
+  function lookupMembersByQuery(orders, query, ledger) {
     var q = String(query || "").trim().toLowerCase();
     if (!q) return [];
+    if (ledger === undefined && global.MaaruLoyalty && MaaruLoyalty.getLedger) {
+      ledger = MaaruLoyalty.getLedger();
+    }
+    ledger = ledger || [];
     var qDigits = q.replace(/\D/g, "");
     var normalizeName = function (name) {
       return String(name || "").trim().replace(/\s+/g, "").toLowerCase();
@@ -240,13 +253,49 @@
         if (isValidMemberCardNo(card)) byKey[dedupeKey].memberCardNo = card;
       }
     });
-    return Object.keys(byKey)
+    var list = Object.keys(byKey)
       .map(function (k) {
         return byKey[k];
+      });
+    return mergeLookupRowsByCustomerName_(list, orders, ledger);
+  }
+
+  function mergeLookupRowsByCustomerName_(list, orders, ledger) {
+    var byName = {};
+    var noName = [];
+    list.forEach(function (row) {
+      var n = normalizeCustomerName(row.customerName);
+      if (!n) {
+        noName.push(row);
+        return;
+      }
+      if (!byName[n]) {
+        byName[n] = Object.assign({}, row);
+        return;
+      }
+      byName[n].orderCount = (byName[n].orderCount || 0) + (row.orderCount || 0);
+      if (String(row.lastOrderDate || "") >= String(byName[n].lastOrderDate || "")) {
+        if (row.customerName) byName[n].customerName = row.customerName;
+        if (row.phone) byName[n].phone = row.phone;
+        if (row.lineId) byName[n].lineId = row.lineId;
+        if (isValidMemberCardNo(row.memberCardNo)) byName[n].memberCardNo = row.memberCardNo;
+        byName[n].lastOrderDate = row.lastOrderDate;
+      }
+    });
+    Object.keys(byName).forEach(function (n) {
+      if (global.MaaruLoyalty && MaaruLoyalty.pickCanonicalMemberCardForCustomer_) {
+        var canonical = MaaruLoyalty.pickCanonicalMemberCardForCustomer_(n, orders, ledger);
+        if (isValidMemberCardNo(canonical)) byName[n].memberCardNo = canonical;
+      }
+    });
+    return Object.keys(byName)
+      .map(function (n) {
+        return byName[n];
       })
+      .concat(noName)
       .sort(function (a, b) {
-        var na = normalizeName(a.customerName);
-        var nb = normalizeName(b.customerName);
+        var na = String(a.customerName || "").trim().replace(/\s+/g, "").toLowerCase();
+        var nb = String(b.customerName || "").trim().replace(/\s+/g, "").toLowerCase();
         if (na && nb && na !== nb) return na.localeCompare(nb, "zh-Hant");
         return (b.orderCount || 0) - (a.orderCount || 0);
       });

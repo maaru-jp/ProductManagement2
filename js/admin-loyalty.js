@@ -158,10 +158,45 @@
       register(rec.memberCardNo, rec.customerName, rec.phone, rec.lineId, false);
     });
 
+    /** 同名多卡時，以「有紅利／有發放紀錄／訂單較多」者為準（排除幽靈卡） */
+    var nameToAllCards = {};
+    (orders || []).forEach(function (ord) {
+      if (!ord) return;
+      var n = normalizeCustomerName(ord.customerName);
+      var c = normalizeMemberCardNo(ord.memberCardNo);
+      if (n && isValidMemberCardNo(c)) {
+        if (!nameToAllCards[n]) nameToAllCards[n] = {};
+        nameToAllCards[n][c] = true;
+      }
+    });
+    (ledger || []).forEach(function (rec) {
+      if (!rec) return;
+      var n = normalizeCustomerName(rec.customerName);
+      var c = normalizeMemberCardNo(rec.memberCardNo);
+      if (n && isValidMemberCardNo(c)) {
+        if (!nameToAllCards[n]) nameToAllCards[n] = {};
+        nameToAllCards[n][c] = true;
+      }
+    });
+    Object.keys(nameToAllCards).forEach(function (n) {
+      var cards = Object.keys(nameToAllCards[n]);
+      if (cards.length === 1) {
+        nameToCard[n] = cards[0];
+      } else {
+        nameToCard[n] = pickCanonicalMemberCardForCustomer_(n, orders, ledger);
+      }
+    });
+
     function resolveCard(rec) {
       if (!rec) return "";
       var direct = normalizeMemberCardNo(rec.memberCardNo);
-      if (isValidMemberCardNo(direct)) return direct;
+      if (isValidMemberCardNo(direct)) {
+        var rn = normalizeCustomerName(rec.customerName);
+        if (rn && nameToCard[rn] && nameToCard[rn] !== direct) {
+          return nameToCard[rn];
+        }
+        return direct;
+      }
       var oid = normalizeOrderIdToken_(rec.orderId);
       if (oid && orderIdToCard[oid]) return orderIdToCard[oid];
       var n = normalizeCustomerName(rec.customerName);
@@ -366,9 +401,25 @@
     }
     if (!Array.isArray(orders)) orders = [];
     var ledger = normalizeLedgerForDisplay(getLedger(), orders);
-    return getActiveLots(ledger, memberCardNo, customerName, phone, lineId, orders).reduce(function (sum, lot) {
+    var card = normalizeMemberCardNo(memberCardNo);
+    var lots = getActiveLots(ledger, card, customerName, phone, lineId, orders);
+    var balance = lots.reduce(function (sum, lot) {
       return sum + (Number(lot.remaining) || 0);
     }, 0);
+    if (
+      balance === 0 &&
+      isValidMemberCardNo(card) &&
+      normalizeCustomerName(customerName)
+    ) {
+      var canonical = pickCanonicalMemberCardForCustomer_(customerName, orders, ledger);
+      if (isValidMemberCardNo(canonical) && canonical !== card) {
+        lots = getActiveLots(ledger, canonical, customerName, phone, lineId, orders);
+        balance = lots.reduce(function (sum, lot) {
+          return sum + (Number(lot.remaining) || 0);
+        }, 0);
+      }
+    }
+    return balance;
   }
 
   function merchandiseNet(order) {
@@ -909,6 +960,122 @@
     return map;
   }
 
+  /** 同名顧客多張卡時，依紅利／訂單選出正式卡（排除 0 點幽靈卡） */
+  function scoreMemberCardForCustomer_(card, customerName, orders, ledger) {
+    card = normalizeMemberCardNo(card);
+    if (!isValidMemberCardNo(card)) return -1;
+    var name = normalizeCustomerName(customerName);
+    var score = 0;
+    var orderCount = 0;
+    var lastOrderDate = "";
+    (orders || []).forEach(function (ord) {
+      if (!ord) return;
+      if (normalizeMemberCardNo(ord.memberCardNo) !== card) return;
+      if (name && normalizeCustomerName(ord.customerName) !== name) return;
+      orderCount += 1;
+      var d = String(ord.date || "");
+      if (d >= lastOrderDate) lastOrderDate = d;
+    });
+    score += orderCount * 10;
+    if (lastOrderDate) score += 1;
+    (ledger || []).forEach(function (rec) {
+      if (!rec) return;
+      if (normalizeMemberCardNo(rec.memberCardNo) !== card) return;
+      var rn = normalizeCustomerName(rec.customerName);
+      if (name && rn && rn !== name) return;
+      var type = normalizeLedgerType(rec.type);
+      if (type === "發放" || type === "調整") {
+        if (Number(rec.points) > 0) score += 50;
+        if (effectiveRemaining(rec) > 0) score += 500;
+      }
+    });
+    return score;
+  }
+
+  function pickCanonicalMemberCardForCustomer_(customerName, orders, ledger) {
+    var name = normalizeCustomerName(customerName);
+    if (!name) return "";
+    var cards = {};
+    (orders || []).forEach(function (ord) {
+      if (!ord) return;
+      if (normalizeCustomerName(ord.customerName) !== name) return;
+      var c = normalizeMemberCardNo(ord.memberCardNo);
+      if (isValidMemberCardNo(c)) cards[c] = true;
+    });
+    (ledger || []).forEach(function (rec) {
+      if (!rec) return;
+      if (normalizeCustomerName(rec.customerName) !== name) return;
+      var c = normalizeMemberCardNo(rec.memberCardNo);
+      if (isValidMemberCardNo(c)) cards[c] = true;
+    });
+    var list = Object.keys(cards);
+    if (!list.length) return "";
+    if (list.length === 1) return list[0];
+    var best = list[0];
+    var bestScore = scoreMemberCardForCustomer_(best, name, orders, ledger);
+    for (var i = 1; i < list.length; i++) {
+      var s = scoreMemberCardForCustomer_(list[i], name, orders, ledger);
+      if (s > bestScore) {
+        best = list[i];
+        bestScore = s;
+      }
+    }
+    return best;
+  }
+
+  function mergeSameNameDuplicateCustomerKeys_(map, orders, ledger) {
+    var byName = {};
+    Object.keys(map || {}).forEach(function (k) {
+      var entry = map[k];
+      if (!entry) return;
+      var n = normalizeCustomerName(entry.customerName);
+      if (!n) return;
+      if (!byName[n]) byName[n] = [];
+      byName[n].push({ key: k, entry: entry });
+    });
+    Object.keys(byName).forEach(function (n) {
+      var list = byName[n];
+      if (list.length <= 1) return;
+      list.sort(function (a, b) {
+        var sa = scoreMemberCardForCustomer_(
+          a.entry.memberCardNo || (a.key.indexOf("C:") === 0 ? a.key.slice(2) : ""),
+          n,
+          orders,
+          ledger
+        );
+        var sb = scoreMemberCardForCustomer_(
+          b.entry.memberCardNo || (b.key.indexOf("C:") === 0 ? b.key.slice(2) : ""),
+          n,
+          orders,
+          ledger
+        );
+        return sb - sa;
+      });
+      var winner = list[0];
+      var canonical = pickCanonicalMemberCardForCustomer_(n, orders, ledger);
+      if (isValidMemberCardNo(canonical)) {
+        winner.entry.memberCardNo = canonical;
+        winner.entry.key = "C:" + canonical;
+      }
+      for (var i = 1; i < list.length; i++) {
+        var loser = list[i];
+        winner.entry.totalEarned = (winner.entry.totalEarned || 0) + (loser.entry.totalEarned || 0);
+        winner.entry.totalUsed = (winner.entry.totalUsed || 0) + (loser.entry.totalUsed || 0);
+        delete map[loser.key];
+      }
+      if (winner.key !== winner.entry.key) {
+        if (!map[winner.entry.key]) map[winner.entry.key] = winner.entry;
+        else {
+          var tgt = map[winner.entry.key];
+          tgt.totalEarned = (tgt.totalEarned || 0) + (winner.entry.totalEarned || 0);
+          tgt.totalUsed = (tgt.totalUsed || 0) + (winner.entry.totalUsed || 0);
+        }
+        delete map[winner.key];
+      }
+    });
+    return map;
+  }
+
   function mergeOrphanCustomerKeys_(map, orders, ledger) {
     var idx = buildMemberIdentityIndex(ledger, orders);
     Object.keys(map).slice().forEach(function (k) {
@@ -1008,6 +1175,7 @@
     map = mergeOrphanCustomerKeys_(map, orders, ledger);
     map = mergeDuplicateCardCustomerKeys_(map);
     map = collapseCustomerMapByResolvedCard_(map, orders, ledger);
+    map = mergeSameNameDuplicateCustomerKeys_(map, orders, ledger);
     Object.keys(map).forEach(function (k) {
       map[k] = applyBalanceToCustomer_(enrichCustomerProfile_(map[k], orders), ledger, orders);
     });
@@ -1106,6 +1274,7 @@
     consolidateLedgerMemberCards: consolidateLedgerMemberCards,
     collapseCustomerMapByResolvedCard_: collapseCustomerMapByResolvedCard_,
     buildMemberIdentityIndex: buildMemberIdentityIndex,
+    pickCanonicalMemberCardForCustomer_: pickCanonicalMemberCardForCustomer_,
     collectLinkedCustomerNamesForCard: collectLinkedCustomerNamesForCard,
     canonicalCustomerKey: canonicalCustomerKey,
     processPendingOrders: processPendingOrders,
