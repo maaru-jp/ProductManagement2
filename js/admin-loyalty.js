@@ -524,13 +524,11 @@
 
   function orderHasEarnLedgerEntryForOrder_(ledger, orderId, card) {
     var oid = normalizeOrderIdToken_(orderId);
-    card = normalizeMemberCardNo(card);
-    if (!oid || !isValidMemberCardNo(card)) return false;
+    if (!oid) return false;
     for (var i = 0; i < (ledger || []).length; i++) {
       var rec = ledger[i];
       if (normalizeOrderIdToken_(rec.orderId) !== oid) continue;
-      if (normalizeMemberCardNo(rec.memberCardNo) !== card) continue;
-      var type = String(rec.type || "").trim();
+      var type = normalizeLedgerType(rec.type);
       if (type === "發放" && Math.floor(Number(rec.points) || 0) > 0) return true;
     }
     return false;
@@ -538,13 +536,11 @@
 
   function orderHasRedeemLedgerEntryForOrder_(ledger, orderId, card) {
     var oid = normalizeOrderIdToken_(orderId);
-    card = normalizeMemberCardNo(card);
-    if (!oid || !isValidMemberCardNo(card)) return false;
+    if (!oid) return false;
     for (var i = 0; i < (ledger || []).length; i++) {
       var rec = ledger[i];
       if (normalizeOrderIdToken_(rec.orderId) !== oid) continue;
-      if (normalizeMemberCardNo(rec.memberCardNo) !== card) continue;
-      var type = String(rec.type || "").trim();
+      var type = normalizeLedgerType(rec.type);
       if (type === "折抵" && Math.floor(Number(rec.points) || 0) < 0) return true;
     }
     return false;
