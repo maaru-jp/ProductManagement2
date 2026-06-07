@@ -1602,8 +1602,8 @@
     </div>
   </div>
 
-  <script src="js/member-card.js?v=20260607-random"></script>
-  <script src="js/admin-loyalty.js?v=20260607-balance-sync"></script>
+  <script src="js/member-card.js?v=20260607-canonical"></script>
+  <script src="js/admin-loyalty.js?v=20260607-canonical"></script>
   <script src="js/admin-members.js?v=20260607-2"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
   <script>
@@ -4559,7 +4559,11 @@
           var orders = loadAdminOrdersForLoyalty_();
           var rows = [];
           if (window.MaaruMemberCard && MaaruMemberCard.lookupMembersByQuery) {
-            rows = MaaruMemberCard.lookupMembersByQuery(orders, query);
+            rows = MaaruMemberCard.lookupMembersByQuery(
+              orders,
+              query,
+              window.MaaruLoyalty ? MaaruLoyalty.getLedger() : []
+            );
           }
           if (!rows.length) {
             box.classList.remove("hidden");
