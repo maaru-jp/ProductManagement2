@@ -166,7 +166,7 @@
     var sourceLabel = other.source === "order" && other.orderId
       ? "訂單 " + other.orderId
       : other.source === "ledger"
-        ? "紅利點數"
+        ? "歷史紀錄"
         : "";
     return {
       ok: false,

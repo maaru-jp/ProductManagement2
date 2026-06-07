@@ -296,14 +296,13 @@
   function deleteMember(card) {
     card = normalizeCard(card);
     if (!isValidCard(card)) return;
-    if (!confirm("確定刪除會員卡號 " + formatCardDisplay(card) + "？\n（不會刪除訂單；可一併清除紅利試算表紀錄）")) return;
-    var alsoPurge = confirm("是否一併清除「紅利點數」試算表中此卡號的所有紀錄？\n（測試卡號建議選「確定」）");
+    if (!confirm("確定刪除會員卡號 " + formatCardDisplay(card) + "？\n（不會刪除訂單）")) return;
     var fetchWriteFn = getFetchWriteFn();
     if (!fetchWriteFn) {
       showMessage("API 未就緒，請重新整理頁面", true);
       return;
     }
-    fetchWriteFn({ action: "member_delete", memberCardNo: card, purgePoints: alsoPurge })
+    fetchWriteFn({ action: "member_delete", memberCardNo: card, purgePoints: false })
       .then(function (r) {
         return r.text().then(function (t) {
           try {
