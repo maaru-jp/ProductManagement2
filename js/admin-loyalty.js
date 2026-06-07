@@ -1,5 +1,5 @@
 /**
- * MAARU 紅利點數 — 消費滿 100 元集 1 點，1 點折 1 元，商品淨額滿 199 元才可折抵，1 年內有效
+ * MAARU 紅利點數 — 消費滿 100 元集 1 點，1 點折 1 元，商品淨額滿 350 元才可折抵，1 年內有效
  * 會員以「13 碼會員卡號」識別；舊資料無卡號時仍可以姓名／電話／Line 對應
  */
 (function (global) {
@@ -9,7 +9,7 @@
   var DEFAULT_CONFIG = {
     spendPerPoint: 100,
     pointValue: 1,
-    minRedeemNet: 199,
+    minRedeemNet: 350,
     expireDays: 365,
     earnStatuses: ["已確認", "已完成"],
   };
@@ -19,7 +19,9 @@
       var raw = localStorage.getItem(CONFIG_KEY);
       if (!raw) return Object.assign({}, DEFAULT_CONFIG);
       var parsed = JSON.parse(raw);
-      return Object.assign({}, DEFAULT_CONFIG, parsed || {});
+      var cfg = Object.assign({}, DEFAULT_CONFIG, parsed || {});
+      cfg.minRedeemNet = DEFAULT_CONFIG.minRedeemNet;
+      return cfg;
     } catch (e) {
       return Object.assign({}, DEFAULT_CONFIG);
     }
