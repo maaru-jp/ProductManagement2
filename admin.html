@@ -575,6 +575,7 @@
           </p>
           <p class="text-xs text-slate-600 mt-2">
             訂單改「已確認」並寫入「歷史訂單」後，系統會<strong>自動同步紅利至「紅利點數」</strong>；若顧客查不到，請至本頁按「同步至試算表」。會員卡號請先在側欄<strong>「會員名單」</strong>確認一人一卡通。
+            <strong class="text-sky-800">進入本頁會自動從試算表重新載入，餘額與會員中心一致。</strong>
           </p>
           <div class="flex flex-wrap gap-2 mt-3">
             <button type="button" id="btnLoyaltyProcessOrders" class="px-3 py-1.5 rounded-lg border border-amber-300 text-sm text-amber-800 hover:bg-amber-50">補處理未發點訂單</button>
@@ -1602,7 +1603,7 @@
   </div>
 
   <script src="js/member-card.js?v=20260607-random"></script>
-  <script src="js/admin-loyalty.js?v=20260607-dedupe"></script>
+  <script src="js/admin-loyalty.js?v=20260607-balance-sync"></script>
   <script src="js/admin-members.js?v=20260607-2"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
   <script>
@@ -1838,7 +1839,17 @@
         }
         else if (sectionId === "sectionLoyalty") {
           setNavActive("navLoyalty");
-          if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+          if (typeof window.loadPointsFromSheet === "function") {
+            window.loadPointsFromSheet()
+              .then(function () {
+                if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+              })
+              .catch(function () {
+                if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+              });
+          } else if (typeof window.renderLoyaltyPanel === "function") {
+            window.renderLoyaltyPanel();
+          }
         }
         else if (sectionId === "sectionPurchases") {
           setNavActive("navPurchases");
@@ -4500,8 +4511,8 @@
               .then(function(res) {
                 if (res && res.error) throw new Error(res.message || "載入失敗");
                 var remote = MaaruLoyalty.normalizeLedgerFromApi(res.ledger || []);
-                var merged = MaaruLoyalty.mergeLedgers(MaaruLoyalty.getLedger(), remote);
-                var bf = backfillLedgerSafe_(merged, orders, true);
+                var cleaned = MaaruLoyalty.normalizeLedgerForDisplay(remote, orders);
+                var bf = backfillLedgerSafe_(cleaned, orders, true);
                 MaaruLoyalty.saveLedger(bf.ledger);
                 return { ledger: bf.ledger, orders: orders };
               });
@@ -4601,6 +4612,10 @@
 
         function renderLoyaltyPanel(orders) {
           orders = orders || loadAdminOrdersForLoyalty_();
+          if (window.MaaruLoyalty && typeof MaaruLoyalty.normalizeLedgerForDisplay === "function") {
+            var cleaned = MaaruLoyalty.normalizeLedgerForDisplay(MaaruLoyalty.getLedger(), orders);
+            MaaruLoyalty.saveLedger(cleaned);
+          }
           MaaruLoyalty.runGlobalExpiry(orders);
           var q = (document.getElementById("loyaltySearchInput") && document.getElementById("loyaltySearchInput").value || "").trim().toLowerCase();
           var qDigits = q.replace(/\D/g, "");
