@@ -3,17 +3,6 @@
  */
 (function (global) {
   var MEMBER_CARD_LENGTH = 13;
-  /** 新卡自動產生：不含 4，非日期格式，一律隨機 13 碼 */
-  var CARD_DIGITS_NO_FOUR = "012356789";
-  var CARD_FIRST_DIGITS_NO_FOUR = "12356789";
-
-  function pickRandomCharFrom(pool) {
-    return pool.charAt(Math.floor(Math.random() * pool.length));
-  }
-
-  function cardContainsForbiddenDigitFour(card) {
-    return String(card || "").indexOf("4") >= 0;
-  }
 
   function normalizeMemberCardNo(card) {
     return String(card || "").replace(/\D/g, "").slice(0, MEMBER_CARD_LENGTH);
@@ -55,11 +44,11 @@
   function generateUniqueMemberCardNo(used) {
     used = used || {};
     for (var attempt = 0; attempt < 300; attempt++) {
-      var digits = pickRandomCharFrom(CARD_FIRST_DIGITS_NO_FOUR);
+      var digits = "";
+      digits += String(1 + Math.floor(Math.random() * 9));
       for (var i = 1; i < MEMBER_CARD_LENGTH; i++) {
-        digits += pickRandomCharFrom(CARD_DIGITS_NO_FOUR);
+        digits += String(Math.floor(Math.random() * 10));
       }
-      if (cardContainsForbiddenDigitFour(digits)) continue;
       if (!used[digits]) return digits;
     }
     throw new Error("無法產生唯一會員卡號，請稍後再試");
@@ -309,7 +298,6 @@
 
   global.MaaruMemberCard = {
     MEMBER_CARD_LENGTH: MEMBER_CARD_LENGTH,
-    CARD_DIGITS_NO_FOUR: CARD_DIGITS_NO_FOUR,
     normalizeMemberCardNo: normalizeMemberCardNo,
     isValidMemberCardNo: isValidMemberCardNo,
     generateUniqueMemberCardNo: generateUniqueMemberCardNo,
