@@ -365,7 +365,7 @@
       memberCardNo = "";
     }
     if (!Array.isArray(orders)) orders = [];
-    var ledger = getLedger();
+    var ledger = normalizeLedgerForDisplay(getLedger(), orders);
     return getActiveLots(ledger, memberCardNo, customerName, phone, lineId, orders).reduce(function (sum, lot) {
       return sum + (Number(lot.remaining) || 0);
     }, 0);
@@ -627,6 +627,61 @@
       ledger: ledger,
       message: msg.length ? msg.join("，") : "",
     };
+  }
+
+  function buildOrderIdIndex_(orders) {
+    var map = {};
+    (orders || []).forEach(function (ord) {
+      var oid = normalizeOrderIdToken_(ord && ord.id);
+      if (oid) map[oid] = true;
+    });
+    return map;
+  }
+
+  /** 剔除 orderId 已不在訂單列表的紅利列（與會員中心 GAS 一致） */
+  function filterOrphanLedgerEntries_(ledger, orders) {
+    var orderIds = buildOrderIdIndex_(orders);
+    return (ledger || []).filter(function (rec) {
+      var oid = normalizeOrderIdToken_(rec && rec.orderId);
+      if (oid && !orderIds[oid]) return false;
+      return true;
+    });
+  }
+
+  /** 同一 orderId 只保留一筆發放（與試算表「合併重複發放」一致） */
+  function dedupeEarnLedgerByOrderId_(ledger) {
+    var earnByOrder = {};
+    (ledger || []).forEach(function (rec, idx) {
+      var type = normalizeLedgerType(rec.type);
+      if (type !== "發放" || Math.floor(Number(rec.points) || 0) <= 0) return;
+      var oid = normalizeOrderIdToken_(rec.orderId);
+      if (!oid) return;
+      if (!earnByOrder[oid]) earnByOrder[oid] = [];
+      earnByOrder[oid].push({ idx: idx, rec: rec });
+    });
+    var dropIdx = {};
+    Object.keys(earnByOrder).forEach(function (oid) {
+      var list = earnByOrder[oid];
+      if (list.length <= 1) return;
+      list.sort(function (a, b) {
+        var pa = String(a.rec.note || "").indexOf("消費滿") >= 0 ? 0 : 1;
+        var pb = String(b.rec.note || "").indexOf("消費滿") >= 0 ? 0 : 1;
+        if (pa !== pb) return pa - pb;
+        return String(a.rec.date || "").localeCompare(String(b.rec.date || ""));
+      });
+      for (var j = 1; j < list.length; j++) dropIdx[list[j].idx] = true;
+    });
+    return (ledger || []).filter(function (_rec, idx) {
+      return !dropIdx[idx];
+    });
+  }
+
+  /** 後台顯示用：對齊試算表／會員中心（去孤兒列、去重複發放） */
+  function normalizeLedgerForDisplay(ledger, orders) {
+    ledger = (ledger || []).slice();
+    ledger = filterOrphanLedgerEntries_(ledger, orders);
+    ledger = dedupeEarnLedgerByOrderId_(ledger);
+    return ledger;
   }
 
   function mergeLedgers(local, remote) {
@@ -897,7 +952,8 @@
 
   function summarizeCustomersWithOrders(ledger, orders) {
     orders = orders || [];
-    var bf = consolidateLedgerMemberCards(ledger || getLedger(), orders, true);
+    ledger = normalizeLedgerForDisplay(ledger || getLedger(), orders);
+    var bf = consolidateLedgerMemberCards(ledger, orders, true);
     ledger = bf.ledger;
     var map = {};
     ledger.forEach(function (rec) {
@@ -1042,6 +1098,9 @@
     summarizeCustomers: summarizeCustomers,
     summarizeCustomersWithOrders: summarizeCustomersWithOrders,
     normalizeLedgerFromApi: normalizeLedgerFromApi,
+    normalizeLedgerForDisplay: normalizeLedgerForDisplay,
+    dedupeEarnLedgerByOrderId_: dedupeEarnLedgerByOrderId_,
+    filterOrphanLedgerEntries_: filterOrphanLedgerEntries_,
     mergeLedgers: mergeLedgers,
     backfillLedgerMemberCards: backfillLedgerMemberCards,
     consolidateLedgerMemberCards: consolidateLedgerMemberCards,
