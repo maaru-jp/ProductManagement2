@@ -210,20 +210,24 @@
     global.open(MYSHIP_EASY_ADD_URL, "_blank", "noopener,noreferrer");
   }
 
-  function copyText_(text) {
-    if (!text) return Promise.reject(new Error("empty"));
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text);
-    }
+  function execCommandCopy_(text) {
     return new Promise(function (resolve, reject) {
       try {
         var ta = document.createElement("textarea");
         ta.value = text;
         ta.setAttribute("readonly", "");
         ta.style.position = "fixed";
-        ta.style.left = "-9999px";
+        ta.style.top = "0";
+        ta.style.left = "0";
+        ta.style.width = "2em";
+        ta.style.height = "2em";
+        ta.style.padding = "0";
+        ta.style.border = "none";
+        ta.style.opacity = "0";
         document.body.appendChild(ta);
+        ta.focus();
         ta.select();
+        ta.setSelectionRange(0, text.length);
         var ok = document.execCommand("copy");
         document.body.removeChild(ta);
         if (ok) resolve();
@@ -232,6 +236,69 @@
         reject(err);
       }
     });
+  }
+
+  function copyFromElement_(el) {
+    return new Promise(function (resolve, reject) {
+      if (!el) {
+        reject(new Error("no element"));
+        return;
+      }
+      try {
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        var sel = global.getSelection();
+        if (!sel) {
+          reject(new Error("no selection"));
+          return;
+        }
+        sel.removeAllRanges();
+        sel.addRange(range);
+        var ok = document.execCommand("copy");
+        sel.removeAllRanges();
+        if (ok) resolve();
+        else reject(new Error("copy failed"));
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  function copyText_(text, sourceEl) {
+    if (!text || !String(text).trim()) return Promise.reject(new Error("empty"));
+    text = String(text);
+    if (sourceEl) {
+      return copyFromElement_(sourceEl).catch(function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(text).catch(function () {
+            return execCommandCopy_(text);
+          });
+        }
+        return execCommandCopy_(text);
+      });
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () {
+        return execCommandCopy_(text);
+      });
+    }
+    return execCommandCopy_(text);
+  }
+
+  function showMyshipToast_(text, isError) {
+    var toaster = document.getElementById("notificationToaster");
+    if (!toaster) return;
+    var toast = document.createElement("div");
+    toast.className = "toast-item " + (isError ? "toast-error text-red-800" : "text-slate-700");
+    toast.setAttribute("role", "alert");
+    toast.textContent = text;
+    toaster.appendChild(toast);
+    setTimeout(function () {
+      toast.classList.add("toast-leaving");
+      setTimeout(function () {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 220);
+    }, 4000);
   }
 
   function initShippingSection(options) {
@@ -273,8 +340,32 @@
     var scriptIncludeShipEl = document.getElementById("myshipScriptIncludeShipping");
     var btnCopyScript = document.getElementById("btnCopyMyshipScript");
     var btnRegenScript = document.getElementById("btnRegenMyshipScript");
+    var copyStatusEl = document.getElementById("myshipScriptCopyStatus");
 
     var currentScriptOrderId = null;
+    var copyBtnDefaultLabel = btnCopyScript ? (btnCopyScript.textContent || "複製腳本") : "複製腳本";
+
+    function setCopyStatus_(text, isError) {
+      if (copyStatusEl) {
+        copyStatusEl.textContent = text || "";
+        copyStatusEl.className = "text-xs mr-auto " + (isError ? "text-red-600" : "text-emerald-700");
+      }
+      if (text) showMyshipToast_(text, !!isError);
+    }
+
+    function flashCopyButton_(ok) {
+      if (!btnCopyScript) return;
+      btnCopyScript.textContent = ok ? "已複製 ✓" : "複製失敗";
+      btnCopyScript.classList.toggle("bg-emerald-600", ok);
+      btnCopyScript.classList.toggle("hover:bg-emerald-700", ok);
+      btnCopyScript.classList.toggle("bg-red-600", !ok);
+      btnCopyScript.classList.toggle("hover:bg-red-700", !ok);
+      setTimeout(function () {
+        btnCopyScript.textContent = copyBtnDefaultLabel;
+        btnCopyScript.classList.remove("bg-red-600", "hover:bg-red-700");
+        btnCopyScript.classList.add("bg-emerald-600", "hover:bg-emerald-700");
+      }, 2200);
+    }
 
     function getFilteredOrders_() {
       var list = getOrders().filter(function (ord) {
@@ -370,6 +461,10 @@
       }
       currentScriptOrderId = orderId;
       updateScriptPreview_(ord);
+      if (copyStatusEl) {
+        copyStatusEl.textContent = "";
+        copyStatusEl.className = "text-xs mr-auto text-slate-500";
+      }
       if (scriptModal) scriptModal.classList.remove("hidden");
     }
 
@@ -404,11 +499,34 @@
     });
     if (btnCopyScript) {
       btnCopyScript.addEventListener("click", function () {
-        var text = scriptCodeEl ? scriptCodeEl.textContent : "";
-        copyText_(text).then(function () {
-          notify("腳本已複製，請到賣貨便快速結帳頁的 Console 貼上執行");
+        var text = scriptCodeEl ? (scriptCodeEl.textContent || scriptCodeEl.innerText || "") : "";
+        if (!String(text).trim() || String(text).indexOf("// 此訂單沒有") === 0) {
+          setCopyStatus_("沒有可複製的腳本內容", true);
+          flashCopyButton_(false);
+          return;
+        }
+        if (copyStatusEl) copyStatusEl.textContent = "複製中…";
+        copyText_(text, scriptCodeEl).then(function () {
+          var msg = "腳本已複製，請到賣貨便快速結帳頁的 Console 貼上執行";
+          setCopyStatus_(msg, false);
+          flashCopyButton_(true);
+          notify(msg);
         }).catch(function () {
-          notify("複製失敗，請手動選取腳本內容複製", true);
+          var msg = "自動複製失敗，請手動選取上方黑底腳本後 Ctrl+C";
+          setCopyStatus_(msg, true);
+          flashCopyButton_(false);
+          notify(msg, true);
+          if (scriptCodeEl) {
+            try {
+              var range = document.createRange();
+              range.selectNodeContents(scriptCodeEl);
+              var sel = global.getSelection();
+              if (sel) {
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            } catch (e) {}
+          }
         });
       });
     }
