@@ -460,11 +460,11 @@
           <ol class="text-sm text-slate-700 space-y-1.5 list-decimal pl-5">
             <li>在下方選擇訂單，按「<strong>產生腳本</strong>」</li>
             <li>按「<strong>複製腳本</strong>」</li>
-            <li>登入 <a href="https://myship.7-11.com.tw/easy/add" target="_blank" rel="noopener noreferrer" class="text-emerald-700 underline">7-ELEVEN 賣貨便 → 快速結帳賣場</a>，等待頁面載入完成</li>
+            <li>登入 <a href="https://myship.7-11.com.tw/fast/add" target="_blank" rel="noopener noreferrer" class="text-emerald-700 underline">7-ELEVEN 賣貨便 → 快速結帳新增頁</a>，先設定運費／日期後再執行腳本</li>
             <li>按 <strong>F12</strong> → <strong>Console</strong>，貼上腳本後按 Enter 自動建立賣場</li>
           </ol>
-          <p class="text-xs text-slate-500 mt-3">腳本會帶入「待出貨」品項的<strong>商品名稱、描述、單價、數量</strong>，並自動填寫賣場名稱。預設為<strong>單一賣場合併全部品項</strong>（一筆訂單一個連結）；若需每品項獨立賣場可改模式。</p>
-          <p class="text-xs text-amber-700 mt-1">若執行後沒反應：請確認已登入、網址為快速結帳新增頁，並在 Console 執行偵測腳本 <code class="bg-amber-50 px-1 rounded">__maaruMyshipProbe()</code> 查看欄位。</p>
+          <p class="text-xs text-slate-500 mt-3">腳本以 <strong>POST /fast/add</strong> 自動建立賣場（與 ToyChain 相同），Console 會列出 <code class="bg-slate-100 px-1 rounded">cart/confirm/GM…</code> 結帳連結。賣場名稱預設為「客戶姓名＋預購」。</p>
+          <p class="text-xs text-amber-700 mt-1">請先在快速結帳頁設定好運費／溫層等預設，腳本會沿用表單設定。若失敗可執行 <code class="bg-amber-50 px-1 rounded">__maaruMyshipProbe()</code> 查看欄位。</p>
         </div>
 
         <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -1558,7 +1558,7 @@
   <script src="js/admin-loyalty.js?v=20260526-disabled"></script>
   <script src="js/admin-members.js?v=20260607-2"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
-  <script src="js/admin-mymship.js?v=20260526-3"></script>
+  <script src="js/admin-mymship.js?v=20260526-4"></script>
   <script>
     (function() {
       // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
