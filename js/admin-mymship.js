@@ -78,9 +78,182 @@
     return rows;
   }
 
+  var MYSHIP_RUNTIME_HELPERS = [
+    "const MYSHIP_ADD_URL = \"" + MYSHIP_EASY_ADD_URL + "\";",
+    "const sleep = (ms) => new Promise((r) => setTimeout(r, ms));",
+    "const norm = (s) => String(s || \"\").replace(/\\s+/g, \"\");",
+    "",
+    "function setNativeInput(el, val) {",
+    "  if (!el) return false;",
+    "  const str = String(val);",
+    "  try {",
+    "    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;",
+    "    const setter = Object.getOwnPropertyDescriptor(proto, \"value\").set;",
+    "    setter.call(el, str);",
+    "  } catch (e) { el.value = str; }",
+    "  el.dispatchEvent(new Event(\"input\", { bubbles: true }));",
+    "  el.dispatchEvent(new Event(\"change\", { bubbles: true }));",
+    "  el.dispatchEvent(new Event(\"blur\", { bubbles: true }));",
+    "  return true;",
+    "}",
+    "",
+    "function isVisible(el) {",
+    "  if (!el || el.disabled || el.readOnly) return false;",
+    "  const st = window.getComputedStyle(el);",
+    "  if (st.display === \"none\" || st.visibility === \"hidden\") return false;",
+    "  return el.offsetParent !== null || st.position === \"fixed\";",
+    "}",
+    "",
+    "function getEditableFields(root) {",
+    "  const scope = root || document;",
+    "  return Array.from(scope.querySelectorAll(\"input, textarea\")).filter((el) => {",
+    "    const type = (el.getAttribute(\"type\") || \"\").toLowerCase();",
+    "    return isVisible(el) && type !== \"hidden\" && type !== \"checkbox\" && type !== \"radio\" && type !== \"file\";",
+    "  });",
+    "}",
+    "",
+    "function fieldBag(el) {",
+    "  const parts = [el.name, el.id, el.placeholder, el.getAttribute(\"aria-label\"), el.getAttribute(\"title\")];",
+    "  const label = el.id ? document.querySelector('label[for=\"' + el.id.replace(/\"/g, \"\") + '\"]') : null;",
+    "  if (label) parts.push(label.textContent);",
+    "  let p = el.parentElement;",
+    "  for (let i = 0; i < 4 && p; i++) { parts.push(p.textContent); p = p.parentElement; }",
+    "  return norm(parts.join(\" \"));",
+    "}",
+    "",
+    "function findFieldIn(scope, keywordsList) {",
+    "  const fields = getEditableFields(scope);",
+    "  for (const keys of keywordsList) {",
+    "    const hit = fields.find((el) => keys.every((k) => fieldBag(el).includes(norm(k))));",
+    "    if (hit) return hit;",
+    "  }",
+    "  return null;",
+    "}",
+    "",
+    "function findClickable(patterns) {",
+    "  const nodes = Array.from(document.querySelectorAll(\"button, a, input[type=button], input[type=submit], span, div\"));",
+    "  for (const re of patterns) {",
+    "    const hit = nodes.find((el) => {",
+    "      const t = norm(el.textContent || el.value || \"\");",
+    "      return re.test(t) && isVisible(el);",
+    "    });",
+    "    if (hit) return hit;",
+    "  }",
+    "  return null;",
+    "}",
+    "",
+    "function findProductBlocks() {",
+    "  const nodes = Array.from(document.querySelectorAll(\"tr, .card, .row, fieldset, form, section, div\"));",
+    "  const blocks = nodes.filter((el) => {",
+    "    const t = norm(el.textContent);",
+    "    return (t.includes(\"商品名稱\") || t.includes(\"品名\") || t.includes(\"商品描述\")) && getEditableFields(el).length >= 2;",
+    "  });",
+    "  if (blocks.length) return blocks;",
+    "  return [document.body];",
+    "}",
+    "",
+    "async function waitFor(fn, timeout, label) {",
+    "  const start = Date.now();",
+    "  while (Date.now() - start < timeout) {",
+    "    try { const v = fn(); if (v) return v; } catch (e) {}",
+    "    await sleep(250);",
+    "  }",
+    "  throw new Error(\"等待逾時：\" + (label || \"欄位\"));",
+    "}",
+    "",
+    "function assertMyshipPage() {",
+    "  const path = (location.pathname || \"\").toLowerCase();",
+    "  const body = norm(document.body ? document.body.innerText : \"\");",
+    "  if (body.includes(\"請先登入\") || body.includes(\"uniopen會員\") && !body.includes(\"商品\")) {",
+    "    throw new Error(\"請先登入賣貨便，並開啟「快速結帳賣場」新增頁：\" + MYSHIP_ADD_URL);",
+    "  }",
+    "  if (!path.includes(\"/easy/\") && !body.includes(\"商品上架\") && !body.includes(\"快速結帳\")) {",
+    "    console.warn(\"[MAARU] 目前網址可能不是快速結帳新增頁，仍嘗試填表…\", location.href);",
+    "  }",
+    "}",
+    "",
+    "async function ensureProductTab() {",
+    "  const tab = findClickable([/商品上架/, /商品設定/]);",
+    "  if (tab) { tab.click(); await sleep(500); }",
+    "}",
+    "",
+    "async function fillStoreName(name) {",
+    "  if (!name) return;",
+    "  const storeEl = await waitFor(() => findFieldIn(document, [[\"賣場名稱\"], [\"賣場\", \"名稱\"]]), 8000, \"賣場名稱\");",
+    "  setNativeInput(storeEl, name);",
+    "}",
+    "",
+    "function fillProductInBlock(block, item) {",
+    "  const nameEl = findFieldIn(block, [[\"商品名稱\"], [\"品名\"], [\"商品\", \"名稱\"]]);",
+    "  const descEl = findFieldIn(block, [[\"商品描述\"], [\"描述\"], [\"介紹\"]]);",
+    "  const priceEl = findFieldIn(block, [[\"售價\"], [\"價格\"], [\"金額\"], [\"單價\"]]);",
+    "  const qtyEl = findFieldIn(block, [[\"數量\"], [\"庫存\"]]);",
+    "  const okName = setNativeInput(nameEl, item.name);",
+    "  const okDesc = descEl ? setNativeInput(descEl, item.desc || item.name) : true;",
+    "  const okPrice = setNativeInput(priceEl, item.price);",
+    "  const okQty = setNativeInput(qtyEl, item.qty);",
+    "  console.log(\"[MAARU] 填寫\", item.name, { okName, okDesc, okPrice, okQty });",
+    "  if (!okName || !okPrice || !okQty) throw new Error(\"找不到商品欄位，請切到「商品上架」分頁後再執行。品項：\" + item.name);",
+    "  return true;",
+    "}",
+    "",
+    "async function clickAddProduct() {",
+    "  const btn = findClickable([/繼續新增商品/, /新增商品/, /再加一筆/]);",
+    "  if (!btn) return false;",
+    "  btn.click();",
+    "  await sleep(700);",
+    "  return true;",
+    "}",
+    "",
+    "async function clickSubmit() {",
+    "  const btn = findClickable([/上架完成/, /確認上架/, /^上架$/]);",
+    "  if (!btn) throw new Error(\"找不到「上架／上架完成」按鈕\");",
+    "  btn.click();",
+    "  await sleep(1200);",
+    "  const okBtn = findClickable([/^確定$/, /^確認$/, /^是$/, /確定上架/]);",
+    "  if (okBtn) { okBtn.click(); await sleep(800); }",
+    "}",
+    "",
+    "async function prepareNextStore() {",
+    "  await sleep(2000);",
+    "  if ((location.pathname || \"\").toLowerCase().indexOf(\"/easy/add\") < 0) {",
+    "    location.assign(MYSHIP_ADD_URL);",
+    "    await waitFor(() => norm(document.body.innerText).includes(\"商品\") || getEditableFields().length > 3, 20000, \"下一個賣場頁面\");",
+    "  }",
+    "  await ensureProductTab();",
+    "}",
+    "",
+    "async function fillForm(item, blockIndex) {",
+    "  await ensureProductTab();",
+    "  const blocks = findProductBlocks();",
+    "  const idx = blockIndex != null ? blockIndex : (blocks.length - 1);",
+    "  fillProductInBlock(blocks[idx] || document.body, item);",
+    "  await sleep(300);",
+    "}",
+    "",
+    "async function submit() {",
+    "  await clickSubmit();",
+    "  await sleep(2500);",
+    "}",
+    "",
+    "window.__maaruMyshipProbe = function () {",
+    "  console.log(\"[MAARU] 頁面\", location.href);",
+    "  getEditableFields().forEach((el, i) => console.log(i, fieldBag(el), el));",
+    "  console.log(\"[MAARU] 商品區塊數\", findProductBlocks().length);",
+    "};"
+  ].join("\n");
+
+  function buildMyshipProbeScript_() {
+    return [
+      "// MAARU 賣貨便欄位偵測（請在快速結帳新增頁 Console 執行）",
+      MYSHIP_RUNTIME_HELPERS,
+      "__maaruMyshipProbe();"
+    ].join("\n");
+  }
+
   function buildMyshipConsoleScript_(ord, options) {
     options = options || {};
-    var mode = options.mode === "single" ? "single" : "perItem";
+    var mode = options.mode === "perItem" ? "perItem" : "single";
     var items = buildMyshipScriptItems_(ord, options);
     if (!items.length) return "";
 
@@ -93,115 +266,49 @@
     lines.push("// MAARU 賣貨便批次建單 — " + (ord.id || "") + (customer ? " " + customer : ""));
     lines.push("// 待出貨品項 " + items.length + " 筆 · 建議運費 NT$" + shipFee + (ord.shippingStatus ? "（本單已折抵）" : ""));
     lines.push("//");
-    lines.push("// 使用方式：");
-    lines.push("// 1. 登入 7-ELEVEN 賣貨便");
-    lines.push("// 2. 進入「快速結帳賣場」新增頁並等待載入完成");
-    lines.push("//    " + MYSHIP_EASY_ADD_URL);
-    lines.push("// 3. 按 F12 → Console，貼上本腳本後 Enter");
+    lines.push("// ⚠ 執行前請確認：");
+    lines.push("// 1. 已登入賣貨便");
+    lines.push("// 2. 網址為快速結帳「新增賣場」頁 → " + MYSHIP_EASY_ADD_URL);
+    lines.push("// 3. 建議先切到「商品上架」分頁，或讓腳本自動點擊");
+    lines.push("// 4. 若失敗，在 Console 執行 __maaruMyshipProbe() 查看欄位");
     lines.push("");
-    lines.push("const sleep = (ms) => new Promise((r) => setTimeout(r, ms));");
+    lines.push(MYSHIP_RUNTIME_HELPERS);
     lines.push("");
-    lines.push("function setInput(el, val) {");
-    lines.push("  if (!el) return false;");
-    lines.push("  el.focus();");
-    lines.push("  el.value = String(val);");
-    lines.push("  el.dispatchEvent(new Event('input', { bubbles: true }));");
-    lines.push("  el.dispatchEvent(new Event('change', { bubbles: true }));");
-    lines.push("  return true;");
-    lines.push("}");
-    lines.push("");
-    lines.push("function findInputByLabel(text) {");
-    lines.push("  const nodes = Array.from(document.querySelectorAll('label, span, div, th, p'));");
-    lines.push("  for (const node of nodes) {");
-    lines.push("    const t = (node.textContent || '').replace(/\\s+/g, '');");
-    lines.push("    if (!t || t.indexOf(text) < 0) continue;");
-    lines.push("    const box = node.closest('tr, li, .form-group, .row, [class*=\"item\"], [class*=\"product\"]') || node.parentElement;");
-    lines.push("    if (!box) continue;");
-    lines.push("    const inp = box.querySelector('input:not([type=\"hidden\"]):not([type=\"checkbox\"]):not([type=\"radio\"])');");
-    lines.push("    if (inp) return inp;");
-    lines.push("  }");
-    lines.push("  return null;");
-    lines.push("}");
-    lines.push("");
-    lines.push("function getProductRows() {");
-    lines.push("  const byClass = Array.from(document.querySelectorAll('[class*=\"product\"], [class*=\"item\"], tr'));");
-    lines.push("  const rows = byClass.filter((row) => row.querySelector('input') && /商品|品名|名稱/.test(row.textContent || ''));");
-    lines.push("  if (rows.length) return rows;");
-    lines.push("  return [document];");
-    lines.push("}");
-    lines.push("");
-    lines.push("function fillProductInRow(row, item) {");
-    lines.push("  const scope = row || document;");
-    lines.push("  const nameEl = scope.querySelector('input[name*=\"Name\" i], input[placeholder*=\"商品\"], input[placeholder*=\"名稱\"]')");
-    lines.push("    || findInputByLabel('商品名稱') || findInputByLabel('品名');");
-    lines.push("  const priceEl = scope.querySelector('input[name*=\"Price\" i], input[name*=\"price\"], input[placeholder*=\"價\"], input[placeholder*=\"金額\"]')");
-    lines.push("    || findInputByLabel('售價') || findInputByLabel('價格') || findInputByLabel('金額');");
-    lines.push("  const qtyEl = scope.querySelector('input[name*=\"Qty\" i], input[name*=\"qty\"], input[name*=\"Count\" i], input[placeholder*=\"數量\"]')");
-    lines.push("    || findInputByLabel('數量');");
-    lines.push("  const okName = setInput(nameEl, item.name);");
-    lines.push("  const okPrice = setInput(priceEl, item.price);");
-    lines.push("  const okQty = setInput(qtyEl, item.qty);");
-    lines.push("  if (!okName || !okPrice || !okQty) {");
-    lines.push("    console.warn('部分欄位未找到，請確認目前在「快速結帳」商品上架區：', item);");
-    lines.push("  }");
-    lines.push("  return okName && okPrice && okQty;");
-    lines.push("}");
-    lines.push("");
-    lines.push("function clickAddProduct() {");
-    lines.push("  const btn = Array.from(document.querySelectorAll('button, a, span, div'))");
-    lines.push("    .find((el) => /繼續新增商品|新增商品|再加一筆/.test((el.textContent || '').trim()));");
-    lines.push("  if (btn) { btn.click(); return true; }");
-    lines.push("  return false;");
-    lines.push("}");
-    lines.push("");
-    lines.push("function clickSubmit() {");
-    lines.push("  const btn = Array.from(document.querySelectorAll('button, a, input[type=\"button\"], input[type=\"submit\"]'))");
-    lines.push("    .find((el) => /上架完成|確認上架|建立賣場|^上架$|完成/.test((el.textContent || el.value || '').trim()));");
-    lines.push("  if (btn) { btn.click(); return true; }");
-    lines.push("  console.warn('找不到上架按鈕，請手動點「上架」');");
-    lines.push("  return false;");
-    lines.push("}");
-    lines.push("");
-    lines.push("async function fillForm(item) {");
-    lines.push("  const rows = getProductRows();");
-    lines.push("  const row = rows[rows.length - 1] || document;");
-    lines.push("  fillProductInRow(row, item);");
-    lines.push("  const storeName = \"" + escapeJsString_(storeName) + "\";");
-    lines.push("  const storeInput = findInputByLabel('賣場名稱') || document.querySelector('input[name*=\"Store\" i], input[placeholder*=\"賣場\"]');");
-    lines.push("  if (storeInput && storeName) setInput(storeInput, storeName);");
-    lines.push("  await sleep(300);");
-    lines.push("}");
-    lines.push("");
-    lines.push("async function submit() {");
-    lines.push("  clickSubmit();");
-    lines.push("  await sleep(2500);");
-    lines.push("}");
-    lines.push("");
+    lines.push("const STORE_NAME = \"" + escapeJsString_(storeName) + "\";");
     lines.push("const items = [");
     for (i = 0; i < items.length; i++) {
       var row = items[i];
-      lines.push("  { name: \"" + escapeJsString_(row.name) + "\", price: " + row.price + ", qty: " + row.qty + " }" + (i < items.length - 1 ? "," : ""));
+      lines.push("  { name: \"" + escapeJsString_(row.name) + "\", desc: \"" + escapeJsString_(row.name) + "\", price: " + row.price + ", qty: " + row.qty + " }" + (i < items.length - 1 ? "," : ""));
     }
     lines.push("];");
     lines.push("");
     lines.push("(async () => {");
+    lines.push("  try {");
+    lines.push("    assertMyshipPage();");
+    lines.push("    await fillStoreName(STORE_NAME);");
     if (mode === "single") {
-      lines.push("  console.log('開始建立單一賣場（合併 " + items.length + " 品項）…');");
-      lines.push("  for (let i = 0; i < items.length; i++) {");
-      lines.push("    if (i > 0) { clickAddProduct(); await sleep(600); }");
-      lines.push("    await fillForm(items[i]);");
-      lines.push("  }");
-      lines.push("  await submit();");
-      lines.push("  console.log('✓ 已提交 1 個賣場（含 ' + items.length + ' 品項）');");
-    } else {
-      lines.push("  console.log('開始批次建立賣場（每品項一賣場）…');");
-      lines.push("  for (const item of items) {");
-      lines.push("    await fillForm(item);");
+      lines.push("    console.log(\"[MAARU] 單一賣場模式，共 \" + items.length + \" 品項\");");
+      lines.push("    for (let i = 0; i < items.length; i++) {");
+      lines.push("      if (i > 0) await clickAddProduct();");
+      lines.push("      await fillForm(items[i], i);");
+      lines.push("    }");
       lines.push("    await submit();");
-      lines.push("    await sleep(1500);");
-      lines.push("  }");
-      lines.push("  console.log('✓ 已建立 ' + items.length + ' 個賣場');");
+      lines.push("    console.log(\"✓ 已提交 1 個賣場（\" + items.length + \" 品項）\");");
+    } else {
+      lines.push("    console.log(\"[MAARU] 每品項一賣場模式\");");
+      lines.push("    for (let i = 0; i < items.length; i++) {");
+      lines.push("      if (i > 0) await prepareNextStore();");
+      lines.push("      await fillStoreName(STORE_NAME);");
+      lines.push("      await fillForm(items[i], 0);");
+      lines.push("      await submit();");
+      lines.push("      console.log(\"✓ 已建立第 \" + (i + 1) + \" 個賣場：\" + items[i].name);");
+      lines.push("    }");
+      lines.push("    console.log(\"✓ 全部完成，共 \" + items.length + \" 個賣場\");");
     }
+    lines.push("  } catch (err) {");
+    lines.push("    console.error(\"[MAARU] 腳本失敗\", err);");
+    lines.push("    alert(\"賣貨便腳本失敗：\" + (err && err.message ? err.message : err));");
+    lines.push("  }");
     lines.push("})();");
     return lines.join("\n");
   }
@@ -339,6 +446,7 @@
     var scriptModeEl = document.getElementById("myshipScriptMode");
     var scriptIncludeShipEl = document.getElementById("myshipScriptIncludeShipping");
     var btnCopyScript = document.getElementById("btnCopyMyshipScript");
+    var btnCopyProbe = document.getElementById("btnCopyMyshipProbe");
     var btnRegenScript = document.getElementById("btnRegenMyshipScript");
     var copyStatusEl = document.getElementById("myshipScriptCopyStatus");
 
@@ -497,6 +605,18 @@
       updateScriptPreview_(ord);
       notify("已更新腳本預覽");
     });
+    if (btnCopyProbe) {
+      btnCopyProbe.addEventListener("click", function () {
+        var probe = buildMyshipProbeScript_();
+        copyText_(probe).then(function () {
+          setCopyStatus_("偵測腳本已複製。請在賣貨便快速結帳頁 Console 貼上執行，會列出所有可填欄位。", false);
+          flashCopyButton_(true);
+        }).catch(function () {
+          setCopyStatus_("複製偵測腳本失敗，請手動選取複製", true);
+          flashCopyButton_(false);
+        });
+      });
+    }
     if (btnCopyScript) {
       btnCopyScript.addEventListener("click", function () {
         var text = scriptCodeEl ? (scriptCodeEl.textContent || scriptCodeEl.innerText || "") : "";
@@ -544,6 +664,7 @@
     isMyshipShippingMethod_: isMyshipShippingMethod_,
     getPendingShipItems_: getPendingShipItems_,
     buildMyshipConsoleScript_: buildMyshipConsoleScript_,
+    buildMyshipProbeScript_: buildMyshipProbeScript_,
     openMyshipEasyAdd_: openMyshipEasyAdd_,
     initShippingSection: initShippingSection
   };
