@@ -221,6 +221,7 @@
         <nav class="p-2 flex-1 flex flex-col justify-center">
           <a href="#" id="navReports" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="總覽報表"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span><span class="nav-text">總覽報表</span></a>
           <a href="#" id="navOrders" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="訂單管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span><span class="nav-text">訂單管理</span></a>
+          <a href="#" id="navShipping" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="出貨管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16h6"/><path d="M19 13v6"/><rect x="2" y="7" width="14" height="10" rx="2"/><path d="M6 7V5a2 2 0 0 1 2-2h2"/><path d="M2 11h14"/></svg></span><span class="nav-text">出貨管理</span></a>
           <a href="#" id="navMembers" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="會員名單"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="nav-text">會員名單</span></a>
           <a href="#" id="navProducts" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-sm bg-white/10 active" title="商品管理"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span><span class="nav-text">商品管理</span></a>
           <a href="#" id="navLayout" class="nav-item flex items-center gap-3 py-2.5 px-3 rounded text-slate-300 hover:bg-white/10 text-sm" title="首頁排版"><span class="nav-icon shrink-0 w-5 h-5 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span><span class="nav-text">首頁排版</span></a>
@@ -437,6 +438,64 @@
           <div class="text-sm text-slate-700 space-y-2">
             <p><strong>產生 PDF：</strong>每筆訂單「操作」欄 → 列印視窗選「另存為 PDF」。僅含「待出貨」品項；<strong>併箱出貨</strong>可產生併箱 PDF 或於<strong>顧客總覽</strong>操作。</p>
             <p><strong>狀態：</strong><strong>已確認</strong>＝金額定案 · <strong>出貨中／PDF</strong>＝出貨作業 · <strong>已完成</strong>＝結案。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 出貨管理 -->
+      <section id="sectionShipping" class="hidden">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
+          <h2 class="text-xl font-semibold text-slate-800 section-title-with-icon">
+            <svg class="section-title-icon text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16h6"/><path d="M19 13v6"/><rect x="2" y="7" width="14" height="10" rx="2"/><path d="M6 7V5a2 2 0 0 1 2-2h2"/><path d="M2 11h14"/></svg>
+            出貨管理
+          </h2>
+          <div class="flex flex-wrap gap-2 shrink-0">
+            <button type="button" id="btnOpenMyshipEasyAdd" class="px-4 py-2 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-sm hover:bg-emerald-100">開啟賣貨便快速結帳</button>
+            <button type="button" id="btnShippingRefresh" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">重新整理</button>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 mb-6">
+          <p class="text-sm font-semibold text-emerald-900 mb-2">賣貨便批次建單流程</p>
+          <ol class="text-sm text-slate-700 space-y-1.5 list-decimal pl-5">
+            <li>在下方選擇訂單，按「<strong>產生腳本</strong>」</li>
+            <li>按「<strong>複製腳本</strong>」</li>
+            <li>登入 <a href="https://myship.7-11.com.tw/easy/add" target="_blank" rel="noopener noreferrer" class="text-emerald-700 underline">7-ELEVEN 賣貨便 → 快速結帳賣場</a>，等待頁面載入完成</li>
+            <li>按 <strong>F12</strong> → <strong>Console</strong>，貼上腳本後按 Enter 自動建立賣場</li>
+          </ol>
+          <p class="text-xs text-slate-500 mt-3">腳本會帶入「待出貨」品項的名稱、單價、數量。預設為每品項建立一個賣場（與 ToyChain 腳本相同）；亦可改為單一賣場合併品項。</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+          <input type="text" id="shippingSearchInput" placeholder="搜尋訂單編號、客戶姓名…" class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" id="shippingOnlyPending" class="rounded border-slate-300" checked />
+            僅顯示有待出貨品項
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" id="shippingOnlyMyship" class="rounded border-slate-300" />
+            僅顯示賣貨便運送
+          </label>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">訂單編號</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">客戶</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">運送方式</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">待出貨品項</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600">待結清</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600 whitespace-nowrap">操作</th>
+                </tr>
+              </thead>
+              <tbody id="shippingTableBody">
+                <tr><td colspan="7" class="py-12 text-center text-slate-500">載入中…</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -1408,6 +1467,52 @@
     </div>
   </div>
 
+  <!-- 賣貨便建單腳本 Modal -->
+  <div id="myshipScriptModal" class="fixed inset-0 z-[65] hidden">
+    <div class="absolute inset-0 bg-black/50" id="myshipScriptModalBackdrop" aria-hidden="true"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="p-4 border-b border-slate-200 flex items-center justify-between shrink-0">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-800">賣貨便建單腳本</h3>
+            <p id="myshipScriptMeta" class="text-xs text-slate-500 mt-0.5"></p>
+          </div>
+          <button type="button" id="myshipScriptModalClose" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="關閉">✕</button>
+        </div>
+        <div class="p-4 flex-1 min-h-0 overflow-y-auto space-y-3">
+          <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+            <p class="font-medium text-slate-800 mb-1">使用方式</p>
+            <ol class="list-decimal list-inside space-y-1 text-xs leading-relaxed">
+              <li>登入 7-ELEVEN 賣貨便</li>
+              <li>進入「快速結帳賣場」頁面並等待載入完成</li>
+              <li>按 F12 開啟開發者工具 → Console 分頁</li>
+              <li>貼上下方腳本後按 Enter 執行</li>
+            </ol>
+          </div>
+          <div class="flex flex-wrap items-center gap-3 text-sm">
+            <label class="inline-flex items-center gap-2 text-slate-700">
+              <span class="text-slate-600">建單模式</span>
+              <select id="myshipScriptMode" class="rounded-lg border border-slate-300 px-2 py-1 text-sm bg-white">
+                <option value="perItem">每品項一賣場（預設）</option>
+                <option value="single">單一賣場合併品項</option>
+              </select>
+            </label>
+            <label class="inline-flex items-center gap-2 text-slate-700">
+              <input type="checkbox" id="myshipScriptIncludeShipping" class="rounded border-slate-300" />
+              另加一筆「運費」品項
+            </label>
+            <button type="button" id="btnRegenMyshipScript" class="px-2 py-1 rounded border border-slate-300 text-xs text-slate-600 hover:bg-slate-50">更新預覽</button>
+          </div>
+          <pre id="myshipScriptCode" class="rounded-lg bg-slate-900 text-emerald-300 text-xs leading-relaxed p-4 overflow-x-auto max-h-[42vh] whitespace-pre-wrap font-mono"></pre>
+        </div>
+        <div class="p-4 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+          <button type="button" id="myshipScriptModalCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm hover:bg-slate-50">關閉</button>
+          <button type="button" id="btnCopyMyshipScript" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">複製腳本</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 顧客訂單總覽 Modal -->
   <div id="customerOverviewModal" class="fixed inset-0 z-[60] hidden">
     <div class="absolute inset-0 bg-black/50" id="customerOverviewBackdrop" aria-hidden="true"></div>
@@ -1450,6 +1555,7 @@
   <script src="js/admin-loyalty.js?v=20260526-disabled"></script>
   <script src="js/admin-members.js?v=20260607-2"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
+  <script src="js/admin-mymship.js?v=20260526-1"></script>
   <script>
     (function() {
       // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
@@ -1660,6 +1766,7 @@
         var reportsSection = document.getElementById("sectionReports");
         var productsSection = document.getElementById("sectionProducts");
         var ordersSection = document.getElementById("sectionOrders");
+        var shippingSection = document.getElementById("sectionShipping");
         var membersSection = document.getElementById("sectionMembers");
         var purchasesSection = document.getElementById("sectionPurchases");
         var layoutSection = document.getElementById("sectionLayout");
@@ -1667,12 +1774,19 @@
         if (reportsSection) reportsSection.classList.toggle("hidden", sectionId !== "sectionReports");
         if (productsSection) productsSection.classList.toggle("hidden", sectionId !== "sectionProducts");
         if (ordersSection) ordersSection.classList.toggle("hidden", sectionId !== "sectionOrders");
+        if (shippingSection) shippingSection.classList.toggle("hidden", sectionId !== "sectionShipping");
         if (membersSection) membersSection.classList.toggle("hidden", sectionId !== "sectionMembers");
         if (purchasesSection) purchasesSection.classList.toggle("hidden", sectionId !== "sectionPurchases");
         if (layoutSection) layoutSection.classList.toggle("hidden", sectionId !== "sectionLayout");
         if (settingsSection) settingsSection.classList.toggle("hidden", sectionId !== "sectionSettings");
         if (sectionId === "sectionReports") setNavActive("navReports");
         else if (sectionId === "sectionOrders") setNavActive("navOrders");
+        else if (sectionId === "sectionShipping") {
+          setNavActive("navShipping");
+          if (window.__maaruShippingPanel && typeof window.__maaruShippingPanel.render === "function") {
+            window.__maaruShippingPanel.render();
+          }
+        }
         else if (sectionId === "sectionMembers") {
           setNavActive("navMembers");
           if (window.MaaruMembers && typeof MaaruMembers.loadPanel === "function") {
@@ -1829,6 +1943,7 @@
         updateReportKPI();
       });
       document.getElementById("navOrders").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionOrders"); });
+      document.getElementById("navShipping").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionShipping"); });
       document.getElementById("navMembers").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionMembers"); });
       document.getElementById("navProducts").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionProducts"); });
       document.getElementById("navLayout").addEventListener("click", function(e) { e.preventDefault(); showSection("sectionLayout"); });
@@ -7348,12 +7463,30 @@
         if (typeof window.init711StorePicker === "function") {
           window.init711StorePicker({
             shippingMethodEl: document.getElementById("orderShippingMethod"),
-            storeNameEl: document.getElementById("orderStoreName"),
-            storeIdEl: document.getElementById("orderStoreId"),
-            addressEl: document.getElementById("orderAddress"),
             notify: showOrderMessage
           });
         }
+        if (window.MaaruMyship && typeof MaaruMyship.initShippingSection === "function") {
+          window.__maaruShippingPanel = MaaruMyship.initShippingSection({
+            getOrders: function() { return orders; },
+            orderAmountDue: orderAmountDue,
+            escapeHtml: escapeHtml,
+            notify: showOrderMessage,
+            openOrder: function(id) {
+              var ord = orders.find(function(o) { return String(o.id || "").trim() === String(id || "").trim(); });
+              if (!ord) return;
+              showSection("sectionOrders");
+              openOrderModal(ord);
+            }
+          });
+        }
+        var _renderOrdersBase = renderOrders;
+        renderOrders = function() {
+          _renderOrdersBase();
+          if (window.__maaruShippingPanel && typeof window.__maaruShippingPanel.render === "function") {
+            window.__maaruShippingPanel.render();
+          }
+        };
         renderOrders();
         if (!ORDER_LOCAL_ONLY) {
           verifyShopApiBinding_().then(function(ok) {
