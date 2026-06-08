@@ -1,11 +1,13 @@
 /**
  * 後台出貨管理：7-ELEVEN 賣貨便快速結帳 Console 建單腳本
- * https://myship.7-11.com.tw/easy/add
+ * POST https://myship.7-11.com.tw/fast/add（與 ToyChain 相同方式）
  */
 (function (global) {
   "use strict";
 
-  var MYSHIP_EASY_ADD_URL = "https://myship.7-11.com.tw/easy/add";
+  var MYSHIP_FAST_ADD_URL = "https://myship.7-11.com.tw/fast/add";
+  var MYSHIP_CONFIRM_BASE = "https://myship.7-11.com.tw/cart/confirm/";
+  var MYSHIP_EASY_ADD_URL = MYSHIP_FAST_ADD_URL;
 
   function escapeJsString_(s) {
     return String(s == null ? "" : s)
@@ -78,168 +80,147 @@
     return rows;
   }
 
+  function buildMyshipStoreName_(ord) {
+    var customer = (ord && (ord.customerName || ord.name) || "").trim();
+    var id = (ord && ord.id) ? String(ord.id).trim() : "";
+    if (customer) return customer + "預購";
+    if (id) return id + "預購";
+    return "MAARU預購";
+  }
+
+  function buildMyshipStoresFromOrder_(ord, options) {
+    options = options || {};
+    var mode = options.mode === "perItem" ? "perItem" : "single";
+    var items = buildMyshipScriptItems_(ord, options).map(function (it) {
+      return { name: it.name, desc: it.name, price: it.price, qty: it.qty };
+    });
+    if (!items.length) return [];
+    var baseName = buildMyshipStoreName_(ord);
+    if (mode === "perItem") {
+      return items.map(function (it) {
+        return { name: baseName, items: [it] };
+      });
+    }
+    return [{ name: baseName, items: items }];
+  }
+
   var MYSHIP_RUNTIME_HELPERS = [
-    "const MYSHIP_ADD_URL = \"" + MYSHIP_EASY_ADD_URL + "\";",
-    "const sleep = (ms) => new Promise((r) => setTimeout(r, ms));",
+    "const MYSHIP_FAST_URL = \"" + MYSHIP_FAST_ADD_URL + "\";",
+    "const MYSHIP_CONFIRM_BASE = \"" + MYSHIP_CONFIRM_BASE + "\";",
     "const norm = (s) => String(s || \"\").replace(/\\s+/g, \"\");",
     "",
-    "function setNativeInput(el, val) {",
-    "  if (!el) return false;",
-    "  const str = String(val);",
-    "  try {",
-    "    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;",
-    "    const setter = Object.getOwnPropertyDescriptor(proto, \"value\").set;",
-    "    setter.call(el, str);",
-    "  } catch (e) { el.value = str; }",
-    "  el.dispatchEvent(new Event(\"input\", { bubbles: true }));",
-    "  el.dispatchEvent(new Event(\"change\", { bubbles: true }));",
-    "  el.dispatchEvent(new Event(\"blur\", { bubbles: true }));",
-    "  return true;",
+    "function getMainForm() {",
+    "  return document.querySelector('form[action*=\"fast\" i], form[action*=\"Fast\" i], form[method=\"post\"]');",
     "}",
     "",
-    "function isVisible(el) {",
-    "  if (!el || el.disabled || el.readOnly) return false;",
-    "  const st = window.getComputedStyle(el);",
-    "  if (st.display === \"none\" || st.visibility === \"hidden\") return false;",
-    "  return el.offsetParent !== null || st.position === \"fixed\";",
+    "function isProductIndexedField(name) {",
+    "  return name && /\\[\\d+\\]/.test(name) && /product|detail|item|goods|commodity|品項|商品/i.test(name);",
     "}",
     "",
-    "function getEditableFields(root) {",
-    "  const scope = root || document;",
-    "  return Array.from(scope.querySelectorAll(\"input, textarea\")).filter((el) => {",
-    "    const type = (el.getAttribute(\"type\") || \"\").toLowerCase();",
-    "    return isVisible(el) && type !== \"hidden\" && type !== \"checkbox\" && type !== \"radio\" && type !== \"file\";",
-    "  });",
+    "function getIndexedSampleFields(form) {",
+    "  const names = Array.from(form.querySelectorAll('input[name], textarea[name], select[name]'))",
+    "    .map((el) => el.name)",
+    "    .filter((n) => /\\[0\\]/.test(n));",
+    "  return names;",
     "}",
     "",
-    "function fieldBag(el) {",
-    "  const parts = [el.name, el.id, el.placeholder, el.getAttribute(\"aria-label\"), el.getAttribute(\"title\")];",
-    "  const label = el.id ? document.querySelector('label[for=\"' + el.id.replace(/\"/g, \"\") + '\"]') : null;",
-    "  if (label) parts.push(label.textContent);",
-    "  let p = el.parentElement;",
-    "  for (let i = 0; i < 4 && p; i++) { parts.push(p.textContent); p = p.parentElement; }",
-    "  return norm(parts.join(\" \"));",
-    "}",
-    "",
-    "function findFieldIn(scope, keywordsList) {",
-    "  const fields = getEditableFields(scope);",
-    "  for (const keys of keywordsList) {",
-    "    const hit = fields.find((el) => keys.every((k) => fieldBag(el).includes(norm(k))));",
-    "    if (hit) return hit;",
-    "  }",
+    "function classifyField(name) {",
+    "  const n = String(name || \"\").toLowerCase();",
+    "  if (/name|品名|productname|goodsname|title/.test(n) && !/store|shop|username|filename/.test(n)) return \"name\";",
+    "  if (/desc|description|介紹|描述|remark|memo|content/.test(n)) return \"desc\";",
+    "  if (/price|amount|售價|金額|單價|saleprice/.test(n) && !/ship|運|fee/.test(n)) return \"price\";",
+    "  if (/qty|quantity|數量|count|buy/.test(n)) return \"qty\";",
+    "  if (/stock|庫存|inventory/.test(n)) return \"stock\";",
     "  return null;",
     "}",
     "",
-    "function findClickable(patterns) {",
-    "  const nodes = Array.from(document.querySelectorAll(\"button, a, input[type=button], input[type=submit], span, div\"));",
-    "  for (const re of patterns) {",
-    "    const hit = nodes.find((el) => {",
-    "      const t = norm(el.textContent || el.value || \"\");",
-    "      return re.test(t) && isVisible(el);",
+    "let __maaruLastToken = \"\";",
+    "",
+    "function extractTokenFromHtml(html) {",
+    "  const m = String(html || \"\").match(/name=[\"']__RequestVerificationToken[\"'][^>]*value=[\"']([^\"']+)[\"']/i);",
+    "  return m ? m[1] : \"\";",
+    "}",
+    "",
+    "function syncTokenFromDom() {",
+    "  const el = document.querySelector('input[name=\"__RequestVerificationToken\"]');",
+    "  if (el && el.value) __maaruLastToken = el.value;",
+    "}",
+    "",
+    "function buildFD(store) {",
+    "  const form = getMainForm();",
+    "  if (!form) throw new Error(\"找不到表單。請在 \" + MYSHIP_FAST_URL + \" 頁面執行（須已登入）\");",
+    "  syncTokenFromDom();",
+    "  const fd = new FormData();",
+    "  form.querySelectorAll(\"input, textarea, select\").forEach((el) => {",
+    "    if (el.name === \"__RequestVerificationToken\") return;",
+    "    if (!el.name) return;",
+    "    if (isProductIndexedField(el.name)) return;",
+    "    const type = (el.type || \"\").toLowerCase();",
+    "    if (type === \"file\") return;",
+    "    if (type === \"checkbox\" || type === \"radio\") {",
+    "      if (el.checked) fd.append(el.name, el.value);",
+    "      return;",
+    "    }",
+    "    fd.append(el.name, el.value);",
+    "  });",
+    "  if (__maaruLastToken) fd.set(\"__RequestVerificationToken\", __maaruLastToken);",
+    "  const storeKeys = [\"StoreName\", \"storeName\", \"ShopName\", \"MarketName\", \"Title\"];",
+    "  let storeSet = false;",
+    "  storeKeys.forEach((key) => {",
+    "    if (form.querySelector('[name=\"' + key + '\"]')) {",
+    "      fd.set(key, store.name);",
+    "      storeSet = true;",
+    "    }",
+    "  });",
+    "  if (!storeSet) {",
+    "    const storeEl = Array.from(form.querySelectorAll(\"input, textarea\")).find((el) => {",
+    "      const bag = norm(el.name + el.id + (el.placeholder || \"\"));",
+    "      return bag.includes(\"賣場\") && bag.includes(\"名稱\");",
     "    });",
-    "    if (hit) return hit;",
+    "    if (storeEl && storeEl.name) fd.set(storeEl.name, store.name);",
+    "    else fd.set(\"StoreName\", store.name);",
     "  }",
-    "  return null;",
-    "}",
-    "",
-    "function findProductBlocks() {",
-    "  const nodes = Array.from(document.querySelectorAll(\"tr, .card, .row, fieldset, form, section, div\"));",
-    "  const blocks = nodes.filter((el) => {",
-    "    const t = norm(el.textContent);",
-    "    return (t.includes(\"商品名稱\") || t.includes(\"品名\") || t.includes(\"商品描述\")) && getEditableFields(el).length >= 2;",
+    "  const samples = getIndexedSampleFields(form);",
+    "  if (!samples.length) throw new Error(\"找不到商品欄位範本。請確認在快速結帳新增頁且表單已載入\");",
+    "  store.items.forEach((item, i) => {",
+    "    const used = new Set();",
+    "    samples.forEach((sample) => {",
+    "      const field = sample.replace(/\\[0\\]/g, \"[\" + i + \"]\");",
+    "      if (used.has(field)) return;",
+    "      const kind = classifyField(field);",
+    "      if (kind === \"name\") fd.append(field, item.name);",
+    "      else if (kind === \"desc\") fd.append(field, item.desc || item.name);",
+    "      else if (kind === \"price\") fd.append(field, String(item.price));",
+    "      else if (kind === \"qty\") fd.append(field, String(item.qty));",
+    "      else if (kind === \"stock\") fd.append(field, String(Math.max(item.qty, 99)));",
+    "      else if (i === 0) {",
+    "        const el = form.querySelector('[name=\"' + sample + '\"]');",
+    "        if (el && el.type !== \"file\") fd.append(field, el.value);",
+    "      }",
+    "      used.add(field);",
+    "    });",
     "  });",
-    "  if (blocks.length) return blocks;",
-    "  return [document.body];",
-    "}",
-    "",
-    "async function waitFor(fn, timeout, label) {",
-    "  const start = Date.now();",
-    "  while (Date.now() - start < timeout) {",
-    "    try { const v = fn(); if (v) return v; } catch (e) {}",
-    "    await sleep(250);",
-    "  }",
-    "  throw new Error(\"等待逾時：\" + (label || \"欄位\"));",
+    "  return fd;",
     "}",
     "",
     "function assertMyshipPage() {",
-    "  const path = (location.pathname || \"\").toLowerCase();",
     "  const body = norm(document.body ? document.body.innerText : \"\");",
-    "  if (body.includes(\"請先登入\") || body.includes(\"uniopen會員\") && !body.includes(\"商品\")) {",
-    "    throw new Error(\"請先登入賣貨便，並開啟「快速結帳賣場」新增頁：\" + MYSHIP_ADD_URL);",
+    "  if (body.includes(\"請先登入\") || (body.includes(\"uniopen\") && !body.includes(\"商品\") && !body.includes(\"上架\"))) {",
+    "    throw new Error(\"請先登入賣貨便，並開啟：\" + MYSHIP_FAST_URL);",
     "  }",
-    "  if (!path.includes(\"/easy/\") && !body.includes(\"商品上架\") && !body.includes(\"快速結帳\")) {",
-    "    console.warn(\"[MAARU] 目前網址可能不是快速結帳新增頁，仍嘗試填表…\", location.href);",
+    "  if ((location.pathname || \"\").toLowerCase().indexOf(\"/fast/\") < 0) {",
+    "    console.warn(\"[MAARU] 建議在 /fast/add 頁面執行。目前：\", location.href);",
     "  }",
-    "}",
-    "",
-    "async function ensureProductTab() {",
-    "  const tab = findClickable([/商品上架/, /商品設定/]);",
-    "  if (tab) { tab.click(); await sleep(500); }",
-    "}",
-    "",
-    "async function fillStoreName(name) {",
-    "  if (!name) return;",
-    "  const storeEl = await waitFor(() => findFieldIn(document, [[\"賣場名稱\"], [\"賣場\", \"名稱\"]]), 8000, \"賣場名稱\");",
-    "  setNativeInput(storeEl, name);",
-    "}",
-    "",
-    "function fillProductInBlock(block, item) {",
-    "  const nameEl = findFieldIn(block, [[\"商品名稱\"], [\"品名\"], [\"商品\", \"名稱\"]]);",
-    "  const descEl = findFieldIn(block, [[\"商品描述\"], [\"描述\"], [\"介紹\"]]);",
-    "  const priceEl = findFieldIn(block, [[\"售價\"], [\"價格\"], [\"金額\"], [\"單價\"]]);",
-    "  const qtyEl = findFieldIn(block, [[\"數量\"], [\"庫存\"]]);",
-    "  const okName = setNativeInput(nameEl, item.name);",
-    "  const okDesc = descEl ? setNativeInput(descEl, item.desc || item.name) : true;",
-    "  const okPrice = setNativeInput(priceEl, item.price);",
-    "  const okQty = setNativeInput(qtyEl, item.qty);",
-    "  console.log(\"[MAARU] 填寫\", item.name, { okName, okDesc, okPrice, okQty });",
-    "  if (!okName || !okPrice || !okQty) throw new Error(\"找不到商品欄位，請切到「商品上架」分頁後再執行。品項：\" + item.name);",
-    "  return true;",
-    "}",
-    "",
-    "async function clickAddProduct() {",
-    "  const btn = findClickable([/繼續新增商品/, /新增商品/, /再加一筆/]);",
-    "  if (!btn) return false;",
-    "  btn.click();",
-    "  await sleep(700);",
-    "  return true;",
-    "}",
-    "",
-    "async function clickSubmit() {",
-    "  const btn = findClickable([/上架完成/, /確認上架/, /^上架$/]);",
-    "  if (!btn) throw new Error(\"找不到「上架／上架完成」按鈕\");",
-    "  btn.click();",
-    "  await sleep(1200);",
-    "  const okBtn = findClickable([/^確定$/, /^確認$/, /^是$/, /確定上架/]);",
-    "  if (okBtn) { okBtn.click(); await sleep(800); }",
-    "}",
-    "",
-    "async function prepareNextStore() {",
-    "  await sleep(2000);",
-    "  if ((location.pathname || \"\").toLowerCase().indexOf(\"/easy/add\") < 0) {",
-    "    location.assign(MYSHIP_ADD_URL);",
-    "    await waitFor(() => norm(document.body.innerText).includes(\"商品\") || getEditableFields().length > 3, 20000, \"下一個賣場頁面\");",
-    "  }",
-    "  await ensureProductTab();",
-    "}",
-    "",
-    "async function fillForm(item, blockIndex) {",
-    "  await ensureProductTab();",
-    "  const blocks = findProductBlocks();",
-    "  const idx = blockIndex != null ? blockIndex : (blocks.length - 1);",
-    "  fillProductInBlock(blocks[idx] || document.body, item);",
-    "  await sleep(300);",
-    "}",
-    "",
-    "async function submit() {",
-    "  await clickSubmit();",
-    "  await sleep(2500);",
     "}",
     "",
     "window.__maaruMyshipProbe = function () {",
+    "  const form = getMainForm();",
     "  console.log(\"[MAARU] 頁面\", location.href);",
-    "  getEditableFields().forEach((el, i) => console.log(i, fieldBag(el), el));",
-    "  console.log(\"[MAARU] 商品區塊數\", findProductBlocks().length);",
+    "  if (!form) { console.warn(\"找不到 form\"); return; }",
+    "  Array.from(form.querySelectorAll('input[name], textarea[name], select[name]')).forEach((el, i) => {",
+    "    console.log(i, el.name, el.type, el.value);",
+    "  });",
+    "  console.log(\"[MAARU] 商品範本欄位\", getIndexedSampleFields(form));",
     "};"
   ].join("\n");
 
@@ -253,58 +234,68 @@
 
   function buildMyshipConsoleScript_(ord, options) {
     options = options || {};
-    var mode = options.mode === "perItem" ? "perItem" : "single";
-    var items = buildMyshipScriptItems_(ord, options);
-    if (!items.length) return "";
+    var stores = buildMyshipStoresFromOrder_(ord, options);
+    if (!stores.length) return "";
 
     var customer = (ord.customerName || ord.name || "").trim();
     var shipFee = getEffectiveShippingFee_(ord);
-    var storeName = options.storeName || ((ord.id || "") + (customer ? " " + customer : ""));
+    var itemCount = stores.reduce(function (n, s) { return n + (s.items ? s.items.length : 0); }, 0);
     var lines = [];
     var i;
+    var j;
+    var store;
+    var it;
 
     lines.push("// MAARU 賣貨便批次建單 — " + (ord.id || "") + (customer ? " " + customer : ""));
-    lines.push("// 待出貨品項 " + items.length + " 筆 · 建議運費 NT$" + shipFee + (ord.shippingStatus ? "（本單已折抵）" : ""));
+    lines.push("// 待出貨品項 " + itemCount + " 筆 · 賣場 " + stores.length + " 個 · 建議運費 NT$" + shipFee);
     lines.push("//");
-    lines.push("// ⚠ 執行前請確認：");
-    lines.push("// 1. 已登入賣貨便");
-    lines.push("// 2. 網址為快速結帳「新增賣場」頁 → " + MYSHIP_EASY_ADD_URL);
-    lines.push("// 3. 建議先切到「商品上架」分頁，或讓腳本自動點擊");
-    lines.push("// 4. 若失敗，在 Console 執行 __maaruMyshipProbe() 查看欄位");
+    lines.push("// 使用方式（與 ToyChain 相同）：");
+    lines.push("// 1. 登入賣貨便");
+    lines.push("// 2. 開啟快速結帳新增頁 → " + MYSHIP_FAST_ADD_URL);
+    lines.push("// 3. 先設定好運費／日期等（腳本會沿用目前表單預設）");
+    lines.push("// 4. F12 → Console 貼上執行");
     lines.push("");
     lines.push(MYSHIP_RUNTIME_HELPERS);
     lines.push("");
-    lines.push("const STORE_NAME = \"" + escapeJsString_(storeName) + "\";");
-    lines.push("const items = [");
-    for (i = 0; i < items.length; i++) {
-      var row = items[i];
-      lines.push("  { name: \"" + escapeJsString_(row.name) + "\", desc: \"" + escapeJsString_(row.name) + "\", price: " + row.price + ", qty: " + row.qty + " }" + (i < items.length - 1 ? "," : ""));
+    lines.push("const stores = [");
+    for (i = 0; i < stores.length; i++) {
+      store = stores[i];
+      lines.push("  {");
+      lines.push("    name: \"" + escapeJsString_(store.name) + "\",");
+      lines.push("    items: [");
+      for (j = 0; j < store.items.length; j++) {
+        it = store.items[j];
+        lines.push("      { name: \"" + escapeJsString_(it.name) + "\", desc: \"" + escapeJsString_(it.desc || it.name) + "\", price: " + it.price + ", qty: " + it.qty + " }" + (j < store.items.length - 1 ? "," : ""));
+      }
+      lines.push("    ]");
+      lines.push("  }" + (i < stores.length - 1 ? "," : ""));
     }
     lines.push("];");
+    lines.push("");
+    lines.push("const t0 = Date.now();");
+    lines.push("window._loopResults = null;");
     lines.push("");
     lines.push("(async () => {");
     lines.push("  try {");
     lines.push("    assertMyshipPage();");
-    lines.push("    await fillStoreName(STORE_NAME);");
-    if (mode === "single") {
-      lines.push("    console.log(\"[MAARU] 單一賣場模式，共 \" + items.length + \" 品項\");");
-      lines.push("    for (let i = 0; i < items.length; i++) {");
-      lines.push("      if (i > 0) await clickAddProduct();");
-      lines.push("      await fillForm(items[i], i);");
-      lines.push("    }");
-      lines.push("    await submit();");
-      lines.push("    console.log(\"✓ 已提交 1 個賣場（\" + items.length + \" 品項）\");");
-    } else {
-      lines.push("    console.log(\"[MAARU] 每品項一賣場模式\");");
-      lines.push("    for (let i = 0; i < items.length; i++) {");
-      lines.push("      if (i > 0) await prepareNextStore();");
-      lines.push("      await fillStoreName(STORE_NAME);");
-      lines.push("      await fillForm(items[i], 0);");
-      lines.push("      await submit();");
-      lines.push("      console.log(\"✓ 已建立第 \" + (i + 1) + \" 個賣場：\" + items[i].name);");
-      lines.push("    }");
-      lines.push("    console.log(\"✓ 全部完成，共 \" + items.length + \" 個賣場\");");
-    }
+    lines.push("    const results = [];");
+    lines.push("    for (const store of stores) {");
+    lines.push("      const resp = await fetch(MYSHIP_FAST_URL, {");
+    lines.push("        method: \"POST\",");
+    lines.push("        body: buildFD(store),");
+    lines.push("        redirect: \"follow\",");
+    lines.push("        credentials: \"include\"");
+    lines.push("      });");
+    lines.push("      const text = await resp.text();");
+    lines.push("      const nextToken = extractTokenFromHtml(text);");
+    lines.push("      if (nextToken) __maaruLastToken = nextToken;");
+    lines.push("      const id = text.match(/GM[A-Za-z0-9]+/)?.[0] || \"check-list\";");
+    lines.push("      results.push({ store: store.name, id, ms: Date.now() - t0, url: resp.url });");
+    lines.push("    }");
+    lines.push("    window._loopResults = { results, total: Date.now() - t0 };");
+    lines.push("    console.log(\"\\n\" + results.map((r) =>");
+    lines.push("      r.store + \"\\n\" + MYSHIP_CONFIRM_BASE + r.id");
+    lines.push("    ).join(\"\\n\\n\") + \"\\n\\n共 \" + results.length + \" 筆，耗時 \" + ((Date.now() - t0) / 1000).toFixed(1) + \"s\");");
     lines.push("  } catch (err) {");
     lines.push("    console.error(\"[MAARU] 腳本失敗\", err);");
     lines.push("    alert(\"賣貨便腳本失敗：\" + (err && err.message ? err.message : err));");
@@ -314,7 +305,7 @@
   }
 
   function openMyshipEasyAdd_() {
-    global.open(MYSHIP_EASY_ADD_URL, "_blank", "noopener,noreferrer");
+    global.open(MYSHIP_FAST_ADD_URL, "_blank", "noopener,noreferrer");
   }
 
   function execCommandCopy_(text) {
@@ -660,7 +651,9 @@
   }
 
   global.MaaruMyship = {
-    MYSHIP_EASY_ADD_URL: MYSHIP_EASY_ADD_URL,
+    MYSHIP_FAST_ADD_URL: MYSHIP_FAST_ADD_URL,
+    MYSHIP_CONFIRM_BASE: MYSHIP_CONFIRM_BASE,
+    MYSHIP_EASY_ADD_URL: MYSHIP_FAST_ADD_URL,
     isMyshipShippingMethod_: isMyshipShippingMethod_,
     getPendingShipItems_: getPendingShipItems_,
     buildMyshipConsoleScript_: buildMyshipConsoleScript_,
