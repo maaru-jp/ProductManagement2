@@ -463,7 +463,8 @@
             <li>登入 <a href="https://myship.7-11.com.tw/easy/add" target="_blank" rel="noopener noreferrer" class="text-emerald-700 underline">7-ELEVEN 賣貨便 → 快速結帳賣場</a>，等待頁面載入完成</li>
             <li>按 <strong>F12</strong> → <strong>Console</strong>，貼上腳本後按 Enter 自動建立賣場</li>
           </ol>
-          <p class="text-xs text-slate-500 mt-3">腳本會帶入「待出貨」品項的名稱、單價、數量。預設為每品項建立一個賣場（與 ToyChain 腳本相同）；亦可改為單一賣場合併品項。</p>
+          <p class="text-xs text-slate-500 mt-3">腳本會帶入「待出貨」品項的<strong>商品名稱、描述、單價、數量</strong>，並自動填寫賣場名稱。預設為<strong>單一賣場合併全部品項</strong>（一筆訂單一個連結）；若需每品項獨立賣場可改模式。</p>
+          <p class="text-xs text-amber-700 mt-1">若執行後沒反應：請確認已登入、網址為快速結帳新增頁，並在 Console 執行偵測腳本 <code class="bg-amber-50 px-1 rounded">__maaruMyshipProbe()</code> 查看欄位。</p>
         </div>
 
         <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -1493,8 +1494,8 @@
             <label class="inline-flex items-center gap-2 text-slate-700">
               <span class="text-slate-600">建單模式</span>
               <select id="myshipScriptMode" class="rounded-lg border border-slate-300 px-2 py-1 text-sm bg-white">
-                <option value="perItem">每品項一賣場（預設）</option>
-                <option value="single">單一賣場合併品項</option>
+                <option value="single" selected>單一賣場合併品項（預設）</option>
+                <option value="perItem">每品項一賣場</option>
               </select>
             </label>
             <label class="inline-flex items-center gap-2 text-slate-700">
@@ -1502,6 +1503,7 @@
               另加一筆「運費」品項
             </label>
             <button type="button" id="btnRegenMyshipScript" class="px-2 py-1 rounded border border-slate-300 text-xs text-slate-600 hover:bg-slate-50">更新預覽</button>
+            <button type="button" id="btnCopyMyshipProbe" class="px-2 py-1 rounded border border-amber-300 bg-amber-50 text-xs text-amber-900 hover:bg-amber-100" title="若建單失敗，先複製此偵測腳本到賣貨便 Console 執行">複製偵測腳本</button>
           </div>
           <pre id="myshipScriptCode" class="rounded-lg bg-slate-900 text-emerald-300 text-xs leading-relaxed p-4 overflow-x-auto max-h-[42vh] whitespace-pre-wrap font-mono"></pre>
         </div>
@@ -1556,7 +1558,7 @@
   <script src="js/admin-loyalty.js?v=20260526-disabled"></script>
   <script src="js/admin-members.js?v=20260607-2"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
-  <script src="js/admin-mymship.js?v=20260526-2"></script>
+  <script src="js/admin-mymship.js?v=20260526-3"></script>
   <script>
     (function() {
       // ※ 重要：後台「寫入訂單」必須使用 **ProductManagement2 試算表**（14dqpe...）部署的 GAS URL。
