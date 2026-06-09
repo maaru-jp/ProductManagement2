@@ -6612,13 +6612,9 @@
           var pointsUsedPdf = Math.floor(Number(ord.pointsUsed) || 0);
           var pointsDiscountPdf = pointsUsedPdf > 0 ? orderPointsDiscountForOrder(ord) : 0;
           if (pointsUsedPdf > 0 && pointsDiscountPdf <= 0) pointsDiscountPdf = pointsUsedPdf;
-          var pointsEarnedPdf = Math.floor(Number(ord.pointsEarned) || 0);
           var pdfPointsRows = "";
           if (pointsUsedPdf > 0) {
             pdfPointsRows += "<tr><td>紅利折抵（" + pointsUsedPdf + " 點）</td><td>- NT$ " + pointsDiscountPdf + "</td></tr>";
-          }
-          if (pointsEarnedPdf > 0) {
-            pdfPointsRows += "<tr><td>本次獲得紅利</td><td>" + pointsEarnedPdf + " 點</td></tr>";
           }
           var pdfAmountCloseRows = "";
           if (depNum > 0) {
@@ -6727,7 +6723,6 @@
           var sumDiscount = 0;
           var sumPointsUsed = 0;
           var sumPointsDiscount = 0;
-          var sumPointsEarned = 0;
           var sumDue = 0;
           var sumDeposit = 0;
           var subtotalRows = "";
@@ -6744,7 +6739,6 @@
             sumDiscount += disc;
             sumPointsUsed += ptsUsed;
             sumPointsDiscount += ptsDisc;
-            sumPointsEarned += Math.floor(Number(o.pointsEarned) || 0);
             sumDue += orderAmountDue(o);
             sumDeposit += dep;
             if (orderGroup.length > 1) {
@@ -6760,9 +6754,6 @@
           var pdfPointsRows = "";
           if (sumPointsUsed > 0) {
             pdfPointsRows += "<tr><td>紅利折抵合計（" + sumPointsUsed + " 點）</td><td>- NT$ " + sumPointsDiscount + "</td></tr>";
-          }
-          if (sumPointsEarned > 0) {
-            pdfPointsRows += "<tr><td>本次獲得紅利（合計）</td><td>" + sumPointsEarned + " 點</td></tr>";
           }
           var pdfAmountCloseRows = "";
           if (sumDeposit > 0) {
