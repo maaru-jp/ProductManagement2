@@ -8,6 +8,17 @@
     <meta http-equiv="Expires" content="0" />
     <title>MAARU 日本萌GO · 日本代購</title>
 
+    <!-- GitHub Pages：網址若為 /ProductManagement2（無尾隨 /），相對路徑會指到網域根目錄導致 JS 404、白屏 -->
+    <script>
+      (function () {
+        var p = window.location.pathname || "";
+        if (p && !p.endsWith("/") && p.indexOf(".") === -1) {
+          window.location.replace(p + "/" + window.location.search + window.location.hash);
+        }
+      })();
+    </script>
+    <base href="./" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -16,20 +27,53 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Site CSS (keep custom CSS separate) -->
-    <link rel="stylesheet" href="./css/style.css?v=20260601-11" />
+    <link rel="stylesheet" href="./css/style.css?v=20260608-1" />
   </head>
   <body class="min-h-screen text-neutral-900 font-shop antialiased bg-[#fafafa]">
-    <div id="root"></div>
+    <div id="root">
+      <p style="padding:2rem;text-align:center;color:#737373;font-size:0.875rem;">載入中…</p>
+    </div>
 
     <!-- React / ReactDOM (CDN, pin versions for stability) -->
     <!-- NOTE: Do NOT set crossorigin here; it can trigger CORS mode and break some CDNs/redirects. -->
     <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 
-    <!-- Babel: allow JSX in external file (no build step) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- App JS (kept separate from HTML) -->
-    <script type="text/babel" data-presets="env,react" src="./js/app.jsx?v=20260601-11"></script>
+    <!-- Babel + 明確載入 app.jsx（失敗時顯示錯誤，避免白屏） -->
+    <script src="https://unpkg.com/@babel/standalone@7.26.9/babel.min.js"></script>
+    <script>
+      (function bootMaaruApp() {
+        var root = document.getElementById("root");
+        var appUrl = new URL("js/app.jsx?v=20260608-1", document.baseURI).href;
+        function showBootError(msg) {
+          if (!root) return;
+          root.innerHTML =
+            '<div style="padding:2rem;max-width:28rem;margin:0 auto;font-family:sans-serif">' +
+            '<p style="font-weight:600;margin:0 0 0.5rem">頁面載入失敗</p>' +
+            '<p style="font-size:0.875rem;color:#666;margin:0">' + String(msg || "未知錯誤") + '</p>' +
+            '<p style="font-size:0.75rem;color:#999;margin:1rem 0 0">請確認網址為 <code>…/ProductManagement2/</code>（結尾有 /），或稍後再試。</p>' +
+            "</div>";
+        }
+        if (!window.React || !window.ReactDOM || !window.Babel) {
+          showBootError("React 或 Babel 腳本無法載入，請檢查網路或 CDN 是否被阻擋。");
+          return;
+        }
+        fetch(appUrl, { cache: "no-store" })
+          .then(function (res) {
+            if (!res.ok) throw new Error("無法載入 app.jsx（HTTP " + res.status + "）");
+            return res.text();
+          })
+          .then(function (code) {
+            var compiled = window.Babel.transform(code, { presets: ["env", "react"] }).code;
+            var script = document.createElement("script");
+            script.text = compiled;
+            document.body.appendChild(script);
+          })
+          .catch(function (err) {
+            console.error("[MAARU boot]", err);
+            showBootError(err && err.message ? err.message : err);
+          });
+      })();
+    </script>
   </body>
 </html>

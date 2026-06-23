@@ -2349,27 +2349,75 @@ function normalizeLineIdForPoints_(lineId) {
   return String(lineId || "").trim().toLowerCase();
 }
 
+function getMemberRecordByCard_(ss, card) {
+  card = normalizeMemberCardNo_(card);
+  if (!ss || !isValidMemberCardNo_(card)) return null;
+  try {
+    var members = getMembers(getMemberSheet(ss));
+    for (var i = 0; i < members.length; i++) {
+      if (normalizeMemberCardNo_(members[i].memberCardNo) === card) return members[i];
+    }
+  } catch (err) {
+    Logger.log("[getMemberRecordByCard_] " + err);
+  }
+  return null;
+}
+
+function buildMemberCardMatchContext_(ss, allOrders, card, ledger) {
+  card = normalizeMemberCardNo_(card);
+  var linkedNames = collectCustomerNamesForMemberCard_(allOrders, card, ledger);
+  var rosterIdentity = { phone: "", lineId: "" };
+  var member = getMemberRecordByCard_(ss, card);
+  if (member) {
+    var mn = normalizeCustomerNameForPoints_(member.customerName);
+    if (mn && linkedNames.indexOf(mn) < 0) linkedNames.push(mn);
+    rosterIdentity.phone = normalizePhoneForPoints_(member.phone);
+    rosterIdentity.lineId = normalizeLineIdForPoints_(member.lineId);
+  }
+  return {
+    card: card,
+    linkedNames: linkedNames,
+    rosterIdentity: rosterIdentity,
+    member: member
+  };
+}
+
 function collectCustomerNamesForMemberCard_(orders, card, ledger) {
   if (!isValidMemberCardNo_(card)) return [];
   var idx = buildMemberCardIdentityIndex_(orders, ledger);
   return idx.linkedNamesForCard(card);
 }
 
-function orderMatchesMemberCardExtended_(order, card, linkedNames) {
+function orderMatchesMemberCardExtended_(order, card, linkedNames, rosterIdentity) {
   if (orderMatchesMemberCard_(order, card)) return true;
-  if (!linkedNames || !linkedNames.length) return false;
   var n = normalizeCustomerNameForPoints_(order && order.customerName);
-  return !!(n && linkedNames.indexOf(n) >= 0);
+  if (n && linkedNames && linkedNames.length && linkedNames.indexOf(n) >= 0) return true;
+  if (rosterIdentity) {
+    var p = normalizePhoneForPoints_(order && order.phone);
+    if (rosterIdentity.phone && p && p === rosterIdentity.phone) return true;
+    var l = normalizeLineIdForPoints_(order && order.lineId);
+    if (rosterIdentity.lineId && l && l === rosterIdentity.lineId) return true;
+  }
+  return false;
 }
 
-function findOrdersForMemberCard_(allOrders, card) {
+function findOrdersForMemberCard_(allOrders, card, ss) {
   var matched = [];
   var seenIds = {};
-  var linkedNames = collectCustomerNamesForMemberCard_(allOrders, card);
+  var ledger = [];
+  if (ss) {
+    try {
+      var pointsSheet = getPointsSheet(ss);
+      if (pointsSheet) ledger = getPointsLedger(pointsSheet);
+    } catch (err) {
+      Logger.log("[findOrdersForMemberCard_] ledger " + err);
+    }
+  }
+  var ctx = buildMemberCardMatchContext_(ss, allOrders, card, ledger);
   for (var i = 0; i < (allOrders || []).length; i++) {
     var ord = allOrders[i];
     if (!ord) continue;
-    if (!orderMatchesMemberCardExtended_(ord, card, linkedNames)) continue;
+    if (!orderMatchesMemberCardExtended_(ord, ctx.card, ctx.linkedNames, ctx.rosterIdentity)) continue;
     var id = normalizeOrderId_(ord.id);
     if (!id || seenIds[id]) continue;
     seenIds[id] = true;
@@ -3049,7 +3097,8 @@ function buildPointsBalanceResult_(ledger, card, allOrders, pointsSheet, debugEx
   var nextExp = summarizeNextPointExpiry_(lots);
   var nextExpireDate = nextExp.nextExpireDate;
   var nextExpirePoints = nextExp.nextExpirePoints;
-  var cardOrders = findOrdersForMemberCard_(allOrders || [], card);
+  var ssForMatch = pointsSheet ? pointsSheet.getParent() : SpreadsheetApp.getActiveSpreadsheet();
+  var cardOrders = findOrdersForMemberCard_(allOrders || [], card, ssForMatch);
   var orderEarned = 0;
   var orderUsed = 0;
   for (var o = 0; o < cardOrders.length; o++) {
@@ -3275,10 +3324,15 @@ function getCustomerOrdersPublic_(params) {
   var orderSheet = getOrderSheet(ss);
   var all = parsePublicOrdersFast_(ss);
   var roster = getMemberCardRosterStatus_(ss, card);
-  var matched = findOrdersForMemberCard_(all, card);
+  var matchCtx = buildMemberCardMatchContext_(ss, all, card, []);
+  var matched = findOrdersForMemberCard_(all, card, ss);
   var ordersWithCard = 0;
+  var ordersMatchedByRoster = 0;
   for (var c = 0; c < all.length; c++) {
     if (orderMatchesMemberCard_(all[c], card)) ordersWithCard++;
+    else if (orderMatchesMemberCardExtended_(all[c], card, matchCtx.linkedNames, matchCtx.rosterIdentity)) {
+      ordersMatchedByRoster++;
+    }
   }
   matched.sort(function(a, b) {
     var ma = String(a.id || "").match(/^ORD(\d+)$/i);
@@ -3316,6 +3370,8 @@ function getCustomerOrdersPublic_(params) {
       orderSheetName: orderSheet ? orderSheet.getName() : "",
       orderSheetRows: all.length,
       ordersWithMemberCard: ordersWithCard,
+      ordersMatchedByRoster: ordersMatchedByRoster,
+      rosterCustomerName: matchCtx.member ? String(matchCtx.member.customerName || "").trim() : "",
       orderSourceSheets: listOrderSourceSheets_(ss),
       memberInRoster: roster.exists,
       memberStatus: roster.status || (roster.exists ? "有效" : "")
