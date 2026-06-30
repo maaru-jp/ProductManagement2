@@ -1398,7 +1398,7 @@
             <div class="rounded-lg border border-slate-200 bg-white p-3">
               <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
                 <p class="text-xs text-slate-500">
-                  設定品項出貨狀態；「產生 PDF」只含「待出貨」品項（並標記為已出貨）。此為出貨明細。
+                  設定品項出貨狀態；「產生 PDF」只含「待出貨」品項（並標記為已出貨）。產 PDF 前可手動指定出貨批次。
                 </p>
                 <button type="button" id="btnOrderItemsAdd" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-xs hover:bg-slate-50">+ 新增品項</button>
               </div>
@@ -1432,6 +1432,11 @@
             </div>
           </div>
           <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">出貨批次（產 PDF，選填）</label>
+            <input type="number" id="orderPdfShipBatch" min="1" step="1" class="w-full max-w-[12rem] rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="留空則產 PDF 時再指定" />
+            <p class="text-xs text-slate-400 mt-1">可預先指定「出貨第幾次」；按「產生 PDF」時仍會跳出確認視窗，可再修改。</p>
+          </div>
+          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">收訂金歷程記錄（PDF 備註欄）</label>
             <textarea id="orderDepositRemark" rows="4" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
           </div>
@@ -1441,6 +1446,30 @@
             <button type="submit" class="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium hover:bg-slate-900">建立訂單</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 產生 PDF：手動指定出貨批次 -->
+  <div id="shipBatchModal" class="fixed inset-0 z-[60] hidden" aria-hidden="true">
+    <div class="absolute inset-0 bg-black/50" id="shipBatchModalBackdrop"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
+        <div class="p-4 border-b border-slate-200 flex items-center justify-between">
+          <h3 class="text-lg font-semibold text-slate-800" id="shipBatchModalTitle">出貨批次</h3>
+          <button type="button" id="shipBatchModalClose" class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="關閉">✕</button>
+        </div>
+        <div class="p-4 space-y-3">
+          <p id="shipBatchModalHint" class="text-sm text-slate-600"></p>
+          <div>
+            <label for="shipBatchModalInput" class="block text-xs font-medium text-slate-500 mb-1">出貨第幾次</label>
+            <input type="number" id="shipBatchModalInput" min="1" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div class="p-4 border-t border-slate-200 flex justify-end gap-2">
+          <button type="button" id="shipBatchModalCancel" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm hover:bg-slate-50">取消</button>
+          <button type="button" id="shipBatchModalConfirm" class="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium hover:bg-slate-900">產生 PDF</button>
+        </div>
       </div>
     </div>
   </div>
@@ -6277,6 +6306,8 @@
           if (depEl) depEl.value = o.depositAmount != null && o.depositAmount !== "" ? String(o.depositAmount) : "0";
           document.getElementById("orderPreorderDate").value = o.preorderDate || "";
           document.getElementById("orderShipDate").value = o.shipDate || "";
+          var pdfBatchEl = document.getElementById("orderPdfShipBatch");
+          if (pdfBatchEl) pdfBatchEl.value = "";
           renderOrderItemsEditor_(o.items || []);
           updateOrderTotal();
           refreshOrderMemberCardHint_();
@@ -6324,6 +6355,8 @@
             if (depEl) depEl.value = "0";
             document.getElementById("orderPreorderDate").value = "";
             document.getElementById("orderShipDate").value = "";
+            var pdfBatchElNew = document.getElementById("orderPdfShipBatch");
+            if (pdfBatchElNew) pdfBatchElNew.value = "";
             var linkedElNew = document.getElementById("orderLinkedOrderIds");
             if (linkedElNew) linkedElNew.value = "";
             renderOrderItemsEditor_(window.__lastPastedOrderItems && Array.isArray(window.__lastPastedOrderItems) ? window.__lastPastedOrderItems : []);
@@ -6529,6 +6562,98 @@
           });
           return maxBatch;
         }
+
+        function suggestShipmentBatchFromItems_(items) {
+          return getMaxShippedItemBatch_(items || []) + 1;
+        }
+
+        function parseShipmentBatchValue_(raw) {
+          var n = parseInt(String(raw == null ? "" : raw).trim(), 10);
+          if (!isFinite(n) || n < 1) return null;
+          return n;
+        }
+
+        var shipBatchModalResolver_ = null;
+
+        function closeShipBatchModal_(result) {
+          var modal = document.getElementById("shipBatchModal");
+          if (modal) modal.classList.add("hidden");
+          if (shipBatchModalResolver_) {
+            var resolve = shipBatchModalResolver_;
+            shipBatchModalResolver_ = null;
+            resolve(result);
+          }
+        }
+
+        function getOrderPdfShipBatchPreset_(orderId) {
+          var formEl = document.getElementById("orderPdfShipBatch");
+          var orderForm = document.getElementById("orderForm");
+          var editId = orderForm ? (orderForm.getAttribute("data-edit-id") || "").trim() : "";
+          if (!formEl || !editId || !orderId) return null;
+          if (normalizeOrderIdToken_(editId) !== normalizeOrderIdToken_(orderId)) return null;
+          return parseShipmentBatchValue_(formEl.value);
+        }
+
+        function askShipmentBatchForPdf_(options) {
+          options = options || {};
+          return new Promise(function(resolve) {
+            if (options.suggested == null || options.suggested === false) {
+              resolve(null);
+              return;
+            }
+            var modal = document.getElementById("shipBatchModal");
+            var input = document.getElementById("shipBatchModalInput");
+            var hint = document.getElementById("shipBatchModalHint");
+            var title = document.getElementById("shipBatchModalTitle");
+            if (!modal || !input) {
+              resolve(parseShipmentBatchValue_(options.suggested) || 1);
+              return;
+            }
+            var suggested = parseShipmentBatchValue_(options.suggested) || 1;
+            var preset = options.preset != null ? parseShipmentBatchValue_(options.preset) : getOrderPdfShipBatchPreset_(options.orderId);
+            input.value = String(preset || suggested);
+            if (title) title.textContent = options.combine ? "併箱出貨批次" : "出貨批次";
+            if (hint) {
+              var hintText = "建議為出貨第 " + suggested + " 次（依「已出貨」品項的最大批次 +1 自動計算）。可自行修改數字。";
+              if (options.orderLabel) hintText += "\n" + options.orderLabel;
+              hint.textContent = hintText;
+            }
+            shipBatchModalResolver_ = resolve;
+            modal.classList.remove("hidden");
+            setTimeout(function() {
+              input.focus();
+              input.select();
+            }, 0);
+          });
+        }
+
+        function initShipBatchModal_() {
+          var backdrop = document.getElementById("shipBatchModalBackdrop");
+          var closeBtn = document.getElementById("shipBatchModalClose");
+          var cancelBtn = document.getElementById("shipBatchModalCancel");
+          var confirmBtn = document.getElementById("shipBatchModalConfirm");
+          var input = document.getElementById("shipBatchModalInput");
+          function confirmBatch() {
+            var n = parseShipmentBatchValue_(input && input.value);
+            if (n == null) {
+              alert("請輸入大於 0 的出貨批次（整數）");
+              if (input) input.focus();
+              return;
+            }
+            closeShipBatchModal_(n);
+          }
+          if (backdrop) backdrop.addEventListener("click", function() { closeShipBatchModal_(null); });
+          if (closeBtn) closeBtn.addEventListener("click", function() { closeShipBatchModal_(null); });
+          if (cancelBtn) cancelBtn.addEventListener("click", function() { closeShipBatchModal_(null); });
+          if (confirmBtn) confirmBtn.addEventListener("click", confirmBatch);
+          if (input) {
+            input.addEventListener("keydown", function(e) {
+              if (e.key === "Enter") { e.preventDefault(); confirmBatch(); }
+              if (e.key === "Escape") closeShipBatchModal_(null);
+            });
+          }
+        }
+        initShipBatchModal_();
 
         function getOrderPdfBaseStyles_() {
           return "@page{size:A4 portrait;margin:10mm 10mm 22mm 10mm;} " +
@@ -6822,10 +6947,22 @@
           }
           var masterId = pickCombineShipMasterId_(orderGroup);
           var masterOrd = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === masterId; }) || triggerOrd;
-          var maxBatch = getMaxShippedItemBatch_(itemsByOrder.reduce(function(acc, entry) {
+          var itemsForBatch = itemsByOrder.reduce(function(acc, entry) {
             return acc.concat(entry.itemsAll || []);
-          }, []));
-          var shipmentBatch = maxBatch + 1;
+          }, []);
+          var suggested = suggestShipmentBatchFromItems_(itemsForBatch);
+          var idList = (orderGroup || []).map(function(o) { return normalizeOrderIdToken_(o.id); }).join("、");
+          askShipmentBatchForPdf_({
+            suggested: suggested,
+            combine: true,
+            orderLabel: "併箱訂單：" + idList
+          }).then(function(shipmentBatch) {
+            if (shipmentBatch == null) return;
+            runCombineShipPdfWithBatch_(triggerOrd, orderGroup, itemsByOrder, masterOrd, shipmentBatch);
+          });
+        }
+
+        function runCombineShipPdfWithBatch_(triggerOrd, orderGroup, itemsByOrder, masterOrd, shipmentBatch) {
           var fileNameBase = buildCombineShipPdfFileName_(masterOrd, orderGroup, shipmentBatch);
           var built = buildCombineShipPdfHtml_(orderGroup, masterOrd, itemsByOrder, shipmentBatch, { fileNameBase: fileNameBase });
           try {
@@ -6937,8 +7074,18 @@
             return;
           }
 
-          var maxBatch = getMaxShippedItemBatch_(itemsAll);
-          var shipmentBatch = hasItemList ? (maxBatch + 1) : null;
+          var suggestedBatch = hasItemList ? suggestShipmentBatchFromItems_(itemsAll) : null;
+          askShipmentBatchForPdf_({
+            suggested: suggestedBatch,
+            orderId: ord.id,
+            orderLabel: "訂單：" + (ord.id || "")
+          }).then(function(shipmentBatch) {
+            if (shipmentBatch == null) return;
+            generateOrderPdfWithBatch_(ord, itemsAll, itemsToShip, hasItemList, shipmentBatch);
+          });
+        }
+
+        function generateOrderPdfWithBatch_(ord, itemsAll, itemsToShip, hasItemList, shipmentBatch) {
           var itemsForPdf = hasItemList ? itemsToShip : itemsAll;
           var fileNameBase = buildOrderPdfFileName_(ord, shipmentBatch);
           var built = buildOrderPdfHtml_(ord, itemsForPdf, shipmentBatch, { fileNameBase: fileNameBase });
