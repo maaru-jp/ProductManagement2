@@ -3807,9 +3807,11 @@ function mapPublicStatusItem_(it) {
   var label = String(o.shipStatus || o.itemStatus || o.status || "待出貨").trim() || "待出貨";
   var name = String(o.lineName || o.name || o.product || "").trim();
   var image = String(o.image || o.imageUrl || "").trim();
+  var qty = Math.max(0, Math.floor(Number(o.qty != null ? o.qty : o.quantity) || 0));
   return {
     name: name || "商品",
     image: image,
+    qty: qty > 0 ? qty : 1,
     itemStatus: label,
     itemStatusCode: mapPublicStatusItemCode_(label)
   };

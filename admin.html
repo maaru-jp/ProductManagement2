@@ -395,35 +395,51 @@
         </div>
 
         <div id="orderMessage" class="mb-3 text-sm hidden"></div>
-        <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
-          <p class="font-semibold text-emerald-900">建議訂單流程（狀態 · PDF）</p>
-          <ol class="list-decimal list-inside space-y-1.5 ml-0.5">
-            <li><strong>待處理</strong> — 建立訂單、編輯品項與金額</li>
-            <li><strong>已確認</strong> — 接單且金額定案；同步試算表後顧客可查配送進度</li>
-            <li><strong>出貨中</strong> — 備貨／安排出貨（選用）</li>
-            <li><strong>產生 PDF</strong> — 出貨明細給客人（可多次）</li>
-            <li><strong>已完成</strong> — 結案归档</li>
-          </ol>
-          <p class="text-emerald-800 border-t border-emerald-200/80 pt-2"><strong>速記：</strong>已確認＝定案 · PDF／出貨中＝出貨 · 已完成＝結案</p>
-        </div>
-        <div class="mb-4 rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-700 space-y-2">
-          <p class="font-semibold text-sky-900">訂單合併（追加商品時）</p>
-          <p><strong>做法 A｜同一訂單編號：</strong>用「追加」併入原單。<span class="text-sky-800">請等全部併完再改「已確認」</span>，避免金額與品項不一致。</p>
-          <p><strong>做法 B｜不同訂單編號（推薦加單）：</strong>同顧客開新 ORD、同一會員卡；<strong>併箱免運</strong>時新單勾選「併箱出貨」、運費填 0，運費只留在出貨主單。點 <strong>總覽</strong> 可看「本批應收運費 1 次」。</p>
+
+        <div class="flex flex-wrap items-center gap-1 mb-3 border-b border-slate-200" id="orderListTabs" role="tablist">
+          <button type="button" role="tab" data-order-tab="active" class="order-list-tab px-3 py-2 text-sm font-medium border-b-2 border-rose-500 text-rose-700 -mb-px" aria-selected="true">進行中 <span class="order-tab-count text-xs font-normal text-slate-500" data-count-for="active">0</span></button>
+          <button type="button" role="tab" data-order-tab="done" class="order-list-tab px-3 py-2 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-slate-900 -mb-px" aria-selected="false">已完成 <span class="order-tab-count text-xs font-normal text-slate-500" data-count-for="done">0</span></button>
+          <button type="button" role="tab" data-order-tab="cancelled" class="order-list-tab px-3 py-2 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-slate-900 -mb-px" aria-selected="false">已取消 <span class="order-tab-count text-xs font-normal text-slate-500" data-count-for="cancelled">0</span></button>
+          <button type="button" role="tab" data-order-tab="all" class="order-list-tab px-3 py-2 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-slate-900 -mb-px" aria-selected="false">全部 <span class="order-tab-count text-xs font-normal text-slate-500" data-count-for="all">0</span></button>
         </div>
 
+        <details class="mb-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-2 text-xs text-slate-700">
+          <summary class="cursor-pointer font-semibold text-slate-800 py-1 select-none">操作說明（流程 · 合併 · PDF）</summary>
+          <div class="mt-2 space-y-3 pb-2 border-t border-slate-200/80 pt-2">
+            <div class="space-y-1.5">
+              <p class="font-semibold text-emerald-900">建議訂單流程</p>
+              <ol class="list-decimal list-inside space-y-1 ml-0.5">
+                <li><strong>待處理</strong> — 建立訂單、編輯品項與金額</li>
+                <li><strong>已確認</strong> — 接單且金額定案；同步試算表後顧客可查配送進度</li>
+                <li><strong>出貨中</strong> — 備貨／安排出貨（選用）</li>
+                <li><strong>產生 PDF</strong> — 出貨明細給客人（可多次）</li>
+                <li><strong>已完成</strong> — 結案歸檔</li>
+              </ol>
+              <p class="text-emerald-800"><strong>速記：</strong>已確認＝定案 · PDF／出貨中＝出貨 · 已完成＝結案</p>
+            </div>
+            <div class="space-y-1.5">
+              <p class="font-semibold text-sky-900">訂單合併（追加商品時）</p>
+              <p><strong>做法 A｜同一訂單編號：</strong>用「追加」併入原單。<span class="text-sky-800">請等全部併完再改「已確認」</span>，避免金額與品項不一致。</p>
+              <p><strong>做法 B｜不同訂單編號（推薦加單）：</strong>同顧客開新 ORD、同一會員卡；<strong>併箱免運</strong>時新單勾選「併箱出貨」、運費填 0，運費只留在出貨主單。點 <strong>總覽</strong> 可看「本批應收運費 1 次」。</p>
+            </div>
+            <div class="space-y-1">
+              <p><strong>產生 PDF：</strong>「操作」欄 → 列印視窗選「另存為 PDF」。僅含「待出貨」品項；併箱可產生併箱 PDF 或於顧客總覽操作。</p>
+            </div>
+          </div>
+        </details>
+
         <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto max-h-[min(60vh,560px)] overflow-y-auto">
             <table class="w-full text-sm">
-              <thead class="bg-slate-50 border-b border-slate-200">
+              <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                 <tr>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">訂單編號</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">狀態</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">日期</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">客戶</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">運送方式</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600">總額</th>
-                  <th class="text-left py-3 px-4 font-medium text-slate-600 whitespace-nowrap">操作（產生 PDF／編輯／刪除）</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600 bg-slate-50">訂單編號</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600 bg-slate-50">狀態</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600 bg-slate-50">日期</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600 bg-slate-50">客戶</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600 bg-slate-50">運送方式</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600 bg-slate-50">總額</th>
+                  <th class="text-left py-3 px-4 font-medium text-slate-600 whitespace-nowrap bg-slate-50">操作（產生 PDF／編輯／刪除）</th>
                 </tr>
               </thead>
               <tbody id="orderTableBody">
@@ -431,13 +447,20 @@
               </tbody>
             </table>
           </div>
-        </div>
-
-        <div class="mt-6 p-4 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-3">
-          <span class="text-slate-500 text-lg">💡</span>
-          <div class="text-sm text-slate-700 space-y-2">
-            <p><strong>產生 PDF：</strong>每筆訂單「操作」欄 → 列印視窗選「另存為 PDF」。僅含「待出貨」品項；<strong>併箱出貨</strong>可產生併箱 PDF 或於<strong>顧客總覽</strong>操作。</p>
-            <p><strong>狀態：</strong><strong>已確認</strong>＝金額定案 · <strong>出貨中／PDF</strong>＝出貨作業 · <strong>已完成</strong>＝結案。</p>
+          <div id="orderPagination" class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 bg-slate-50/90">
+            <p id="orderPageInfo" class="text-sm text-slate-600">顯示 0 筆</p>
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="text-sm text-slate-600 flex items-center gap-1.5">每頁
+                <select id="orderPageSize" class="rounded-lg border border-slate-300 px-2 py-1 text-sm bg-white">
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </label>
+              <button type="button" id="orderPagePrev" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed" disabled>‹</button>
+              <span id="orderPageNumbers" class="flex items-center gap-1 text-sm"></span>
+              <button type="button" id="orderPageNext" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed" disabled>›</button>
+            </div>
           </div>
         </div>
       </section>
@@ -4345,6 +4368,17 @@
         var orderTableBody = document.getElementById("orderTableBody");
         var orderItemsTableBody = document.getElementById("orderItemsTableBody");
         var btnOrderItemsAdd = document.getElementById("btnOrderItemsAdd");
+        var orderListTabs = document.getElementById("orderListTabs");
+        var orderPageInfo = document.getElementById("orderPageInfo");
+        var orderPageSizeEl = document.getElementById("orderPageSize");
+        var orderPagePrev = document.getElementById("orderPagePrev");
+        var orderPageNext = document.getElementById("orderPageNext");
+        var orderPageNumbers = document.getElementById("orderPageNumbers");
+        var orderListTab = "active";
+        var orderPage = 1;
+        var orderPageSize = 20;
+        var ORDER_ACTIVE_STATUSES = { "待處理": true, "已確認": true, "出貨中": true };
+        var orderTableEventsBound = false;
 
         var orders = [];
         try {
@@ -6410,11 +6444,91 @@
           return div.innerHTML;
         }
 
-        function renderOrders() {
-          if (!orderTableBody) return;
+        function orderMatchesTab_(ord, tab) {
+          var st = ord && ord.status != null ? String(ord.status) : "";
+          if (tab === "all") return true;
+          if (tab === "done") return st === "已完成";
+          if (tab === "cancelled") return st === "已取消";
+          return !!ORDER_ACTIVE_STATUSES[st];
+        }
+
+        function getOrderSortKey_(ord) {
+          var m = String((ord && ord.id) || "").match(/^ORD(\d+)$/i);
+          return m ? parseInt(m[1], 10) : Number.MIN_SAFE_INTEGER;
+        }
+
+        function updateOrderTabUi_() {
+          if (!orderListTabs) return;
+          var searchQ = (orderSearchInput && orderSearchInput.value) ? orderSearchInput.value.trim().toLowerCase() : "";
+          var counts = { active: 0, done: 0, cancelled: 0, all: 0 };
+          orders.forEach(function(ord) {
+            if (searchQ) {
+              var text = (ord.id || "") + orderCustomerName_(ord) + (ord.phone || "") + (ord.email || "") + (ord.linkedOrderIds || "");
+              if (text.toLowerCase().indexOf(searchQ) < 0) return;
+            }
+            counts.all += 1;
+            var st = ord.status != null ? String(ord.status) : "";
+            if (ORDER_ACTIVE_STATUSES[st]) counts.active += 1;
+            else if (st === "已完成") counts.done += 1;
+            else if (st === "已取消") counts.cancelled += 1;
+            else counts.active += 1;
+          });
+          orderListTabs.querySelectorAll(".order-tab-count").forEach(function(el) {
+            var key = el.getAttribute("data-count-for");
+            if (key && counts[key] != null) el.textContent = "(" + counts[key] + ")";
+          });
+          orderListTabs.querySelectorAll(".order-list-tab").forEach(function(btn) {
+            var tab = btn.getAttribute("data-order-tab");
+            var selected = tab === orderListTab;
+            btn.setAttribute("aria-selected", selected ? "true" : "false");
+            if (selected) {
+              btn.classList.add("border-rose-500", "text-rose-700");
+              btn.classList.remove("border-transparent", "text-slate-600");
+            } else {
+              btn.classList.remove("border-rose-500", "text-rose-700");
+              btn.classList.add("border-transparent", "text-slate-600");
+            }
+          });
+        }
+
+        function updateOrderPaginationUi_(totalFiltered) {
+          var totalPages = Math.max(1, Math.ceil(totalFiltered / orderPageSize) || 1);
+          if (orderPage > totalPages) orderPage = totalPages;
+          if (orderPage < 1) orderPage = 1;
+          var from = totalFiltered === 0 ? 0 : (orderPage - 1) * orderPageSize + 1;
+          var to = Math.min(orderPage * orderPageSize, totalFiltered);
+          if (orderPageInfo) {
+            orderPageInfo.textContent = totalFiltered === 0
+              ? "顯示 0 筆"
+              : ("顯示 " + from + "–" + to + "／共 " + totalFiltered + " 筆");
+          }
+          if (orderPagePrev) orderPagePrev.disabled = orderPage <= 1 || totalFiltered === 0;
+          if (orderPageNext) orderPageNext.disabled = orderPage >= totalPages || totalFiltered === 0;
+          if (orderPageNumbers) {
+            var html = "";
+            var windowSize = 5;
+            var start = Math.max(1, orderPage - Math.floor(windowSize / 2));
+            var end = Math.min(totalPages, start + windowSize - 1);
+            start = Math.max(1, end - windowSize + 1);
+            for (var p = start; p <= end; p++) {
+              var active = p === orderPage;
+              html += "<button type=\"button\" class=\"order-page-btn px-2.5 py-1 rounded-lg border text-sm " +
+                (active ? "border-rose-400 bg-rose-50 text-rose-800 font-medium" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50") +
+                "\" data-page=\"" + p + "\"" + (active ? " aria-current=\"page\"" : "") + ">" + p + "</button>";
+            }
+            if (totalPages > end) {
+              html += "<span class=\"px-1 text-slate-400\">…</span>";
+              html += "<button type=\"button\" class=\"order-page-btn px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 hover:bg-slate-50\" data-page=\"" + totalPages + "\">" + totalPages + "</button>";
+            }
+            orderPageNumbers.innerHTML = totalFiltered === 0 ? "" : html;
+          }
+        }
+
+        function getFilteredSortedOrders_() {
           var filterStatus = orderStatusFilter ? orderStatusFilter.value : "";
           var searchQ = (orderSearchInput && orderSearchInput.value) ? orderSearchInput.value.trim().toLowerCase() : "";
           var list = orders.filter(function(ord) {
+            if (!orderMatchesTab_(ord, orderListTab)) return false;
             if (filterStatus && ord.status !== filterStatus) return false;
             if (searchQ) {
               var text = (ord.id || "") + orderCustomerName_(ord) + (ord.phone || "") + (ord.email || "") + (ord.linkedOrderIds || "");
@@ -6423,20 +6537,122 @@
             return true;
           });
           list.sort(function(a, b) {
-            var ma = String((a && a.id) || "").match(/^ORD(\d+)$/i);
-            var mb = String((b && b.id) || "").match(/^ORD(\d+)$/i);
-            var na = ma ? parseInt(ma[1], 10) : Number.MAX_SAFE_INTEGER;
-            var nb = mb ? parseInt(mb[1], 10) : Number.MAX_SAFE_INTEGER;
-            if (na !== nb) return na - nb; // 由小到大（上到下）
+            var na = getOrderSortKey_(a);
+            var nb = getOrderSortKey_(b);
+            if (na !== nb) return nb - na; // 新單（編號大）在上
             var ad = a && a.date ? new Date(a.date).getTime() : 0;
             var bd = b && b.date ? new Date(b.date).getTime() : 0;
-            return ad - bd;
+            return bd - ad;
           });
+          return list;
+        }
+
+        function bindOrderTableEventsOnce_() {
+          if (!orderTableBody || orderTableEventsBound) return;
+          orderTableEventsBound = true;
+          orderTableBody.addEventListener("change", function(e) {
+            var sel = e.target && e.target.closest ? e.target.closest(".order-status-select") : null;
+            if (!sel || !orderTableBody.contains(sel)) return;
+            var id = sel.getAttribute("data-order-id");
+            var ord = orders.find(function(o) { return o.id === id; });
+            if (!ord) return;
+            var prevStatus = ord.status;
+            var prevProcessed = ord.pointsProcessed;
+            ord.status = sel.value;
+            ord.pointsUsed = ord.pointsUsed != null ? ord.pointsUsed : 0;
+            ord = ensureOrderMemberCardOnOrder_(ord);
+            var loyaltyResult = applyLoyaltyToOrder_(ord, { status: prevStatus, pointsProcessed: prevProcessed });
+            ord = loyaltyResult.order;
+            saveOrders();
+            renderOrders();
+            var liveSel = orderTableBody.querySelector('.order-status-select[data-order-id="' + String(id).replace(/"/g, "") + '"]');
+            if (liveSel) liveSel.disabled = true;
+            upsertOrderWithPointsSync_(ord, loyaltyResult.pointsChanged, "訂單狀態已寫入").finally(function() {
+              var s2 = orderTableBody.querySelector('.order-status-select[data-order-id="' + String(id).replace(/"/g, "") + '"]');
+              if (s2) s2.disabled = false;
+            });
+          });
+          orderTableBody.addEventListener("click", function(e) {
+            var t = e.target;
+            if (!t || !t.closest) return;
+            var overviewBtn = t.closest(".order-customer-overview-btn");
+            if (overviewBtn && orderTableBody.contains(overviewBtn)) {
+              openCustomerOverviewModal_(
+                overviewBtn.getAttribute("data-customer-name") || "",
+                overviewBtn.getAttribute("data-customer-phone") || "",
+                overviewBtn.getAttribute("data-order-id") || ""
+              );
+              return;
+            }
+            var tr = t.closest("tr[data-order-id]");
+            if (!tr || !orderTableBody.contains(tr)) return;
+            var id = tr.getAttribute("data-order-id");
+            if (t.closest(".order-edit-btn")) {
+              var ordEdit = orders.find(function(o) { return o.id === id; });
+              if (ordEdit) openOrderModal(ordEdit);
+              return;
+            }
+            if (t.closest(".order-delete-btn")) {
+              var delBtn = t.closest(".order-delete-btn");
+              var name = (delBtn && delBtn.getAttribute("data-name")) || "此訂單";
+              if (!confirm("確定要刪除訂單「" + name + "」嗎？")) return;
+              orders = orders.filter(function(o) { return o.id !== id; });
+              var ledgerMsg = "";
+              if (window.MaaruLoyalty && typeof MaaruLoyalty.removeLedgerEntriesForOrderId === "function") {
+                var lr = MaaruLoyalty.removeLedgerEntriesForOrderId(MaaruLoyalty.getLedger(), id);
+                if (lr.removed > 0) {
+                  MaaruLoyalty.saveLedger(lr.ledger);
+                  ledgerMsg = "，已移除 " + lr.removed + " 筆紅利紀錄";
+                }
+              }
+              saveOrders();
+              renderOrders();
+              deleteOrderFromSheet(id).then(function() {
+                var syncChain = Promise.resolve();
+                if (ledgerMsg && typeof window.syncPointsLedgerToSheet === "function") {
+                  syncChain = window.syncPointsLedgerToSheet().catch(function() { return null; });
+                }
+                syncChain.then(function() {
+                  showOrderMessage("已刪除訂單（試算表已同步）" + ledgerMsg);
+                  if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
+                });
+              }).catch(function(err) {
+                showOrderMessage("刪除試算表訂單失敗：" + (err.message || "網路錯誤"), true);
+              });
+              return;
+            }
+            if (t.closest(".order-pdf-btn")) {
+              var ordPdf = orders.find(function(o) { return String(o.id || "").trim() === String(id || "").trim(); });
+              if (ordPdf) generateOrderPdf(ordPdf);
+              return;
+            }
+            if (t.closest(".order-append-btn")) {
+              var appendBtn = t.closest(".order-append-btn");
+              var appendId = (appendBtn && appendBtn.getAttribute("data-order-id")) || id;
+              if (appendId) openPasteOrderModal(appendId);
+            }
+          });
+        }
+
+        function renderOrders(opts) {
+          if (!orderTableBody) return;
+          opts = opts || {};
+          if (opts.resetPage) orderPage = 1;
+          if (orderPageSizeEl) {
+            var sizeVal = parseInt(orderPageSizeEl.value, 10);
+            if (sizeVal === 20 || sizeVal === 50 || sizeVal === 100) orderPageSize = sizeVal;
+          }
+          updateOrderTabUi_();
+          var list = getFilteredSortedOrders_();
+          updateOrderPaginationUi_(list.length);
           if (list.length === 0) {
             orderTableBody.innerHTML = "<tr><td colspan=\"7\" class=\"py-12 text-center text-slate-500\">" + (orders.length === 0 ? "目前沒有訂單" : "沒有符合條件的訂單") + "</td></tr>";
+            bindOrderTableEventsOnce_();
             return;
           }
-          orderTableBody.innerHTML = list.map(function(ord) {
+          var start = (orderPage - 1) * orderPageSize;
+          var pageList = list.slice(start, start + orderPageSize);
+          orderTableBody.innerHTML = pageList.map(function(ord) {
             var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
             var customerNameOnly = orderCustomerName_(ord) || "—";
             var customerSub = ord.phone ? ("<span class=\"block text-xs text-slate-500\">" + escapeHtml(ord.phone) + "</span>") : "";
@@ -6463,88 +6679,7 @@
               "<button type=\"button\" class=\"order-delete-btn text-red-600 hover:underline text-xs\" data-name=\"" + escapeHtml(ord.customerName || ord.id) + "\">刪除</button></td>" +
               "</tr>";
           }).join("");
-
-          orderTableBody.querySelectorAll(".order-status-select").forEach(function(sel) {
-            sel.addEventListener("change", function() {
-              var selectEl = this;
-              var id = this.getAttribute("data-order-id");
-              var ord = orders.find(function(o) { return o.id === id; });
-              if (ord) {
-                var prevStatus = ord.status;
-                var prevProcessed = ord.pointsProcessed;
-                ord.status = this.value;
-                ord.pointsUsed = ord.pointsUsed != null ? ord.pointsUsed : 0;
-                ord = ensureOrderMemberCardOnOrder_(ord);
-                var loyaltyResult = applyLoyaltyToOrder_(ord, { status: prevStatus, pointsProcessed: prevProcessed });
-                ord = loyaltyResult.order;
-                saveOrders();
-                renderOrders();
-                selectEl.disabled = true;
-                upsertOrderWithPointsSync_(ord, loyaltyResult.pointsChanged, "訂單狀態已寫入").finally(function() {
-                  selectEl.disabled = false;
-                });
-              }
-            });
-          });
-          orderTableBody.querySelectorAll(".order-edit-btn").forEach(function(btn) {
-            btn.addEventListener("click", function() {
-              var id = this.closest("tr").getAttribute("data-order-id");
-              var ord = orders.find(function(o) { return o.id === id; });
-              if (ord) openOrderModal(ord);
-            });
-          });
-          orderTableBody.querySelectorAll(".order-delete-btn").forEach(function(btn) {
-            btn.addEventListener("click", function() {
-              var id = this.closest("tr").getAttribute("data-order-id");
-              var name = this.getAttribute("data-name") || "此訂單";
-              if (!confirm("確定要刪除訂單「" + name + "」嗎？")) return;
-              orders = orders.filter(function(o) { return o.id !== id; });
-              var ledgerMsg = "";
-              if (window.MaaruLoyalty && typeof MaaruLoyalty.removeLedgerEntriesForOrderId === "function") {
-                var lr = MaaruLoyalty.removeLedgerEntriesForOrderId(MaaruLoyalty.getLedger(), id);
-                if (lr.removed > 0) {
-                  MaaruLoyalty.saveLedger(lr.ledger);
-                  ledgerMsg = "，已移除 " + lr.removed + " 筆紅利紀錄";
-                }
-              }
-              saveOrders();
-              renderOrders();
-              deleteOrderFromSheet(id).then(function() {
-                var syncChain = Promise.resolve();
-                if (ledgerMsg && typeof window.syncPointsLedgerToSheet === "function") {
-                  syncChain = window.syncPointsLedgerToSheet().catch(function() { return null; });
-                }
-                syncChain.then(function() {
-                  showOrderMessage("已刪除訂單（試算表已同步）" + ledgerMsg);
-                  if (typeof window.renderLoyaltyPanel === "function") window.renderLoyaltyPanel();
-                });
-              }).catch(function(err) {
-                showOrderMessage("刪除試算表訂單失敗：" + (err.message || "網路錯誤"), true);
-              });
-            });
-          });
-          orderTableBody.querySelectorAll(".order-pdf-btn").forEach(function(btn) {
-            btn.addEventListener("click", function() {
-              var id = this.closest("tr").getAttribute("data-order-id");
-              var ord = orders.find(function(o) { return String(o.id || "").trim() === String(id || "").trim(); });
-              if (ord) generateOrderPdf(ord);
-            });
-          });
-          orderTableBody.querySelectorAll(".order-append-btn").forEach(function(btn) {
-            btn.addEventListener("click", function() {
-              var id = this.getAttribute("data-order-id");
-              if (id) openPasteOrderModal(id);
-            });
-          });
-          orderTableBody.querySelectorAll(".order-customer-overview-btn").forEach(function(btn) {
-            btn.addEventListener("click", function() {
-              openCustomerOverviewModal_(
-                this.getAttribute("data-customer-name") || "",
-                this.getAttribute("data-customer-phone") || "",
-                this.getAttribute("data-order-id") || ""
-              );
-            });
-          });
+          bindOrderTableEventsOnce_();
         }
 
         function getOrderItemShipStatus_(it) {
@@ -7592,9 +7727,49 @@
         } else {
           checkApiConnectivity_();
         }
-        if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { renderOrders(); });
-        if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders(); } });
-        if (orderStatusFilter) orderStatusFilter.addEventListener("change", function() { renderOrders(); });
+        if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { renderOrders({ resetPage: true }); });
+        if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders({ resetPage: true }); } });
+        if (orderStatusFilter) orderStatusFilter.addEventListener("change", function() {
+          var st = orderStatusFilter.value;
+          if (st === "已完成") orderListTab = "done";
+          else if (st === "已取消") orderListTab = "cancelled";
+          else if (st === "待處理" || st === "已確認" || st === "出貨中") orderListTab = "active";
+          renderOrders({ resetPage: true });
+        });
+        if (orderListTabs) {
+          orderListTabs.addEventListener("click", function(e) {
+            var btn = e.target && e.target.closest ? e.target.closest(".order-list-tab") : null;
+            if (!btn || !orderListTabs.contains(btn)) return;
+            var tab = btn.getAttribute("data-order-tab");
+            if (!tab || tab === orderListTab) return;
+            orderListTab = tab;
+            if (orderStatusFilter) {
+              var cur = orderStatusFilter.value;
+              if (tab === "active" && (cur === "已完成" || cur === "已取消")) orderStatusFilter.value = "";
+              else if (tab === "done" && cur && cur !== "已完成") orderStatusFilter.value = "";
+              else if (tab === "cancelled" && cur && cur !== "已取消") orderStatusFilter.value = "";
+            }
+            renderOrders({ resetPage: true });
+          });
+        }
+        if (orderPagePrev) orderPagePrev.addEventListener("click", function() {
+          if (orderPage > 1) { orderPage -= 1; renderOrders(); }
+        });
+        if (orderPageNext) orderPageNext.addEventListener("click", function() {
+          orderPage += 1;
+          renderOrders();
+        });
+        if (orderPageNumbers) orderPageNumbers.addEventListener("click", function(e) {
+          var btn = e.target && e.target.closest ? e.target.closest(".order-page-btn") : null;
+          if (!btn) return;
+          var p = parseInt(btn.getAttribute("data-page"), 10);
+          if (!isFinite(p) || p < 1) return;
+          orderPage = p;
+          renderOrders();
+        });
+        if (orderPageSizeEl) orderPageSizeEl.addEventListener("change", function() {
+          renderOrders({ resetPage: true });
+        });
         var customerOverviewClose = document.getElementById("customerOverviewClose");
         var customerOverviewBackdrop = document.getElementById("customerOverviewBackdrop");
         if (customerOverviewClose) customerOverviewClose.addEventListener("click", closeCustomerOverviewModal_);
@@ -7622,8 +7797,8 @@
           });
         }
         var _renderOrdersBase = renderOrders;
-        renderOrders = function() {
-          _renderOrdersBase();
+        renderOrders = function(opts) {
+          _renderOrdersBase(opts);
           if (window.__maaruShippingPanel && typeof window.__maaruShippingPanel.render === "function") {
             window.__maaruShippingPanel.render();
           }
