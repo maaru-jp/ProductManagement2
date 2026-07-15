@@ -49,13 +49,13 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-06-07-dedupe-earn",
+        apiVersion: "2026-07-15-order-list-paging",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"],
-        postRoutes: ["order_list", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
+        postRoutes: ["order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
         memberSpreadsheetName: getMemberSpreadsheetMeta_().name
@@ -272,8 +272,8 @@ function doPost(e) {
       }
     }
 
-    // 訂單：list / upsert / delete
-    if (action === "order_list" || action === "order_upsert" || action === "order_delete") {
+    // 訂單：list / get / upsert / delete / repair
+    if (action === "order_list" || action === "order_get" || action === "order_upsert" || action === "order_delete" || action === "order_sheet_repair") {
       var orderSheet = getOrderSheet(ss);
       if (!orderSheet) {
         out.error = true;
@@ -281,7 +281,39 @@ function doPost(e) {
         return jsonOutput(out);
       }
       if (action === "order_list") {
-        out.orders = getOrders(orderSheet);
+        var listOpts = {
+          tab: body.tab,
+          status: body.status,
+          q: body.q != null ? body.q : body.query,
+          limit: body.limit,
+          offset: body.offset,
+          summary: body.summary
+        };
+        var paged = getOrdersPaged_(orderSheet, listOpts, ss);
+        out.orders = paged.orders;
+        out.total = paged.total;
+        out.limit = paged.limit;
+        out.offset = paged.offset;
+        out.summary = paged.summary;
+        out.counts = paged.counts;
+        out.nextOrderId = paged.nextOrderId;
+        out.message = "OK";
+        return jsonOutput(out);
+      }
+      if (action === "order_get") {
+        var getId = (body && body.id != null) ? String(body.id).trim() : "";
+        if (!getId) {
+          out.error = true;
+          out.message = "缺少訂單編號 id";
+          return jsonOutput(out);
+        }
+        var found = getOrderById_(orderSheet, getId, ss);
+        if (!found) {
+          out.error = true;
+          out.message = "找不到訂單 " + getId;
+          return jsonOutput(out);
+        }
+        out.order = found;
         out.message = "OK";
         return jsonOutput(out);
       }
@@ -726,8 +758,10 @@ function enrichOrdersMemberCardFromLedger_(orders, ss) {
   return orders;
 }
 
-function parseOrdersFromSheetData_(sheet) {
+function parseOrdersFromSheetData_(sheet, options) {
   if (!sheet) return [];
+  options = options || {};
+  var summary = !!options.summary;
   var data = sheet.getDataRange().getValues();
   if (!data || data.length < 2) return [];
   var display = sheet.getDataRange().getDisplayValues();
@@ -762,10 +796,14 @@ function parseOrdersFromSheetData_(sheet) {
     if (!id) continue;
     if (isPointsLedgerRow_(obj)) continue;
     if (obj.itemsJson != null && String(obj.itemsJson).trim() !== "") {
-      try {
-        var parsed = JSON.parse(String(obj.itemsJson));
-        if (parsed && typeof parsed === "object") obj.items = parsed;
-      } catch (e) { /* ignore */ }
+      if (summary) {
+        obj.itemsCount = estimateItemsCountFromJson_(obj.itemsJson);
+      } else {
+        try {
+          var parsed = JSON.parse(String(obj.itemsJson));
+          if (parsed && typeof parsed === "object") obj.items = parsed;
+        } catch (e) { /* ignore */ }
+      }
     }
     delete obj.itemsJson;
     if (obj.id != null) obj.id = normalizeOrderId_(obj.id);
@@ -780,6 +818,7 @@ function parseOrdersFromSheetData_(sheet) {
         obj.customerName = col3;
       }
     }
+    if (summary) obj.summary = true;
     list.push(obj);
   }
   list.sort(function(a, b) {
@@ -790,6 +829,16 @@ function parseOrdersFromSheetData_(sheet) {
     return bd - ad;
   });
   return list;
+}
+
+function estimateItemsCountFromJson_(raw) {
+  var s = String(raw || "").trim();
+  if (!s || s === "[]") return 0;
+  if (s.charAt(0) !== "[") return 0;
+  var m = s.match(/"lineName"\s*:/g);
+  if (m && m.length) return m.length;
+  m = s.match(/"name"\s*:/g);
+  return m ? m.length : 0;
 }
 
 /** 刪除標準 29 欄之後的重複欄，並把右側有值資料併回標準欄 */
@@ -1249,6 +1298,158 @@ function getOrders(sheet) {
   ensureOrderHeaderRow_(sheet);
   var list = parseOrdersFromSheetData_(sheet);
   return enrichOrdersMemberCardFromLedger_(list, SpreadsheetApp.getActiveSpreadsheet());
+}
+
+function getOrderOrdNum_(ord) {
+  var m = String((ord && ord.id) || "").match(/^ORD(\d+)$/i);
+  return m ? parseInt(m[1], 10) : -1;
+}
+
+function orderMatchesListTab_(ord, tab) {
+  var st = ord && ord.status != null ? String(ord.status) : "";
+  if (!tab || tab === "all") return true;
+  if (tab === "done") return st === "已完成";
+  if (tab === "cancelled") return st === "已取消";
+  return st !== "已完成" && st !== "已取消";
+}
+
+function normalizeOrderListTab_(tab) {
+  var t = (tab != null ? String(tab) : "all").toLowerCase();
+  if (t === "active" || t === "進行中") return "active";
+  if (t === "done" || t === "已完成") return "done";
+  if (t === "cancelled" || t === "已取消" || t === "canceled") return "cancelled";
+  return "all";
+}
+
+function filterOrdersForList_(list, opts) {
+  opts = opts || {};
+  var tab = normalizeOrderListTab_(opts.tab);
+  var status = (opts.status != null) ? String(opts.status).trim() : "";
+  var q = (opts.q != null) ? String(opts.q).trim().toLowerCase() : "";
+  return (list || []).filter(function(ord) {
+    if (!orderMatchesListTab_(ord, tab)) return false;
+    if (status && String(ord.status || "") !== status) return false;
+    if (q) {
+      var text = [
+        ord.id, ord.customerName, ord.name, ord.phone, ord.email, ord.linkedOrderIds, ord.memberCardNo
+      ].map(function(x) { return x != null ? String(x) : ""; }).join(" ").toLowerCase();
+      if (text.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+
+function sortOrdersByOrdDesc_(list) {
+  (list || []).sort(function(a, b) {
+    var na = getOrderOrdNum_(a);
+    var nb = getOrderOrdNum_(b);
+    if (na !== nb) return nb - na;
+    var ad = a && a.date ? new Date(a.date).getTime() : 0;
+    var bd = b && b.date ? new Date(b.date).getTime() : 0;
+    if (!isFinite(ad)) ad = 0;
+    if (!isFinite(bd)) bd = 0;
+    return bd - ad;
+  });
+  return list;
+}
+
+function toOrderSummary_(ord) {
+  if (!ord) return ord;
+  var out = {};
+  var keys = Object.keys(ord);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (k === "items") continue;
+    out[k] = ord[k];
+  }
+  var itemsCount = 0;
+  if (Array.isArray(ord.items)) itemsCount = ord.items.length;
+  else if (ord.itemsCount != null && isFinite(Number(ord.itemsCount))) itemsCount = Number(ord.itemsCount);
+  out.itemsCount = itemsCount;
+  out.summary = true;
+  return out;
+}
+
+function computeOrderTabCounts_(list) {
+  var counts = { active: 0, done: 0, cancelled: 0, all: 0 };
+  var arr = list || [];
+  counts.all = arr.length;
+  for (var i = 0; i < arr.length; i++) {
+    var st = arr[i] && arr[i].status != null ? String(arr[i].status) : "";
+    if (st === "已完成") counts.done++;
+    else if (st === "已取消") counts.cancelled++;
+    else counts.active++;
+  }
+  return counts;
+}
+
+function computeNextOrderId_(list) {
+  var maxNum = 0;
+  for (var i = 0; i < (list || []).length; i++) {
+    var n = getOrderOrdNum_(list[i]);
+    if (n > maxNum) maxNum = n;
+  }
+  var next = maxNum + 1;
+  var s = String(next);
+  while (s.length < 5) s = "0" + s;
+  return "ORD" + s;
+}
+
+function parseOrderListSummaryFlag_(raw) {
+  if (raw === false || raw === "false" || raw === 0 || raw === "0") return false;
+  if (raw === true || raw === "true" || raw === 1 || raw === "1") return true;
+  return true;
+}
+
+/** 訂單列表（支援 tab / status / q / limit / offset / summary） */
+function getOrdersPaged_(sheet, opts, ss) {
+  opts = opts || {};
+  ensureOrderHeaderRow_(sheet);
+  var summary = parseOrderListSummaryFlag_(opts.summary);
+  var list = parseOrdersFromSheetData_(sheet, { summary: summary });
+  list = enrichOrdersMemberCardFromLedger_(list, ss || SpreadsheetApp.getActiveSpreadsheet());
+  var counts = computeOrderTabCounts_(list);
+  var nextOrderId = computeNextOrderId_(list);
+  var filtered = filterOrdersForList_(list, opts);
+  sortOrdersByOrdDesc_(filtered);
+  var total = filtered.length;
+  var limit = opts.limit != null ? parseInt(opts.limit, 10) : 20;
+  if (!isFinite(limit)) limit = 20;
+  var offset = opts.offset != null ? parseInt(opts.offset, 10) : 0;
+  if (!isFinite(offset) || offset < 0) offset = 0;
+  var MAX_ALL = 2000;
+  var page;
+  if (limit <= 0) {
+    page = filtered.slice(0, MAX_ALL);
+    limit = page.length;
+    offset = 0;
+  } else {
+    if (limit > 200) limit = 200;
+    page = filtered.slice(offset, offset + limit);
+  }
+  if (summary) page = page.map(toOrderSummary_);
+  return {
+    orders: page,
+    total: total,
+    limit: limit,
+    offset: offset,
+    summary: summary,
+    counts: counts,
+    nextOrderId: nextOrderId
+  };
+}
+
+function getOrderById_(sheet, id, ss) {
+  ensureOrderHeaderRow_(sheet);
+  var list = parseOrdersFromSheetData_(sheet, { summary: false });
+  list = enrichOrdersMemberCardFromLedger_(list, ss || SpreadsheetApp.getActiveSpreadsheet());
+  var want = normalizeOrderId_(String(id || "").trim());
+  var wantU = String(want || "").toUpperCase();
+  for (var i = 0; i < list.length; i++) {
+    var oid = normalizeOrderId_(String(list[i].id || "").trim());
+    if (oid === want || String(list[i].id || "").trim().toUpperCase() === wantU) return list[i];
+  }
+  return null;
 }
 
 function jsonOutput(obj) {

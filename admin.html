@@ -1639,7 +1639,7 @@
         var action = body && body.action ? String(body.action) : "";
         if (action === "points_sync") return 240000;
         if (action === "member_sync_from_orders") return 180000;
-        if (action === "order_list" || action === "order_upsert") return 120000;
+        if (action === "order_list" || action === "order_upsert" || action === "order_get") return 120000;
         return 90000;
       }
 
@@ -4379,6 +4379,12 @@
         var orderPageSize = 20;
         var ORDER_ACTIVE_STATUSES = { "待處理": true, "已確認": true, "出貨中": true };
         var orderTableEventsBound = false;
+        var orderRemoteTotal = 0;
+        var orderTabCountsRemote = null;
+        var orderNextIdFromServer = "";
+        var orderFetchSeq = 0;
+        var orderServerPageMode = false;
+        var ORDER_LOCAL_CACHE_MAX = 300;
 
         var orders = [];
         try {
@@ -4388,8 +4394,98 @@
           orders.forEach(function(o) { enrichOrderCombineShipPrevFee_(o); normalizeOrderFieldsForAdmin_(o); });
         } catch (err) { orders = []; }
 
+        function isOrderActiveStatus_(status) {
+          var st = status != null ? String(status) : "";
+          if (ORDER_ACTIVE_STATUSES[st]) return true;
+          return st !== "已完成" && st !== "已取消";
+        }
+
         function saveOrders() {
-          try { localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(orders)); } catch (err) {}
+          try {
+            var toSave = (Array.isArray(orders) ? orders : []).filter(function(o) {
+              return isOrderActiveStatus_(o && o.status);
+            });
+            toSave.sort(function(a, b) {
+              var na = getOrderSortKey_(a);
+              var nb = getOrderSortKey_(b);
+              if (na !== nb) return nb - na;
+              var ad = a && a.date ? new Date(a.date).getTime() : 0;
+              var bd = b && b.date ? new Date(b.date).getTime() : 0;
+              return bd - ad;
+            });
+            if (toSave.length > ORDER_LOCAL_CACHE_MAX) toSave = toSave.slice(0, ORDER_LOCAL_CACHE_MAX);
+            localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(toSave));
+          } catch (err) {}
+        }
+
+        function upsertLocalOrderMemory_(ord) {
+          if (!ord || ord.id == null) return null;
+          normalizeOrderFieldsForAdmin_(ord);
+          var key = String(ord.id).trim().toUpperCase();
+          var idx = orders.findIndex(function(o) { return String(o.id || "").trim().toUpperCase() === key; });
+          if (idx >= 0) {
+            orders[idx] = mergeOrderRecordPreferComplete_(orders[idx], ord);
+            return orders[idx];
+          }
+          orders.push(normalizeOrderFieldsForAdmin_(ord));
+          return orders[orders.length - 1];
+        }
+
+        function findLocalOrderById_(id) {
+          var key = String(id || "").trim().toUpperCase();
+          if (!key) return null;
+          return orders.find(function(o) { return String(o.id || "").trim().toUpperCase() === key; }) || null;
+        }
+
+        function orderNeedsFullDetail_(ord) {
+          if (!ord) return true;
+          if (ord.summary) return true;
+          if (!Array.isArray(ord.items)) return true;
+          return false;
+        }
+
+        function parseFetchJsonResponse_(r) {
+          return r.text().then(function(t) {
+            try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; }
+          });
+        }
+
+        function isPagedOrderListResponse_(res) {
+          if (!res || res.error) return false;
+          if (res.counts && typeof res.counts === "object") return true;
+          if (res.total != null && isFinite(Number(res.total))) return true;
+          if (typeof res.nextOrderId === "string" && res.nextOrderId) return true;
+          if (res.summary === true || res.summary === false) return true;
+          return false;
+        }
+
+        function ensureFullOrder_(idOrOrd) {
+          var id = typeof idOrOrd === "string" ? idOrOrd : (idOrOrd && idOrOrd.id);
+          id = String(id || "").trim();
+          var existing = findLocalOrderById_(id);
+          if (!existing && idOrOrd && typeof idOrOrd === "object") existing = idOrOrd;
+          if (existing && !orderNeedsFullDetail_(existing)) return Promise.resolve(existing);
+          if (ORDER_LOCAL_ONLY) return Promise.resolve(existing || null);
+          if (!id) return Promise.reject(new Error("缺少訂單編號"));
+          return fetchWrite({ action: "order_get", id: id })
+            .then(parseFetchJsonResponse_)
+            .then(function(res) {
+              if (res && res.error) {
+                if (existing) return existing;
+                throw new Error(res.message || "載入訂單詳情失敗");
+              }
+              if (!res || !res.order) {
+                if (existing) return existing;
+                throw new Error("找不到訂單 " + id);
+              }
+              var full = upsertLocalOrderMemory_(res.order);
+              saveOrders();
+              return full;
+            })
+            .catch(function(err) {
+              if (existing) return existing;
+              throw err;
+            });
         }
         window.getAdminOrdersSnapshot_ = function () { return orders; };
 
@@ -4515,32 +4611,146 @@
 
         function loadOrdersFromSheet() {
           if (ORDER_LOCAL_ONLY) {
-            renderOrders();
+            orderServerPageMode = false;
+            orderTabCountsRemote = null;
+            renderOrders({ paintOnly: true });
             return Promise.resolve({ localOnly: true, orders: orders });
           }
-          showOrderMessage("載入訂單中...");
+          showOrderMessage("載入進行中訂單...");
           return repairOrderSheetOnServer_().catch(function () { return {}; }).then(function () {
-          return fetchWrite({ action: "order_list" })
-            .then(function(r) { return r.text().then(function(t) { try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; } }); })
+          return fetchWrite({ action: "order_list", tab: "active", summary: false, limit: 0 })
+            .then(parseFetchJsonResponse_)
             .then(function(res) {
               if (res && res.error) throw new Error(res.message || "載入訂單失敗");
               var list = res.orders || [];
               var sheetOrders = Array.isArray(list) ? list : [];
-              orders = mergeOrdersPreferLocal_(sheetOrders, orders);
+              if (!isPagedOrderListResponse_(res)) {
+                orders = mergeOrdersPreferLocal_(sheetOrders, orders);
+                orders.forEach(function(o) { normalizeOrderFieldsForAdmin_(o); });
+                orderTabCountsRemote = null;
+                orderServerPageMode = false;
+                saveOrders();
+                backfillMissingMemberCards_({ syncSheet: true, silent: true });
+                renderOrders({ paintOnly: true });
+                showOrderMessage("已從試算表載入訂單（尚未部署 API 分頁時為全量模式）");
+                syncLocalOrdersToSheet_(sheetOrders, orders);
+                return res;
+              }
+              var localActive = orders.filter(function(o) { return isOrderActiveStatus_(o && o.status); });
+              orders = mergeOrdersPreferLocal_(sheetOrders, localActive);
               orders.forEach(function(o) { normalizeOrderFieldsForAdmin_(o); });
+              if (res.counts) orderTabCountsRemote = res.counts;
+              if (res.nextOrderId) orderNextIdFromServer = String(res.nextOrderId);
               saveOrders();
               backfillMissingMemberCards_({ syncSheet: true, silent: true });
-              renderOrders();
-              showOrderMessage("已從試算表載入訂單");
               syncLocalOrdersToSheet_(sheetOrders, orders);
-              return res;
+              if (orderListTab === "active") {
+                orderServerPageMode = false;
+                renderOrders({ paintOnly: true });
+                showOrderMessage("已載入進行中訂單（共 " + orders.length + " 筆）");
+                return res;
+              }
+              showOrderMessage("已載入進行中訂單，正在載入目前分頁...");
+              return fetchOrderListPageFromServer_({ resetPage: false }).then(function() { return res; });
             })
             .catch(function(err) {
               showOrderMessage("載入失敗：" + formatNetworkError(err), true);
-              renderOrders();
+              renderOrders({ paintOnly: true });
               throw err;
             });
           });
+        }
+
+        function buildOrderListRequestBody_() {
+          if (orderPageSizeEl) {
+            var sizeVal = parseInt(orderPageSizeEl.value, 10);
+            if (sizeVal === 20 || sizeVal === 50 || sizeVal === 100) orderPageSize = sizeVal;
+          }
+          return {
+            action: "order_list",
+            tab: orderListTab,
+            status: orderStatusFilter ? orderStatusFilter.value : "",
+            q: orderSearchInput ? String(orderSearchInput.value || "").trim() : "",
+            limit: orderPageSize,
+            offset: Math.max(0, (orderPage - 1) * orderPageSize),
+            summary: true
+          };
+        }
+
+        function applyOrderListCountsFromRes_(res) {
+          if (res && res.counts) orderTabCountsRemote = res.counts;
+          if (res && res.nextOrderId) orderNextIdFromServer = String(res.nextOrderId);
+        }
+
+        function fetchOrderListPageFromServer_(opts) {
+          opts = opts || {};
+          if (ORDER_LOCAL_ONLY) {
+            orderServerPageMode = false;
+            renderOrders({ paintOnly: true, resetPage: !!opts.resetPage });
+            return Promise.resolve(null);
+          }
+          if (opts.resetPage) orderPage = 1;
+          var seq = ++orderFetchSeq;
+          var body = buildOrderListRequestBody_();
+          orderServerPageMode = true;
+          if (orderTableBody) {
+            orderTableBody.innerHTML = "<tr><td colspan=\"7\" class=\"py-12 text-center text-slate-500\">載入中...</td></tr>";
+          }
+          if (orderPagePrev) orderPagePrev.disabled = true;
+          if (orderPageNext) orderPageNext.disabled = true;
+          return fetchWrite(body)
+            .then(parseFetchJsonResponse_)
+            .then(function(res) {
+              if (seq !== orderFetchSeq) return res;
+              if (res && res.error) throw new Error(res.message || "載入訂單失敗");
+              if (!isPagedOrderListResponse_(res)) {
+                var legacy = Array.isArray(res.orders) ? res.orders : [];
+                orders = mergeOrdersPreferLocal_(legacy, orders);
+                orders.forEach(function(o) { normalizeOrderFieldsForAdmin_(o); });
+                orderTabCountsRemote = null;
+                orderServerPageMode = false;
+                saveOrders();
+                renderOrders({ paintOnly: true });
+                showOrderMessage("已載入訂單（全量模式）");
+                return res;
+              }
+              applyOrderListCountsFromRes_(res);
+              orderRemoteTotal = (res && res.total != null && isFinite(Number(res.total))) ? Number(res.total) : ((res.orders || []).length);
+              var pageRows = Array.isArray(res.orders) ? res.orders : [];
+              pageRows.forEach(function(o) { normalizeOrderFieldsForAdmin_(o); });
+              paintOrderTable_(pageRows, { alreadyPaged: true, total: orderRemoteTotal });
+              showOrderMessage("已載入訂單列表");
+              return res;
+            })
+            .catch(function(err) {
+              if (seq !== orderFetchSeq) return null;
+              showOrderMessage("載入失敗：" + formatNetworkError(err), true);
+              paintOrderTable_([], { alreadyPaged: true, total: 0 });
+              throw err;
+            });
+        }
+
+        function refreshOrderListView_(opts) {
+          opts = opts || {};
+          if (opts.resetPage) orderPage = 1;
+          if (ORDER_LOCAL_ONLY || orderListTab === "active") {
+            orderServerPageMode = false;
+            renderOrders({ paintOnly: true, resetPage: !!opts.resetPage });
+            // 背景更新分頁籤總數
+            if (!ORDER_LOCAL_ONLY) {
+              fetchWrite({ action: "order_list", tab: "active", summary: true, limit: 1, offset: 0 })
+                .then(parseFetchJsonResponse_)
+                .then(function(res) {
+                  if (res && !res.error && isPagedOrderListResponse_(res)) {
+                    applyOrderListCountsFromRes_(res);
+                    updateOrderTabUi_();
+                  }
+                })
+                .catch(function() {});
+            }
+            return Promise.resolve();
+          }
+          return fetchOrderListPageFromServer_(opts);
         }
 
         function normalizeOrderFieldsForAdmin_(ord) {
@@ -4627,6 +4837,13 @@
             if (m) {
               var n = parseInt(m[1], 10);
               if (!isNaN(n) && n >= 1 && n > maxNum) maxNum = n;
+            }
+          }
+          if (orderNextIdFromServer) {
+            var sm = String(orderNextIdFromServer).match(ordNumRe);
+            if (sm) {
+              var sn = parseInt(sm[1], 10);
+              if (!isNaN(sn) && sn - 1 > maxNum) maxNum = sn - 1;
             }
           }
           var next = Math.min(maxNum + 1, 99999);
@@ -6459,20 +6676,25 @@
 
         function updateOrderTabUi_() {
           if (!orderListTabs) return;
-          var searchQ = (orderSearchInput && orderSearchInput.value) ? orderSearchInput.value.trim().toLowerCase() : "";
-          var counts = { active: 0, done: 0, cancelled: 0, all: 0 };
-          orders.forEach(function(ord) {
-            if (searchQ) {
-              var text = (ord.id || "") + orderCustomerName_(ord) + (ord.phone || "") + (ord.email || "") + (ord.linkedOrderIds || "");
-              if (text.toLowerCase().indexOf(searchQ) < 0) return;
-            }
-            counts.all += 1;
-            var st = ord.status != null ? String(ord.status) : "";
-            if (ORDER_ACTIVE_STATUSES[st]) counts.active += 1;
-            else if (st === "已完成") counts.done += 1;
-            else if (st === "已取消") counts.cancelled += 1;
-            else counts.active += 1;
-          });
+          var counts;
+          if (orderTabCountsRemote) {
+            counts = orderTabCountsRemote;
+          } else {
+            counts = { active: 0, done: 0, cancelled: 0, all: 0 };
+            var searchQ = (orderSearchInput && orderSearchInput.value) ? orderSearchInput.value.trim().toLowerCase() : "";
+            orders.forEach(function(ord) {
+              if (searchQ) {
+                var text = (ord.id || "") + orderCustomerName_(ord) + (ord.phone || "") + (ord.email || "") + (ord.linkedOrderIds || "");
+                if (text.toLowerCase().indexOf(searchQ) < 0) return;
+              }
+              counts.all += 1;
+              var st = ord.status != null ? String(ord.status) : "";
+              if (ORDER_ACTIVE_STATUSES[st]) counts.active += 1;
+              else if (st === "已完成") counts.done += 1;
+              else if (st === "已取消") counts.cancelled += 1;
+              else counts.active += 1;
+            });
+          }
           orderListTabs.querySelectorAll(".order-tab-count").forEach(function(el) {
             var key = el.getAttribute("data-count-for");
             if (key && counts[key] != null) el.textContent = "(" + counts[key] + ")";
@@ -6554,20 +6776,28 @@
             var sel = e.target && e.target.closest ? e.target.closest(".order-status-select") : null;
             if (!sel || !orderTableBody.contains(sel)) return;
             var id = sel.getAttribute("data-order-id");
-            var ord = orders.find(function(o) { return o.id === id; });
-            if (!ord) return;
-            var prevStatus = ord.status;
-            var prevProcessed = ord.pointsProcessed;
-            ord.status = sel.value;
-            ord.pointsUsed = ord.pointsUsed != null ? ord.pointsUsed : 0;
-            ord = ensureOrderMemberCardOnOrder_(ord);
-            var loyaltyResult = applyLoyaltyToOrder_(ord, { status: prevStatus, pointsProcessed: prevProcessed });
-            ord = loyaltyResult.order;
-            saveOrders();
-            renderOrders();
-            var liveSel = orderTableBody.querySelector('.order-status-select[data-order-id="' + String(id).replace(/"/g, "") + '"]');
-            if (liveSel) liveSel.disabled = true;
-            upsertOrderWithPointsSync_(ord, loyaltyResult.pointsChanged, "訂單狀態已寫入").finally(function() {
+            var newStatus = sel.value;
+            sel.disabled = true;
+            ensureFullOrder_(id).then(function(ord) {
+              if (!ord) throw new Error("找不到訂單");
+              var prevStatus = ord.status;
+              var prevProcessed = ord.pointsProcessed;
+              ord.status = newStatus;
+              ord.pointsUsed = ord.pointsUsed != null ? ord.pointsUsed : 0;
+              ord = ensureOrderMemberCardOnOrder_(ord);
+              var loyaltyResult = applyLoyaltyToOrder_(ord, { status: prevStatus, pointsProcessed: prevProcessed });
+              ord = loyaltyResult.order;
+              var key = String(ord.id || "").trim().toUpperCase();
+              if (isOrderActiveStatus_(ord.status)) upsertLocalOrderMemory_(ord);
+              else orders = orders.filter(function(o) { return String(o.id || "").trim().toUpperCase() !== key; });
+              saveOrders();
+              return upsertOrderWithPointsSync_(ord, loyaltyResult.pointsChanged, "訂單狀態已寫入").then(function() {
+                return refreshOrderListView_();
+              });
+            }).catch(function(err) {
+              showOrderMessage(err.message || "更新狀態失敗", true);
+              refreshOrderListView_();
+            }).finally(function() {
               var s2 = orderTableBody.querySelector('.order-status-select[data-order-id="' + String(id).replace(/"/g, "") + '"]');
               if (s2) s2.disabled = false;
             });
@@ -6588,8 +6818,12 @@
             if (!tr || !orderTableBody.contains(tr)) return;
             var id = tr.getAttribute("data-order-id");
             if (t.closest(".order-edit-btn")) {
-              var ordEdit = orders.find(function(o) { return o.id === id; });
-              if (ordEdit) openOrderModal(ordEdit);
+              ensureFullOrder_(id).then(function(ord) {
+                if (ord) openOrderModal(ord);
+                else showOrderMessage("找不到訂單", true);
+              }).catch(function(err) {
+                showOrderMessage(err.message || "載入訂單失敗", true);
+              });
               return;
             }
             if (t.closest(".order-delete-btn")) {
@@ -6606,7 +6840,7 @@
                 }
               }
               saveOrders();
-              renderOrders();
+              refreshOrderListView_();
               deleteOrderFromSheet(id).then(function() {
                 var syncChain = Promise.resolve();
                 if (ledgerMsg && typeof window.syncPointsLedgerToSheet === "function") {
@@ -6622,36 +6856,45 @@
               return;
             }
             if (t.closest(".order-pdf-btn")) {
-              var ordPdf = orders.find(function(o) { return String(o.id || "").trim() === String(id || "").trim(); });
-              if (ordPdf) generateOrderPdf(ordPdf);
+              ensureFullOrder_(id).then(function(ord) {
+                if (ord) generateOrderPdf(ord);
+                else showOrderMessage("找不到訂單", true);
+              }).catch(function(err) {
+                showOrderMessage(err.message || "載入訂單失敗", true);
+              });
               return;
             }
             if (t.closest(".order-append-btn")) {
               var appendBtn = t.closest(".order-append-btn");
               var appendId = (appendBtn && appendBtn.getAttribute("data-order-id")) || id;
-              if (appendId) openPasteOrderModal(appendId);
+              if (appendId) {
+                ensureFullOrder_(appendId).then(function() {
+                  openPasteOrderModal(appendId);
+                }).catch(function(err) {
+                  showOrderMessage(err.message || "載入訂單失敗", true);
+                });
+              }
             }
           });
         }
 
-        function renderOrders(opts) {
+        function paintOrderTable_(pageList, paintOpts) {
           if (!orderTableBody) return;
-          opts = opts || {};
-          if (opts.resetPage) orderPage = 1;
-          if (orderPageSizeEl) {
-            var sizeVal = parseInt(orderPageSizeEl.value, 10);
-            if (sizeVal === 20 || sizeVal === 50 || sizeVal === 100) orderPageSize = sizeVal;
-          }
+          paintOpts = paintOpts || {};
           updateOrderTabUi_();
-          var list = getFilteredSortedOrders_();
-          updateOrderPaginationUi_(list.length);
-          if (list.length === 0) {
-            orderTableBody.innerHTML = "<tr><td colspan=\"7\" class=\"py-12 text-center text-slate-500\">" + (orders.length === 0 ? "目前沒有訂單" : "沒有符合條件的訂單") + "</td></tr>";
+          var totalFiltered = paintOpts.alreadyPaged
+            ? (paintOpts.total != null ? paintOpts.total : pageList.length)
+            : pageList.length;
+          updateOrderPaginationUi_(totalFiltered);
+          if (!pageList || pageList.length === 0) {
+            var emptyMsg = orders.length === 0 && !orderServerPageMode ? "目前沒有訂單" : "沒有符合條件的訂單";
+            orderTableBody.innerHTML = "<tr><td colspan=\"7\" class=\"py-12 text-center text-slate-500\">" + emptyMsg + "</td></tr>";
             bindOrderTableEventsOnce_();
+            if (window.__maaruShippingPanel && typeof window.__maaruShippingPanel.render === "function") {
+              window.__maaruShippingPanel.render();
+            }
             return;
           }
-          var start = (orderPage - 1) * orderPageSize;
-          var pageList = list.slice(start, start + orderPageSize);
           orderTableBody.innerHTML = pageList.map(function(ord) {
             var dateStr = ord.date ? new Date(ord.date).toLocaleDateString("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
             var customerNameOnly = orderCustomerName_(ord) || "—";
@@ -6680,6 +6923,27 @@
               "</tr>";
           }).join("");
           bindOrderTableEventsOnce_();
+          if (window.__maaruShippingPanel && typeof window.__maaruShippingPanel.render === "function") {
+            window.__maaruShippingPanel.render();
+          }
+        }
+          if (!orderTableBody) return;
+          opts = opts || {};
+          if (opts.resetPage) orderPage = 1;
+          if (orderPageSizeEl) {
+            var sizeVal = parseInt(orderPageSizeEl.value, 10);
+            if (sizeVal === 20 || sizeVal === 50 || sizeVal === 100) orderPageSize = sizeVal;
+          }
+          if (!ORDER_LOCAL_ONLY && orderListTab !== "active" && !opts.paintOnly) {
+            fetchOrderListPageFromServer_({ resetPage: !!opts.resetPage });
+            return;
+          }
+          orderServerPageMode = false;
+          var list = getFilteredSortedOrders_();
+          updateOrderPaginationUi_(list.length);
+          var start = (orderPage - 1) * orderPageSize;
+          var pageList = list.slice(start, start + orderPageSize);
+          paintOrderTable_(pageList, { alreadyPaged: true, total: list.length });
         }
 
         function getOrderItemShipStatus_(it) {
@@ -7670,46 +7934,69 @@
         });
 
         function exportOrdersCsvFromCurrentList() {
-          if (orders.length === 0) { showOrderMessage("目前沒有訂單可匯出", true); return; }
-          var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "Line ID", "運送方式", "門市", "店號", "地址", "購買商品清單", "數量", "單價", "小計", "折扣", "運費", "運費狀態", "預購訂金", "待結清總金額", "備註", "關聯訂單", "收訂金歷程記錄", "預購日期", "出貨日期"];
-          var rows = [headers.join(",")];
-          orders.forEach(function(ord) {
-            var dateStr = ord.date ? new Date(ord.date).toISOString() : "";
-            var itemsNamesText = "";
-            var itemsQtyText = "";
-            var itemsPriceText = "";
-            if (ord.items && Array.isArray(ord.items) && ord.items.length) {
-              itemsNamesText = ord.items.map(function(it) {
-                var n = (it.lineName != null ? String(it.lineName).trim() : "") || ((it.name || "") + (it.variant ? " " + it.variant : ""));
-                return n;
-              }).join(" | ");
-              itemsQtyText = ord.items.map(function(it) {
-                var q = (it.qty != null && !isNaN(Number(it.qty))) ? Number(it.qty) : 0;
-                return String(q);
-              }).join(" | ");
-              itemsPriceText = ord.items.map(function(it) {
-                var p = (it.price != null && !isNaN(Number(it.price))) ? Math.round(Number(it.price)) : 0;
-                return String(p);
-              }).join(" | ");
-            }
-            var row = [
-              ord.id || "", ord.status || "", dateStr, ord.customerName || "", ord.phone || "", ord.email || "", ord.lineId || "",
-              ord.shippingMethod || "", ord.storeName || "", ord.storeId || "", (ord.address || "").replace(/\n/g, " "),
-              itemsNamesText, itemsQtyText, itemsPriceText,
-              ord.subtotal != null ? ord.subtotal : "", ord.discount != null ? ord.discount : "", ord.shippingFee != null ? ord.shippingFee : "",
-              ord.shippingStatus || "", ord.depositAmount != null ? ord.depositAmount : "",
-              orderAmountDue(ord), (ord.remark || "").replace(/"/g, '""'), (ord.linkedOrderIds || "").replace(/"/g, '""'), (ord.depositRemark || "").replace(/"/g, '""'),
-              ord.preorderDate || "", ord.shipDate || ""
-            ];
-            rows.push(row.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(","));
+          function buildAndDownloadCsv_(list) {
+            if (!list || list.length === 0) { showOrderMessage("目前沒有訂單可匯出", true); return; }
+            var headers = ["訂單編號", "狀態", "日期", "客戶姓名", "電話", "Email", "Line ID", "運送方式", "門市", "店號", "地址", "購買商品清單", "數量", "單價", "小計", "折扣", "運費", "運費狀態", "預購訂金", "待結清總金額", "備註", "關聯訂單", "收訂金歷程記錄", "預購日期", "出貨日期"];
+            var rows = [headers.join(",")];
+            list.forEach(function(ord) {
+              var dateStr = ord.date ? new Date(ord.date).toISOString() : "";
+              var itemsNamesText = "";
+              var itemsQtyText = "";
+              var itemsPriceText = "";
+              if (ord.items && Array.isArray(ord.items) && ord.items.length) {
+                itemsNamesText = ord.items.map(function(it) {
+                  var n = (it.lineName != null ? String(it.lineName).trim() : "") || ((it.name || "") + (it.variant ? " " + it.variant : ""));
+                  return n;
+                }).join(" | ");
+                itemsQtyText = ord.items.map(function(it) {
+                  var q = (it.qty != null && !isNaN(Number(it.qty))) ? Number(it.qty) : 0;
+                  return String(q);
+                }).join(" | ");
+                itemsPriceText = ord.items.map(function(it) {
+                  var p = (it.price != null && !isNaN(Number(it.price))) ? Math.round(Number(it.price)) : 0;
+                  return String(p);
+                }).join(" | ");
+              }
+              var row = [
+                ord.id || "", ord.status || "", dateStr, ord.customerName || "", ord.phone || "", ord.email || "", ord.lineId || "",
+                ord.shippingMethod || "", ord.storeName || "", ord.storeId || "", (ord.address || "").replace(/\n/g, " "),
+                itemsNamesText, itemsQtyText, itemsPriceText,
+                ord.subtotal != null ? ord.subtotal : "", ord.discount != null ? ord.discount : "", ord.shippingFee != null ? ord.shippingFee : "",
+                ord.shippingStatus || "", ord.depositAmount != null ? ord.depositAmount : "",
+                orderAmountDue(ord), (ord.remark || "").replace(/"/g, '""'), (ord.linkedOrderIds || "").replace(/"/g, '""'), (ord.depositRemark || "").replace(/"/g, '""'),
+                ord.preorderDate || "", ord.shipDate || ""
+              ];
+              rows.push(row.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(","));
+            });
+            var blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
+            var a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "訂單匯出-" + new Date().toISOString().slice(0, 10) + ".csv";
+            a.click();
+            URL.revokeObjectURL(a.href);
+            showOrderMessage("已匯出 CSV（" + list.length + " 筆）");
+          }
+
+          if (ORDER_LOCAL_ONLY) {
+            buildAndDownloadCsv_(getFilteredSortedOrders_());
+            return;
+          }
+          showOrderMessage("準備匯出，載入完整訂單中...");
+          fetchWrite({
+            action: "order_list",
+            tab: orderListTab,
+            status: orderStatusFilter ? orderStatusFilter.value : "",
+            q: orderSearchInput ? String(orderSearchInput.value || "").trim() : "",
+            summary: false,
+            limit: 0
+          }).then(parseFetchJsonResponse_).then(function(res) {
+            if (res && res.error) throw new Error(res.message || "匯出載入失敗");
+            var list = Array.isArray(res.orders) ? res.orders : [];
+            list.forEach(function(o) { normalizeOrderFieldsForAdmin_(o); });
+            buildAndDownloadCsv_(list);
+          }).catch(function(err) {
+            showOrderMessage("匯出失敗：" + formatNetworkError(err), true);
           });
-          var blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
-          var a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = "訂單匯出-" + new Date().toISOString().slice(0, 10) + ".csv";
-          a.click();
-          URL.revokeObjectURL(a.href);
-          showOrderMessage("已匯出 CSV");
         }
 
         if (btnExportOrders) btnExportOrders.addEventListener("click", function() {
@@ -7727,14 +8014,14 @@
         } else {
           checkApiConnectivity_();
         }
-        if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { renderOrders({ resetPage: true }); });
-        if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); renderOrders({ resetPage: true }); } });
+        if (btnOrderSearch) btnOrderSearch.addEventListener("click", function() { refreshOrderListView_({ resetPage: true }); });
+        if (orderSearchInput) orderSearchInput.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); refreshOrderListView_({ resetPage: true }); } });
         if (orderStatusFilter) orderStatusFilter.addEventListener("change", function() {
           var st = orderStatusFilter.value;
           if (st === "已完成") orderListTab = "done";
           else if (st === "已取消") orderListTab = "cancelled";
           else if (st === "待處理" || st === "已確認" || st === "出貨中") orderListTab = "active";
-          renderOrders({ resetPage: true });
+          refreshOrderListView_({ resetPage: true });
         });
         if (orderListTabs) {
           orderListTabs.addEventListener("click", function(e) {
@@ -7749,15 +8036,18 @@
               else if (tab === "done" && cur && cur !== "已完成") orderStatusFilter.value = "";
               else if (tab === "cancelled" && cur && cur !== "已取消") orderStatusFilter.value = "";
             }
-            renderOrders({ resetPage: true });
+            refreshOrderListView_({ resetPage: true });
           });
         }
         if (orderPagePrev) orderPagePrev.addEventListener("click", function() {
-          if (orderPage > 1) { orderPage -= 1; renderOrders(); }
+          if (orderPage > 1) {
+            orderPage -= 1;
+            refreshOrderListView_();
+          }
         });
         if (orderPageNext) orderPageNext.addEventListener("click", function() {
           orderPage += 1;
-          renderOrders();
+          refreshOrderListView_();
         });
         if (orderPageNumbers) orderPageNumbers.addEventListener("click", function(e) {
           var btn = e.target && e.target.closest ? e.target.closest(".order-page-btn") : null;
@@ -7765,10 +8055,10 @@
           var p = parseInt(btn.getAttribute("data-page"), 10);
           if (!isFinite(p) || p < 1) return;
           orderPage = p;
-          renderOrders();
+          refreshOrderListView_();
         });
         if (orderPageSizeEl) orderPageSizeEl.addEventListener("change", function() {
-          renderOrders({ resetPage: true });
+          refreshOrderListView_({ resetPage: true });
         });
         var customerOverviewClose = document.getElementById("customerOverviewClose");
         var customerOverviewBackdrop = document.getElementById("customerOverviewBackdrop");
@@ -7789,10 +8079,13 @@
             escapeHtml: escapeHtml,
             notify: showOrderMessage,
             openOrder: function(id) {
-              var ord = orders.find(function(o) { return String(o.id || "").trim() === String(id || "").trim(); });
-              if (!ord) return;
               showSection("sectionOrders");
-              openOrderModal(ord);
+              ensureFullOrder_(id).then(function(ord) {
+                if (ord) openOrderModal(ord);
+                else showOrderMessage("找不到訂單", true);
+              }).catch(function(err) {
+                showOrderMessage(err.message || "載入訂單失敗", true);
+              });
             }
           });
         }
