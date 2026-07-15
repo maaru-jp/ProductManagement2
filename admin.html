@@ -6927,6 +6927,8 @@
             window.__maaruShippingPanel.render();
           }
         }
+
+        function renderOrders(opts) {
           if (!orderTableBody) return;
           opts = opts || {};
           if (opts.resetPage) orderPage = 1;
