@@ -49,7 +49,7 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-07-15-order-list-paging",
+        apiVersion: "2026-07-23-order-load-fast",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
@@ -325,6 +325,7 @@ function doPost(e) {
           return jsonOutput(out);
         }
         var deleted = deleteOrderById(orderSheet, delId);
+        clearOrderListCache_(orderSheet);
         var ledgerRemoved = deleted ? removeLedgerEntriesForOrderId_(ss, delId) : 0;
         out.ledgerRemoved = ledgerRemoved;
         out.message = deleted
@@ -334,6 +335,7 @@ function doPost(e) {
       }
       if (action === "order_sheet_repair") {
         var repairResult = realignOrderSheetToStandard_(orderSheet, ss);
+        clearOrderListCache_(orderSheet);
         if (!repairResult.realigned) ensureOrderHeaderRow_(orderSheet);
         var list = parseOrdersFromSheetData_(orderSheet);
         list = enrichOrdersMemberCardFromLedger_(list, ss);
@@ -361,6 +363,7 @@ function doPost(e) {
       }
       order = enrichOrderForSheetWrite_(order, ss);
       upsertOrder(orderSheet, order);
+      clearOrderListCache_(orderSheet);
       if (isValidMemberCardNo_(normalizeMemberCardNo_(order.memberCardNo))) {
         upsertMemberFromOrder_(ss, order);
       }
@@ -762,15 +765,21 @@ function parseOrdersFromSheetData_(sheet, options) {
   if (!sheet) return [];
   options = options || {};
   var summary = !!options.summary;
-  var data = sheet.getDataRange().getValues();
+  // 一次讀取，避免 getValues + getDisplayValues 各打一輪 getDataRange
+  var range = sheet.getDataRange();
+  var data = range.getValues();
   if (!data || data.length < 2) return [];
-  var display = sheet.getDataRange().getDisplayValues();
+  var display = null;
+  if (!options.skipDisplay) {
+    try { display = range.getDisplayValues(); } catch (e) { display = null; }
+  }
   var headers = data[0].map(function(h) { return (h || "").toString().trim(); });
   var keyMap = orderKeyMap_(headers);
   var cardCol = findMemberCardColumnIndex_(headers);
   var list = [];
   for (var r = 1; r < data.length; r++) {
     var row = data[r];
+    var dispRow = display ? display[r] : null;
     var obj = {};
     for (var c = 0; c < headers.length; c++) {
       var key = keyMap[c];
@@ -781,16 +790,16 @@ function parseOrdersFromSheetData_(sheet, options) {
       obj[key] = val;
     }
     if (cardCol >= 0) {
-      var dispCard = normalizeMemberCardNo_((display[r] && display[r][cardCol]) || row[cardCol]);
+      var dispCard = normalizeMemberCardNo_((dispRow && dispRow[cardCol]) || row[cardCol]);
       if (dispCard) obj.memberCardNo = dispCard;
     }
     if (!isValidMemberCardNo_(obj.memberCardNo)) {
-      var scanned = extractMemberCardFromRowCells_(row, display[r]);
+      var scanned = extractMemberCardFromRowCells_(row, dispRow || row);
       if (scanned) obj.memberCardNo = scanned;
     }
     var id = (obj.id != null) ? String(obj.id).trim() : "";
     if (!id) {
-      id = extractOrderIdFromRowCells_(row, display[r]);
+      id = extractOrderIdFromRowCells_(row, dispRow || row);
       if (id) obj.id = id;
     }
     if (!id) continue;
@@ -811,7 +820,6 @@ function parseOrdersFromSheetData_(sheet, options) {
       obj.memberCardNo = normalizeMemberCardNo_(obj.memberCardNo);
     }
     normalizeParsedOrderFields_(obj);
-    // 標準欄位 D「客戶姓名」仍空時，直接讀第 4 欄（避免別名表頭錯位）
     if ((!obj.customerName || String(obj.customerName).trim() === "") && row[3] != null && String(row[3]).trim() !== "") {
       var col3 = String(row[3]).trim();
       if (col3 !== "紀錄ID" && col3 !== "類型" && !/^ORD\d+$/i.test(col3)) {
@@ -1180,21 +1188,21 @@ function normalizeOrderId_(v) {
 function findOrderRowsById_(sheet, id, headers) {
   var safeId = normalizeOrderId_(id);
   if (!safeId) return [];
-  var data = sheet.getDataRange().getValues();
-  if (!data || data.length < 2) return [];
   var idCols = getOrderIdColumns_(headers);
-  var rows = [];
-  for (var r = 1; r < data.length; r++) {
-    for (var i = 0; i < idCols.length; i++) {
-      var col = idCols[i];
-      var v = data[r][col];
-      if (normalizeOrderId_(v) === safeId) {
-        rows.push(r + 1); // 1-indexed row
-        break;
+  if (!idCols.length) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var found = {};
+  for (var i = 0; i < idCols.length; i++) {
+    var col1 = idCols[i] + 1;
+    var colValues = sheet.getRange(2, col1, lastRow, col1).getValues();
+    for (var r = 0; r < colValues.length; r++) {
+      if (normalizeOrderId_(colValues[r][0]) === safeId) {
+        found[r + 2] = true;
       }
     }
   }
-  return rows;
+  return Object.keys(found).map(function(k) { return parseInt(k, 10); }).sort(function(a, b) { return a - b; });
 }
 
 function buildRowFromOrder_(sheet, order) {
@@ -1401,13 +1409,114 @@ function parseOrderListSummaryFlag_(raw) {
   return true;
 }
 
+/** 訂單列表快取（縮短重複載入時間；寫入／刪除時清除） */
+var ORDER_LIST_CACHE_TTL_SEC_ = 120;
+
+function orderListCacheKey_(sheet, kind) {
+  var ssId = "";
+  try { ssId = SpreadsheetApp.getActiveSpreadsheet().getId(); } catch (e) {}
+  var sn = sheet ? String(sheet.getName() || "") : "";
+  return "ordlist_v2_" + ssId + "_" + sn + "_" + kind;
+}
+
+function getCachedOrderList_(sheet, kind) {
+  try {
+    var raw = CacheService.getScriptCache().get(orderListCacheKey_(sheet, kind));
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCachedOrderList_(sheet, kind, list) {
+  try {
+    var json = JSON.stringify(list || []);
+    // Script Cache 單值約 100KB；過大則略過
+    if (json.length > 90000) return;
+    CacheService.getScriptCache().put(orderListCacheKey_(sheet, kind), json, ORDER_LIST_CACHE_TTL_SEC_);
+  } catch (e) { /* ignore */ }
+}
+
+function clearOrderListCache_(sheet) {
+  try {
+    var cache = CacheService.getScriptCache();
+    cache.remove(orderListCacheKey_(sheet, "summary"));
+    cache.remove(orderListCacheKey_(sheet, "full"));
+  } catch (e) { /* ignore */ }
+}
+
+function parseOrderObjectFromRowCells_(headers, keyMap, cardCol, row, dispRow, summary) {
+  var obj = {};
+  for (var c = 0; c < headers.length; c++) {
+    var key = keyMap[c];
+    if (!key) continue;
+    var val = row[c];
+    if (val === "" || val === null || val === undefined) continue;
+    if (key === "items") key = "itemsJson";
+    obj[key] = val;
+  }
+  if (cardCol >= 0) {
+    var dispCard = normalizeMemberCardNo_((dispRow && dispRow[cardCol]) || row[cardCol]);
+    if (dispCard) obj.memberCardNo = dispCard;
+  }
+  if (!isValidMemberCardNo_(obj.memberCardNo)) {
+    var scanned = extractMemberCardFromRowCells_(row, dispRow || row);
+    if (scanned) obj.memberCardNo = scanned;
+  }
+  var id = (obj.id != null) ? String(obj.id).trim() : "";
+  if (!id) {
+    id = extractOrderIdFromRowCells_(row, dispRow || row);
+    if (id) obj.id = id;
+  }
+  if (!id) return null;
+  if (isPointsLedgerRow_(obj)) return null;
+  if (obj.itemsJson != null && String(obj.itemsJson).trim() !== "") {
+    if (summary) {
+      obj.itemsCount = estimateItemsCountFromJson_(obj.itemsJson);
+    } else {
+      try {
+        var parsed = JSON.parse(String(obj.itemsJson));
+        if (parsed && typeof parsed === "object") obj.items = parsed;
+      } catch (e) { /* ignore */ }
+    }
+  }
+  delete obj.itemsJson;
+  if (obj.id != null) obj.id = normalizeOrderId_(obj.id);
+  if (obj.memberCardNo != null && obj.memberCardNo !== "") {
+    obj.memberCardNo = normalizeMemberCardNo_(obj.memberCardNo);
+  }
+  normalizeParsedOrderFields_(obj);
+  if ((!obj.customerName || String(obj.customerName).trim() === "") && row[3] != null && String(row[3]).trim() !== "") {
+    var col3 = String(row[3]).trim();
+    if (col3 !== "紀錄ID" && col3 !== "類型" && !/^ORD\d+$/i.test(col3)) {
+      obj.customerName = col3;
+    }
+  }
+  if (summary) obj.summary = true;
+  return obj;
+}
+
 /** 訂單列表（支援 tab / status / q / limit / offset / summary） */
 function getOrdersPaged_(sheet, opts, ss) {
   opts = opts || {};
   ensureOrderHeaderRow_(sheet);
   var summary = parseOrderListSummaryFlag_(opts.summary);
-  var list = parseOrdersFromSheetData_(sheet, { summary: summary });
-  list = enrichOrdersMemberCardFromLedger_(list, ss || SpreadsheetApp.getActiveSpreadsheet());
+  var cacheKind = summary ? "summary" : "full";
+  var list = getCachedOrderList_(sheet, cacheKind);
+  if (!list) {
+    list = parseOrdersFromSheetData_(sheet, {
+      summary: summary,
+      // 摘要列表跳過 display 可再快一點；會員卡號多數已在 values
+      skipDisplay: !!summary
+    });
+    // 摘要模式略過紅利帳本補卡，避免再讀一整張紅利表
+    if (!summary) {
+      list = enrichOrdersMemberCardFromLedger_(list, ss || SpreadsheetApp.getActiveSpreadsheet());
+    }
+    setCachedOrderList_(sheet, cacheKind, list);
+  }
   var counts = computeOrderTabCounts_(list);
   var nextOrderId = computeNextOrderId_(list);
   var filtered = filterOrdersForList_(list, opts);
@@ -1441,15 +1550,35 @@ function getOrdersPaged_(sheet, opts, ss) {
 
 function getOrderById_(sheet, id, ss) {
   ensureOrderHeaderRow_(sheet);
-  var list = parseOrdersFromSheetData_(sheet, { summary: false });
-  list = enrichOrdersMemberCardFromLedger_(list, ss || SpreadsheetApp.getActiveSpreadsheet());
   var want = normalizeOrderId_(String(id || "").trim());
   var wantU = String(want || "").toUpperCase();
-  for (var i = 0; i < list.length; i++) {
-    var oid = normalizeOrderId_(String(list[i].id || "").trim());
-    if (oid === want || String(list[i].id || "").trim().toUpperCase() === wantU) return list[i];
+  if (!want) return null;
+
+  // 1) 快取命中
+  var cachedFull = getCachedOrderList_(sheet, "full");
+  if (cachedFull) {
+    for (var i = 0; i < cachedFull.length; i++) {
+      var oid = normalizeOrderId_(String(cachedFull[i].id || "").trim());
+      if (oid === want || String(cachedFull[i].id || "").trim().toUpperCase() === wantU) {
+        return cachedFull[i];
+      }
+    }
   }
-  return null;
+
+  // 2) 只讀該列（避免整表 JSON.parse）
+  var headers = getOrderHeaders_(sheet);
+  var rows = findOrderRowsById_(sheet, want, headers);
+  if (!rows.length) return null;
+  var keyMap = orderKeyMap_(headers);
+  var cardCol = findMemberCardColumnIndex_(headers);
+  var lastCol = Math.max(sheet.getLastColumn(), headers.length);
+  var rowIdx = rows[0];
+  var values = sheet.getRange(rowIdx, 1, rowIdx, lastCol).getValues()[0];
+  var display = sheet.getRange(rowIdx, 1, rowIdx, lastCol).getDisplayValues()[0];
+  var obj = parseOrderObjectFromRowCells_(headers, keyMap, cardCol, values, display, false);
+  if (!obj) return null;
+  var enriched = enrichOrdersMemberCardFromLedger_([obj], ss || SpreadsheetApp.getActiveSpreadsheet());
+  return enriched && enriched[0] ? enriched[0] : obj;
 }
 
 function jsonOutput(obj) {

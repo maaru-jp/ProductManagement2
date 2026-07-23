@@ -4323,30 +4323,19 @@
           if (!ord) return true;
           if (ord.summary) return true;
           if (!Array.isArray(ord.items)) return true;
+          // 摘要列可能帶 itemsCount 但 items 為空，仍需重抓完整明細
+          var countHint = ord.itemsCount != null ? Number(ord.itemsCount) : 0;
+          if (ord.items.length === 0 && countHint > 0) return true;
           return false;
         }
 
-        function parseFetchJsonResponse_(r) {
-          return r.text().then(function(t) {
-            try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; }
-          });
-        }
-
-        function isPagedOrderListResponse_(res) {
-          if (!res || res.error) return false;
-          if (res.counts && typeof res.counts === "object") return true;
-          if (res.total != null && isFinite(Number(res.total))) return true;
-          if (typeof res.nextOrderId === "string" && res.nextOrderId) return true;
-          if (res.summary === true || res.summary === false) return true;
-          return false;
-        }
-
-        function ensureFullOrder_(idOrOrd) {
+        function ensureFullOrder_(idOrOrd, opts) {
+          opts = opts || {};
           var id = typeof idOrOrd === "string" ? idOrOrd : (idOrOrd && idOrOrd.id);
           id = String(id || "").trim();
           var existing = findLocalOrderById_(id);
           if (!existing && idOrOrd && typeof idOrOrd === "object") existing = idOrOrd;
-          if (existing && !orderNeedsFullDetail_(existing)) return Promise.resolve(existing);
+          if (!opts.force && existing && !orderNeedsFullDetail_(existing)) return Promise.resolve(existing);
           if (ORDER_LOCAL_ONLY) return Promise.resolve(existing || null);
           if (!id) return Promise.reject(new Error("缺少訂單編號"));
           return fetchWrite({ action: "order_get", id: id })
@@ -4368,6 +4357,88 @@
               if (existing) return existing;
               throw err;
             });
+        }
+
+        function ensureFullOrdersByIds_(ids, opts) {
+          var list = (ids || []).map(function(id) { return normalizeOrderIdToken_(id); }).filter(Boolean);
+          var uniq = [];
+          list.forEach(function(id) {
+            if (uniq.indexOf(id) < 0) uniq.push(id);
+          });
+          if (!uniq.length) return Promise.resolve([]);
+          return Promise.all(uniq.map(function(id) {
+            return ensureFullOrder_(id, opts).catch(function() {
+              return findLocalOrderById_(id);
+            });
+          })).then(function(rows) {
+            return rows.filter(Boolean);
+          });
+        }
+
+        /** 收集併箱群組所有訂單編號（含尚未載入本機的關聯單） */
+        function collectCombineGroupIds_(ord) {
+          var idSet = {};
+          function addId(id) {
+            var nid = normalizeOrderIdToken_(id);
+            if (nid) idSet[nid] = true;
+          }
+          if (!ord) return [];
+          addId(ord.id);
+          var queue = [normalizeOrderIdToken_(ord.id)];
+          var seen = {};
+          while (queue.length) {
+            var cur = queue.shift();
+            if (!cur || seen[cur]) continue;
+            seen[cur] = true;
+            addId(cur);
+            var o = findLocalOrderById_(cur);
+            if (!o && normalizeOrderIdToken_(ord.id) === cur) o = ord;
+            if (o) {
+              parseLinkedOrderIds_(o.linkedOrderIds).forEach(function(lid) {
+                if (!seen[lid]) queue.push(lid);
+              });
+            }
+            (orders || []).forEach(function(x) {
+              if (!x || x.status === "已取消") return;
+              var xid = normalizeOrderIdToken_(x.id);
+              if (!xid || seen[xid]) return;
+              var links = parseLinkedOrderIds_(x.linkedOrderIds);
+              if (links.indexOf(cur) >= 0) queue.push(xid);
+            });
+          }
+          return Object.keys(idSet);
+        }
+
+        /** 產 PDF／併箱前：把群組內缺明細的單補齊（已有 items 則不重抓） */
+        function prepareOrdersForPdf_(triggerOrd) {
+          if (!triggerOrd) return Promise.reject(new Error("缺少訂單"));
+          showOrderMessage("載入訂單明細中...");
+          return ensureFullOrder_(triggerOrd).then(function(full) {
+            if (!full) throw new Error("找不到訂單");
+            var ids = collectCombineGroupIds_(full);
+            return ensureFullOrdersByIds_(ids).then(function() {
+              var refreshed = findLocalOrderById_(full.id) || full;
+              var group = resolveCombineShipPdfOrders_(refreshed).filter(function(o) {
+                return o && !o._missing && o.status !== "已取消";
+              });
+              return { trigger: refreshed, group: group.length ? group : [refreshed] };
+            });
+          });
+        }
+
+        function parseFetchJsonResponse_(r) {
+          return r.text().then(function(t) {
+            try { return t ? JSON.parse(t) : {}; } catch (e) { return { error: true, message: "回應非 JSON" }; }
+          });
+        }
+
+        function isPagedOrderListResponse_(res) {
+          if (!res || res.error) return false;
+          if (res.counts && typeof res.counts === "object") return true;
+          if (res.total != null && isFinite(Number(res.total))) return true;
+          if (typeof res.nextOrderId === "string" && res.nextOrderId) return true;
+          if (res.summary === true || res.summary === false) return true;
+          return false;
         }
         window.getAdminOrdersSnapshot_ = function () { return orders; };
 
@@ -4491,16 +4562,22 @@
             });
         }
 
-        function loadOrdersFromSheet() {
+        function loadOrdersFromSheet(opts) {
+          opts = opts || {};
           if (ORDER_LOCAL_ONLY) {
             orderServerPageMode = false;
             orderTabCountsRemote = null;
             renderOrders({ paintOnly: true });
             return Promise.resolve({ localOnly: true, orders: orders });
           }
-          showOrderMessage("載入進行中訂單...");
-          return repairOrderSheetOnServer_().catch(function () { return {}; }).then(function () {
-          return fetchWrite({ action: "order_list", tab: "active", summary: false, limit: 0 })
+          showOrderMessage("載入訂單中...");
+          // 一般載入略過表頭修復（很慢）；僅 opts.repair=true 時執行
+          var prep = opts.repair
+            ? repairOrderSheetOnServer_().catch(function () { return {}; })
+            : Promise.resolve({});
+          return prep.then(function () {
+          // 列表用摘要：大幅減少傳輸與 GAS 解析時間；編輯／PDF 再 order_get
+          return fetchWrite({ action: "order_list", tab: "active", summary: true, limit: 0 })
             .then(parseFetchJsonResponse_)
             .then(function(res) {
               if (res && res.error) throw new Error(res.message || "載入訂單失敗");
@@ -4519,6 +4596,7 @@
                 return res;
               }
               var localActive = orders.filter(function(o) { return isOrderActiveStatus_(o && o.status); });
+              // 以試算表摘要為底，保留本機已有完整 items 的版本
               orders = mergeOrdersPreferLocal_(sheetOrders, localActive);
               orders.forEach(function(o) { normalizeOrderFieldsForAdmin_(o); });
               if (res.counts) orderTabCountsRemote = res.counts;
@@ -4529,7 +4607,7 @@
               if (orderListTab === "active") {
                 orderServerPageMode = false;
                 renderOrders({ paintOnly: true });
-                showOrderMessage("已載入進行中訂單（共 " + orders.length + " 筆）");
+                showOrderMessage("已載入進行中訂單（共 " + orders.length + " 筆，摘要模式）");
                 return res;
               }
               showOrderMessage("已載入進行中訂單，正在載入目前分頁...");
@@ -4618,8 +4696,8 @@
           if (ORDER_LOCAL_ONLY || orderListTab === "active") {
             orderServerPageMode = false;
             renderOrders({ paintOnly: true, resetPage: !!opts.resetPage });
-            // 背景更新分頁籤總數
-            if (!ORDER_LOCAL_ONLY) {
+            // 已有分頁籤筆數就不重複打 API（避免每次篩選都變慢）
+            if (!ORDER_LOCAL_ONLY && !orderTabCountsRemote) {
               fetchWrite({ action: "order_list", tab: "active", summary: true, limit: 1, offset: 0 })
                 .then(parseFetchJsonResponse_)
                 .then(function(res) {
@@ -4645,6 +4723,9 @@
           }
           if ((!ord.lineId || String(ord.lineId).trim() === "") && ord.LineID != null) {
             ord.lineId = String(ord.LineID).trim();
+          }
+          if (Array.isArray(ord.items) && ord.items.length) {
+            delete ord.summary;
           }
           enrichOrderCombineShipPrevFee_(ord);
           return ord;
@@ -5492,17 +5573,38 @@
           var pdfBtn = document.getElementById("btnOverviewCombinePdf");
           if (pdfBtn) {
             pdfBtn.addEventListener("click", function() {
-              var group = combineGroup && combineGroup.length
+              var fallbackGroup = combineGroup && combineGroup.length
                 ? combineGroup.slice()
                 : (rows || []).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
-              var pending = collectCombineShipPendingItems_(group);
-              if (!pending.length) {
-                alert("沒有「待出貨」品項可產生併箱 PDF。\n\n請先把各單要出的品項設為「待出貨」並儲存。");
+              var seed = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === masterId; });
+              if (!seed && fallbackGroup.length) seed = fallbackGroup[0];
+              if (!seed) {
+                alert("找不到出貨主單");
                 return;
               }
-              var masterOrd = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === masterId; });
-              if (!masterOrd && group.length) masterOrd = group[0];
-              runCombineShipPdf_(masterOrd || group[0], group, pending);
+              pdfBtn.disabled = true;
+              prepareOrdersForPdf_(seed).then(function(prepared) {
+                var pdfGroup = (prepared.group && prepared.group.length)
+                  ? prepared.group
+                  : fallbackGroup;
+                pdfGroup = pdfGroup.map(function(o) {
+                  return findLocalOrderById_(o.id) || o;
+                }).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
+                var pending = collectCombineShipPendingItems_(pdfGroup);
+                if (!pending.length) {
+                  var hint = pdfGroup.map(function(o) {
+                    var n = normalizeOrderItems_(o.items || []).length;
+                    return normalizeOrderIdToken_(o.id) + "（品項 " + n + "）";
+                  }).join("、");
+                  alert("沒有「待出貨」品項可產生併箱 PDF。\n\n" + hint + "\n\n請先把各單要出的品項設為「待出貨」並儲存。");
+                  return;
+                }
+                runCombineShipPdf_(prepared.trigger || seed, pdfGroup, pending);
+              }).catch(function(err) {
+                showOrderMessage(err.message || "載入併箱訂單失敗", true);
+              }).finally(function() {
+                pdfBtn.disabled = false;
+              });
             });
           }
           var btn = document.getElementById("btnOverviewApplyCombineShip");
@@ -5924,9 +6026,12 @@
           if (!ord) return [];
           var idSet = {};
           function addOrder(o) {
-            if (!o || o._missing || o.status === "已取消") return;
-            var id = normalizeOrderIdToken_(o.id);
-            if (id) idSet[id] = o;
+            if (!o || o.status === "已取消") return;
+            var id = normalizeOrderIdToken_(o && o.id);
+            if (!id) return;
+            // 優先保留已有完整品項的版本
+            if (idSet[id] && !orderNeedsFullDetail_(idSet[id]) && orderNeedsFullDetail_(o)) return;
+            idSet[id] = o;
           }
           addOrder(ord);
           var guard = 0;
@@ -5935,16 +6040,22 @@
             var changed = false;
             Object.keys(idSet).slice().forEach(function(k) {
               parseLinkedOrderIds_(idSet[k].linkedOrderIds).forEach(function(lid) {
-                if (!idSet[lid]) {
-                  var found = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === lid; });
-                  if (found) { addOrder(found); changed = true; }
+                if (idSet[lid] && !idSet[lid]._missing && !orderNeedsFullDetail_(idSet[lid])) return;
+                var found = orders.find(function(o) { return normalizeOrderIdToken_(o.id) === lid; });
+                if (found) {
+                  addOrder(found);
+                  changed = true;
+                } else if (!idSet[lid]) {
+                  // 標記待載入，避免關聯編號被靜默略過
+                  idSet[lid] = { id: lid, _missing: true };
+                  changed = true;
                 }
               });
             });
             orders.forEach(function(o) {
               if (!o || o.status === "已取消") return;
               var oid = normalizeOrderIdToken_(o.id);
-              if (idSet[oid]) return;
+              if (idSet[oid] && !idSet[oid]._missing && !orderNeedsFullDetail_(idSet[oid])) return;
               var links = parseLinkedOrderIds_(o.linkedOrderIds);
               for (var i = 0; i < links.length; i++) {
                 if (idSet[links[i]]) { addOrder(o); changed = true; break; }
@@ -7321,44 +7432,61 @@
 
         function generateOrderPdf(ord) {
           if (!ord) return;
-          var pdfGroup = resolveCombineShipPdfOrders_(ord).filter(function(o) { return o.status !== "已取消"; });
-          if (pdfGroup.length > 1) {
-            var pendingCombine = collectCombineShipPendingItems_(pdfGroup);
-            if (pendingCombine.length > 0) {
-              var idList = pdfGroup.map(function(o) { return normalizeOrderIdToken_(o.id); }).join("、");
-              if (confirm(
-                "此訂單與其他訂單已設定併箱關聯：\n" + idList + "\n\n" +
-                "是否產生「併箱 PDF」？\n" +
-                "· 合併所有「待出貨」品項\n" +
-                "· 金額加總，運費只列 1 次\n" +
-                "· 各單品項會標記為已出貨\n\n" +
-                "按「取消」則只產生本單 PDF。"
-              )) {
-                runCombineShipPdf_(ord, pdfGroup, pendingCombine);
-                return;
+          prepareOrdersForPdf_(ord).then(function(prepared) {
+            var trigger = prepared.trigger || ord;
+            var pdfGroup = (prepared.group || []).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
+            if (pdfGroup.length > 1) {
+              var pendingCombine = collectCombineShipPendingItems_(pdfGroup);
+              if (pendingCombine.length > 0) {
+                var idList = pdfGroup.map(function(o) { return normalizeOrderIdToken_(o.id); }).join("、");
+                var detailHint = pendingCombine.map(function(entry) {
+                  return normalizeOrderIdToken_(entry.ord && entry.ord.id) + "：" + (entry.items || []).length + " 項待出貨";
+                }).join("\n");
+                if (confirm(
+                  "此訂單與其他訂單已設定併箱關聯：\n" + idList + "\n\n" +
+                  "是否產生「併箱 PDF」？\n" +
+                  detailHint + "\n\n" +
+                  "· 合併所有「待出貨」品項明細\n" +
+                  "· 金額加總，運費只列 1 次\n" +
+                  "· 各單品項會標記為已出貨\n\n" +
+                  "按「取消」則只產生本單 PDF。"
+                )) {
+                  runCombineShipPdf_(trigger, pdfGroup, pendingCombine);
+                  return;
+                }
+              } else {
+                var emptyHint = pdfGroup.map(function(o) {
+                  var itemsAll = normalizeOrderItems_(o.items || []);
+                  var pending = itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "待到貨"; }).length;
+                  var shipped = itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "已出貨"; }).length;
+                  return normalizeOrderIdToken_(o.id) + "：品項 " + itemsAll.length + "（待到貨 " + pending + "／已出貨 " + shipped + "）";
+                }).join("\n");
+                showOrderMessage("併箱群組目前沒有「待出貨」品項，改產本單 PDF。\n" + emptyHint, true);
               }
             }
-          }
-          var itemsAll = normalizeOrderItems_(ord.items || []);
-          var hasItemList = itemsAll.length > 0;
-          var itemsToShip = hasItemList ? itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "待出貨"; }) : [];
+            var itemsAll = normalizeOrderItems_(trigger.items || []);
+            var hasItemList = itemsAll.length > 0;
+            var itemsToShip = hasItemList ? itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "待出貨"; }) : [];
 
-          if (hasItemList && !itemsToShip.length) {
-            var pendingCount = itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "待到貨"; }).length;
-            var shippedCount = itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "已出貨"; }).length;
-            alert("沒有「待出貨」品項可產生 PDF。\n\n待到貨：" + pendingCount + " 筆\n已出貨：" + shippedCount + " 筆\n\n請先把要出的品項設為「待出貨」，並按「儲存訂單」後再試。");
-            showOrderMessage("沒有待出貨品項。請先儲存訂單後再產生 PDF。", true);
-            return;
-          }
+            if (hasItemList && !itemsToShip.length) {
+              var pendingCount = itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "待到貨"; }).length;
+              var shippedCount = itemsAll.filter(function(it) { return getOrderItemShipStatus_(it) === "已出貨"; }).length;
+              alert("沒有「待出貨」品項可產生 PDF。\n\n待到貨：" + pendingCount + " 筆\n已出貨：" + shippedCount + " 筆\n\n請先把要出的品項設為「待出貨」，並按「儲存訂單」後再試。");
+              showOrderMessage("沒有待出貨品項。請先儲存訂單後再產生 PDF。", true);
+              return;
+            }
 
-          var suggestedBatch = hasItemList ? suggestShipmentBatchFromItems_(itemsAll) : null;
-          askShipmentBatchForPdf_({
-            suggested: suggestedBatch,
-            orderId: ord.id,
-            orderLabel: "訂單：" + (ord.id || "")
-          }).then(function(shipmentBatch) {
-            if (shipmentBatch == null) return;
-            generateOrderPdfWithBatch_(ord, itemsAll, itemsToShip, hasItemList, shipmentBatch);
+            var suggestedBatch = hasItemList ? suggestShipmentBatchFromItems_(itemsAll) : null;
+            askShipmentBatchForPdf_({
+              suggested: suggestedBatch,
+              orderId: trigger.id,
+              orderLabel: "訂單：" + (trigger.id || "")
+            }).then(function(shipmentBatch) {
+              if (shipmentBatch == null) return;
+              generateOrderPdfWithBatch_(trigger, itemsAll, itemsToShip, hasItemList, shipmentBatch);
+            });
+          }).catch(function(err) {
+            showOrderMessage(err.message || "載入訂單明細失敗", true);
           });
         }
 
