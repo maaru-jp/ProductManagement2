@@ -49,7 +49,7 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-07-23-order-load-fast",
+        apiVersion: "2026-08-01-order-money",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
@@ -3588,16 +3588,65 @@ function orderEffectiveShippingPublic_(ord) {
   return Math.max(0, Math.ceil(fee));
 }
 
-function orderAmountDuePublic_(ord) {
+function orderProductNetPublic_(ord) {
   var sub = Number(ord && ord.subtotal) || 0;
   var disc = Number(ord && ord.discount) || 0;
   if (isNaN(disc)) disc = 0;
   var pts = Math.floor(Number(ord && ord.pointsUsed) || 0);
+  return Math.max(0, Math.ceil(sub - disc - pts));
+}
+
+function orderAmountDuePublic_(ord) {
+  var net = orderProductNetPublic_(ord);
   var ship = orderEffectiveShippingPublic_(ord);
   var dep = Number(ord && ord.depositAmount) || 0;
   if (isNaN(dep) || dep < 0) dep = 0;
-  var gross = Math.max(0, Math.ceil(sub - disc - pts + ship));
+  var gross = Math.max(0, Math.ceil(net + ship));
   return dep > 0 ? Math.max(0, gross - dep) : gross;
+}
+
+function parseDepositPaidDatePublic_(depositRemark, fallbackDate) {
+  var text = String(depositRemark || "").trim();
+  var m = text.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (m) {
+    return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
+  }
+  return normalizeSheetDateValue_(fallbackDate) || "";
+}
+
+function buildPublicGroupTitle_(ord, items) {
+  var product = String((ord && ord.product) || "").trim();
+  if (product) {
+    var first = product.split(/\n|；|;/).map(function(s) {
+      return String(s || "").trim();
+    }).filter(Boolean)[0];
+    if (first && !isPublicUrlLike_(first)) return first;
+  }
+  if (items && items.length && items[0] && items[0].name) return String(items[0].name).trim();
+  return "";
+}
+
+/** 把訂單金額／訂金／運費／成立日期等欄位補到 order_status 回傳結果上 */
+function applyOrderStatusMoneyFields_(result, ord, items) {
+  if (!result || !ord) return result;
+  var list = (items && items.length) ? items : (Array.isArray(result.items) ? result.items : []);
+  var depositRemark = String(ord.depositRemark || "").trim();
+  result.orderDate = normalizeSheetDateValue_(ord.date) || result.orderDate || result.updated || "";
+  result.groupTitle = buildPublicGroupTitle_(ord, list)
+    || buildPublicGroupTitle_({ product: result.product }, list);
+  result.subtotal = Number(ord.subtotal) || 0;
+  result.discount = Number(ord.discount) || 0;
+  result.pointsUsed = Math.floor(Number(ord.pointsUsed) || 0);
+  result.productNet = orderProductNetPublic_(ord);
+  result.shippingFee = orderEffectiveShippingPublic_(ord);
+  result.shippingMethod = String(ord.shippingMethod || "").trim() || "賣貨便";
+  result.shippingStatus = String(ord.shippingStatus || "").trim();
+  result.depositAmount = Number(ord.depositAmount) || 0;
+  result.depositRemark = depositRemark;
+  result.depositPaidDate = parseDepositPaidDatePublic_(depositRemark, ord.preorderDate || ord.date);
+  result.amountDue = orderAmountDuePublic_(ord);
+  if (!result.product && ord.product) result.product = String(ord.product);
+  return result;
 }
 
 function sanitizePublicOrderItem_(it) {
@@ -4251,11 +4300,18 @@ function getOrderStatusPublic_(params) {
 
   // 優先：MAARU 訂單進度試算表「工作表1」+「歷程」
   var sheet1Result = getSheet1OrderStatusPublic_(ss, id);
+  var all = getAllOrdersMerged_(ss);
   if (sheet1Result && sheet1Result.error === false) {
+    var shopOrd = findOrderById_(all, id);
+    if (shopOrd) {
+      if (!sheet1Result.memberCardNo) {
+        sheet1Result.memberCardNo = normalizeMemberCardNo_(shopOrd.memberCardNo || "");
+      }
+      applyOrderStatusMoneyFields_(sheet1Result, shopOrd, sheet1Result.items);
+    }
     return sheet1Result;
   }
 
-  var all = getAllOrdersMerged_(ss);
   var ord = findOrderById_(all, id);
   if (!ord) {
     if (sheet1Result && sheet1Result.notFound) {
@@ -4287,7 +4343,7 @@ function getOrderStatusPublic_(params) {
     ord.updated || ord.updatedAt || ord.lastUpdated || ord.shipDate || ord.date
   ) || "";
 
-  return {
+  var result = {
     error: false,
     orderId: orderStatusQueryDisplayId_(ord.id),
     orderIdFull: normalizeOrderId_(ord.id),
@@ -4300,6 +4356,7 @@ function getOrderStatusPublic_(params) {
     status: derivePublicTrackingStatus_(ord, items),
     updated: updated
   };
+  return applyOrderStatusMoneyFields_(result, ord, items);
 }
 
 // ========== 會員名單（主檔：姓名 ↔ 13 碼卡號） ==========
