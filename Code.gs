@@ -49,7 +49,7 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-08-01-order-money",
+        apiVersion: "2026-08-05-stockout-credit",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
@@ -583,6 +583,10 @@ function getStandardOrderHeaders_() {
     "獲得紅利",
     "紅利已處理",
     "關聯訂單",
+    "跨團轉入金額",
+    "跨團轉入來源",
+    "跨團轉出金額",
+    "跨團轉出去向",
     "配送歷程",
     "更新時間"
   ];
@@ -1075,6 +1079,10 @@ function orderKeyMap_(headers) {
     ["獲得紅利", "pointsEarned"],
     ["紅利已處理", "pointsProcessed"],
     ["關聯訂單", "linkedOrderIds", "linkedOrders"],
+    ["跨團轉入金額", "creditInAmount"],
+    ["跨團轉入來源", "creditInFromOrderId", "creditInFromOrderIds"],
+    ["跨團轉出金額", "creditOutAmount"],
+    ["跨團轉出去向", "creditOutToOrderId"],
     ["配送歷程", "trackingHistory", "deliveryHistory", "historyJson", "history"],
     ["更新時間", "updated", "updatedAt", "lastUpdated"],
     ["商品摘要", "product"]
@@ -1126,6 +1134,10 @@ function normalizeOrderForSheet_(order) {
     pointsEarned: (o.pointsEarned != null && o.pointsEarned !== "") ? Number(o.pointsEarned) : "",
     pointsProcessed: (o.pointsProcessed != null) ? String(o.pointsProcessed) : "",
     linkedOrderIds: (o.linkedOrderIds != null) ? String(o.linkedOrderIds).trim() : "",
+    creditInAmount: (o.creditInAmount != null && o.creditInAmount !== "") ? Number(o.creditInAmount) : "",
+    creditInFromOrderId: (o.creditInFromOrderId != null) ? String(o.creditInFromOrderId).trim() : "",
+    creditOutAmount: (o.creditOutAmount != null && o.creditOutAmount !== "") ? Number(o.creditOutAmount) : "",
+    creditOutToOrderId: (o.creditOutToOrderId != null) ? String(o.creditOutToOrderId).trim() : "",
     trackingHistory: "",
     updated: "",
     itemsJson: ""
@@ -3581,15 +3593,64 @@ function orderMatchesCustomerName_(order, customerName) {
 }
 
 function orderEffectiveShippingPublic_(ord) {
-  var fee = Number(ord && ord.shippingFee);
-  if (isNaN(fee)) fee = 38;
   var st = String(ord && ord.shippingStatus || "");
-  if (st.indexOf("免運") >= 0) return 0;
-  return Math.max(0, Math.ceil(fee));
+  var remark = String(ord && (ord.remark || ord.depositRemark) || "");
+  // 免運券／併箱副單：不收運費
+  if (st.indexOf("免運") >= 0 || st.indexOf("併箱") >= 0) return 0;
+  if (remark.indexOf("併箱免運") >= 0) return 0;
+  var fee = Number(ord && ord.shippingFee);
+  // 明確填 0 視為免運；空白才預設 38
+  if (ord && ord.shippingFee != null && String(ord.shippingFee).trim() !== "") {
+    if (isNaN(fee) || fee < 0) fee = 0;
+    return Math.max(0, Math.ceil(fee));
+  }
+  // 有關聯訂單且未填運費：偏向併箱副單，不預設加 38
+  var linked = String(ord && ord.linkedOrderIds || "").trim();
+  if (linked) return 0;
+  return 38;
+}
+
+function isCancelledShipStatusPublic_(status) {
+  var st = String(status || "").trim();
+  return st === "缺貨取消" || st === "已取消" || st.indexOf("缺貨") >= 0 && st.indexOf("取消") >= 0;
+}
+
+function orderItemLineAmountPublic_(it) {
+  var qty = Math.max(0, Math.floor(Number(it && (it.qty != null ? it.qty : it.quantity)) || 0));
+  if (!qty) qty = 1;
+  var price = Number(it && it.price);
+  if (isNaN(price)) return 0;
+  return Math.max(0, Math.ceil(price * qty));
+}
+
+function orderCancelledAmountPublic_(ord) {
+  var items = (ord && Array.isArray(ord.items)) ? ord.items : [];
+  var sum = 0;
+  for (var i = 0; i < items.length; i++) {
+    var st = String(items[i] && (items[i].shipStatus || items[i].itemStatus) || "");
+    if (isCancelledShipStatusPublic_(st)) sum += orderItemLineAmountPublic_(items[i]);
+  }
+  return Math.max(0, Math.ceil(sum));
 }
 
 function orderProductNetPublic_(ord) {
-  var sub = Number(ord && ord.subtotal) || 0;
+  var items = (ord && Array.isArray(ord.items)) ? ord.items : [];
+  var fromItems = 0;
+  var hasPricedActive = false;
+  for (var i = 0; i < items.length; i++) {
+    var st = String(items[i] && (items[i].shipStatus || items[i].itemStatus) || "");
+    if (isCancelledShipStatusPublic_(st)) continue;
+    var price = Number(items[i] && items[i].price);
+    if (!isNaN(price)) {
+      hasPricedActive = true;
+      fromItems += orderItemLineAmountPublic_(items[i]);
+    }
+  }
+  var sub = hasPricedActive ? fromItems : (Number(ord && ord.subtotal) || 0);
+  if (!hasPricedActive && items.length) {
+    // 有品項但無單價時：小計扣掉取消金額
+    sub = Math.max(0, (Number(ord && ord.subtotal) || 0) - orderCancelledAmountPublic_(ord));
+  }
   var disc = Number(ord && ord.discount) || 0;
   if (isNaN(disc)) disc = 0;
   var pts = Math.floor(Number(ord && ord.pointsUsed) || 0);
@@ -3601,7 +3662,9 @@ function orderAmountDuePublic_(ord) {
   var ship = orderEffectiveShippingPublic_(ord);
   var dep = Number(ord && ord.depositAmount) || 0;
   if (isNaN(dep) || dep < 0) dep = 0;
-  var gross = Math.max(0, Math.ceil(net + ship));
+  var creditIn = Number(ord && ord.creditInAmount) || 0;
+  if (isNaN(creditIn) || creditIn < 0) creditIn = 0;
+  var gross = Math.max(0, Math.ceil(net + ship - creditIn));
   return dep > 0 ? Math.max(0, gross - dep) : gross;
 }
 
@@ -3626,6 +3689,43 @@ function buildPublicGroupTitle_(ord, items) {
   return "";
 }
 
+/**
+ * 「工作表1」的商品內容常只有單一品項，歷史訂單的品項(JSON)才是完整清單。
+ * 品項數較多時以歷史訂單為主，並沿用工作表1已知的出貨狀態與圖片。
+ */
+function mergeShopItemsIntoStatusResult_(result, shopOrd) {
+  var shopItems = (shopOrd && Array.isArray(shopOrd.items)) ? shopOrd.items : [];
+  if (!shopItems.length) return result;
+  var current = Array.isArray(result.items) ? result.items : [];
+  if (shopItems.length <= current.length) return result;
+
+  var prevByName = {};
+  for (var i = 0; i < current.length; i++) {
+    var key = String((current[i] && current[i].name) || "").trim();
+    if (key) prevByName[key] = current[i];
+  }
+
+  var merged = [];
+  for (var j = 0; j < shopItems.length; j++) {
+    var mapped = mapPublicStatusItem_(shopItems[j]);
+    if (!mapped.name) continue;
+    var prev = prevByName[mapped.name];
+    if (prev) {
+      if (prev.itemStatus) mapped.itemStatus = prev.itemStatus;
+      if (prev.itemStatusCode) mapped.itemStatusCode = prev.itemStatusCode;
+      if (prev.image) mapped.image = prev.image;
+    }
+    merged.push(mapped);
+  }
+  if (!merged.length) return result;
+
+  result.items = merged;
+  result.itemSummary = buildPublicItemSummary_(merged);
+  result.product = buildOrderProductText_(shopOrd, merged);
+  result.status = derivePublicTrackingStatus_(shopOrd, merged);
+  return result;
+}
+
 /** 把訂單金額／訂金／運費／成立日期等欄位補到 order_status 回傳結果上 */
 function applyOrderStatusMoneyFields_(result, ord, items) {
   if (!result || !ord) return result;
@@ -3644,6 +3744,11 @@ function applyOrderStatusMoneyFields_(result, ord, items) {
   result.depositAmount = Number(ord.depositAmount) || 0;
   result.depositRemark = depositRemark;
   result.depositPaidDate = parseDepositPaidDatePublic_(depositRemark, ord.preorderDate || ord.date);
+  result.cancelledAmount = orderCancelledAmountPublic_(ord);
+  result.creditInAmount = Math.max(0, Math.floor(Number(ord.creditInAmount) || 0));
+  result.creditInFromOrderId = String(ord.creditInFromOrderId || "").trim();
+  result.creditOutAmount = Math.max(0, Math.floor(Number(ord.creditOutAmount) || 0));
+  result.creditOutToOrderId = String(ord.creditOutToOrderId || "").trim();
   result.amountDue = orderAmountDuePublic_(ord);
   if (!result.product && ord.product) result.product = String(ord.product);
   return result;
@@ -3678,6 +3783,11 @@ function sanitizePublicOrder_(ord) {
     pointsUsed: Math.floor(Number(ord && ord.pointsUsed) || 0),
     shippingFee: orderEffectiveShippingPublic_(ord),
     depositAmount: Number(ord && ord.depositAmount) || 0,
+    cancelledAmount: orderCancelledAmountPublic_(ord),
+    creditInAmount: Math.max(0, Math.floor(Number(ord && ord.creditInAmount) || 0)),
+    creditInFromOrderId: String(ord && ord.creditInFromOrderId != null ? ord.creditInFromOrderId : "").trim(),
+    creditOutAmount: Math.max(0, Math.floor(Number(ord && ord.creditOutAmount) || 0)),
+    creditOutToOrderId: String(ord && ord.creditOutToOrderId != null ? ord.creditOutToOrderId : "").trim(),
     amountDue: orderAmountDuePublic_(ord),
     pointsEarned: Math.floor(Number(ord && ord.pointsEarned) || 0),
     linkedOrderIds: String(ord && ord.linkedOrderIds != null ? ord.linkedOrderIds : "").trim(),
@@ -4177,6 +4287,7 @@ function parsePublicTrackingHistory_(ord) {
 
 function mapPublicStatusItemCode_(label) {
   var text = String(label || "").trim();
+  if (isCancelledShipStatusPublic_(text)) return "cancelled";
   if (/已出貨|已寄出|已到貨|配送中|賣貨便|7-11/.test(text)) return "shipped";
   return "pending";
 }
@@ -4187,25 +4298,31 @@ function mapPublicStatusItem_(it) {
   var name = String(o.lineName || o.name || o.product || "").trim();
   var image = String(o.image || o.imageUrl || "").trim();
   var qty = Math.max(0, Math.floor(Number(o.qty != null ? o.qty : o.quantity) || 0));
+  var price = (o.price != null && o.price !== "" && !isNaN(Number(o.price))) ? Number(o.price) : null;
+  var code = mapPublicStatusItemCode_(label);
   return {
     name: name || "商品",
     image: image,
     qty: qty > 0 ? qty : 1,
-    itemStatus: label,
-    itemStatusCode: mapPublicStatusItemCode_(label)
+    price: price,
+    itemStatus: code === "cancelled" ? "缺貨取消" : label,
+    itemStatusCode: code
   };
 }
 
 function buildPublicItemSummary_(items) {
   var total = (items || []).length;
   var shipped = 0;
+  var cancelled = 0;
   for (var i = 0; i < total; i++) {
-    if (items[i].itemStatusCode === "shipped") shipped++;
+    if (items[i].itemStatusCode === "cancelled") cancelled++;
+    else if (items[i].itemStatusCode === "shipped") shipped++;
   }
   return {
     total: total,
     shipped: shipped,
-    pending: Math.max(total - shipped, 0)
+    cancelled: cancelled,
+    pending: Math.max(0, total - shipped - cancelled)
   };
 }
 
@@ -4230,11 +4347,15 @@ function derivePublicTrackingStatus_(ord, items) {
     return String(parsed[0].status || "").trim() || "狀態更新";
   }
   var shipped = 0;
+  var active = 0;
   for (var i = 0; i < (items || []).length; i++) {
+    if (items[i].itemStatusCode === "cancelled") continue;
+    active++;
     if (items[i].itemStatusCode === "shipped") shipped++;
   }
-  if (items && items.length && shipped === items.length) return "已出貨";
+  if (active > 0 && shipped === active) return "已出貨";
   if (shipped > 0) return "部分已出貨";
+  if (items && items.length && active === 0) return "缺貨取消";
   var st = String(ord && ord.status || "").trim();
   if (st === "已完成") return "已出貨";
   if (st === "出貨中") return "集運中";
@@ -4290,35 +4411,64 @@ function buildSyntheticTrackingHistory_(ord, items) {
   return steps;
 }
 
+function assertOrderStatusCardAccess_(params, memberCardNoOnOrder) {
+  var card = resolvePublicMemberCardParam_(params);
+  if (!isValidMemberCardNo_(card)) {
+    return {
+      error: true,
+      message: "請使用會員卡號查詢交易紀錄後，再查看訂單明細"
+    };
+  }
+  var orderCard = normalizeMemberCardNo_(memberCardNoOnOrder || "");
+  if (!isValidMemberCardNo_(orderCard) || orderCard !== card) {
+    return { error: true, message: "查無此訂單編號" };
+  }
+  return null;
+}
+
 function getOrderStatusPublic_(params) {
   params = params || {};
   var id = resolvePublicOrderIdParam_(params);
   if (!id) {
     return { error: true, message: "請輸入訂單編號" };
   }
+  var card = resolvePublicMemberCardParam_(params);
+  if (!isValidMemberCardNo_(card)) {
+    return {
+      error: true,
+      message: "請使用會員卡號查詢交易紀錄後，再查看訂單明細"
+    };
+  }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var all = getAllOrdersMerged_(ss);
+  var shopOrd = findOrderById_(all, id);
 
   // 優先：MAARU 訂單進度試算表「工作表1」+「歷程」
   var sheet1Result = getSheet1OrderStatusPublic_(ss, id);
-  var all = getAllOrdersMerged_(ss);
   if (sheet1Result && sheet1Result.error === false) {
-    var shopOrd = findOrderById_(all, id);
     if (shopOrd) {
       if (!sheet1Result.memberCardNo) {
         sheet1Result.memberCardNo = normalizeMemberCardNo_(shopOrd.memberCardNo || "");
       }
+      mergeShopItemsIntoStatusResult_(sheet1Result, shopOrd);
       applyOrderStatusMoneyFields_(sheet1Result, shopOrd, sheet1Result.items);
     }
+    var gate1 = assertOrderStatusCardAccess_(params, sheet1Result.memberCardNo);
+    if (gate1) return gate1;
     return sheet1Result;
   }
 
-  var ord = findOrderById_(all, id);
+  var ord = shopOrd;
   if (!ord) {
     if (sheet1Result && sheet1Result.notFound) {
       return { error: true, message: "查無此訂單編號" };
     }
     return { error: true, message: "查無此訂單編號（請確認「工作表1」A 欄訂單編號）" };
   }
+
+  var gate = assertOrderStatusCardAccess_(params, ord.memberCardNo);
+  if (gate) return gate;
 
   var rawItems = Array.isArray(ord.items) ? ord.items : [];
   var items = [];
