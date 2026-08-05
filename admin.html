@@ -4345,13 +4345,35 @@
           return orders.find(function(o) { return String(o.id || "").trim().toUpperCase() === key; }) || null;
         }
 
+        function coerceOrderItemsArray_(raw) {
+          if (Array.isArray(raw)) return raw;
+          if (!raw || typeof raw !== "object") return [];
+          if (Array.isArray(raw.items)) return raw.items;
+          var keys = Object.keys(raw);
+          if (!keys.length) return [];
+          if (keys.every(function(k) { return /^\d+$/.test(k); })) {
+            return keys.map(Number).sort(function(a, b) { return a - b; }).map(function(k) { return raw[String(k)]; });
+          }
+          return [];
+        }
+
         function orderNeedsFullDetail_(ord) {
           if (!ord) return true;
           if (ord.summary) return true;
+          if (ord._missing) return true;
+          if (ord.items != null && !Array.isArray(ord.items)) {
+            var coerced = coerceOrderItemsArray_(ord.items);
+            if (coerced.length) {
+              ord.items = coerced;
+            } else {
+              return true;
+            }
+          }
           if (!Array.isArray(ord.items)) return true;
           // 摘要列可能帶 itemsCount 但 items 為空，仍需重抓完整明細
           var countHint = ord.itemsCount != null ? Number(ord.itemsCount) : 0;
           if (ord.items.length === 0 && countHint > 0) return true;
+          if (ord.items.length === 0 && ord.product && String(ord.product).trim() !== "") return true;
           return false;
         }
 
@@ -4401,8 +4423,18 @@
           });
         }
 
-        /** 收集併箱群組所有訂單編號（含尚未載入本機的關聯單） */
-        function collectCombineGroupIds_(ord) {
+        /** 從關聯欄＋併箱備註抽出相關訂單編號 */
+        function extractCombineRelatedIdsFromOrder_(o) {
+          var ids = parseLinkedOrderIds_(o && o.linkedOrderIds);
+          var master = typeof parseCombineShipMasterFromRemark_ === "function"
+            ? parseCombineShipMasterFromRemark_(o && o.remark)
+            : "";
+          if (master && ids.indexOf(master) < 0) ids.push(master);
+          return ids;
+        }
+
+        /** 收集併箱群組所有訂單編號（含尚未載入本機的關聯單、備註主單） */
+        function collectCombineGroupIds_(ord, extraIds) {
           var idSet = {};
           function addId(id) {
             var nid = normalizeOrderIdToken_(id);
@@ -4410,7 +4442,8 @@
           }
           if (!ord) return [];
           addId(ord.id);
-          var queue = [normalizeOrderIdToken_(ord.id)];
+          (extraIds || []).forEach(addId);
+          var queue = Object.keys(idSet);
           var seen = {};
           while (queue.length) {
             var cur = queue.shift();
@@ -4420,7 +4453,7 @@
             var o = findLocalOrderById_(cur);
             if (!o && normalizeOrderIdToken_(ord.id) === cur) o = ord;
             if (o) {
-              parseLinkedOrderIds_(o.linkedOrderIds).forEach(function(lid) {
+              extractCombineRelatedIdsFromOrder_(o).forEach(function(lid) {
                 if (!seen[lid]) queue.push(lid);
               });
             }
@@ -4428,25 +4461,51 @@
               if (!x || x.status === "已取消") return;
               var xid = normalizeOrderIdToken_(x.id);
               if (!xid || seen[xid]) return;
-              var links = parseLinkedOrderIds_(x.linkedOrderIds);
+              var links = extractCombineRelatedIdsFromOrder_(x);
               if (links.indexOf(cur) >= 0) queue.push(xid);
             });
           }
           return Object.keys(idSet);
         }
 
-        /** 產 PDF／併箱前：把群組內缺明細的單補齊（已有 items 則不重抓） */
-        function prepareOrdersForPdf_(triggerOrd) {
+        function mergeOrderGroupsById_() {
+          var byId = {};
+          for (var i = 0; i < arguments.length; i++) {
+            (arguments[i] || []).forEach(function(o) {
+              if (!o || o._missing || o.status === "已取消") return;
+              var id = normalizeOrderIdToken_(o.id);
+              if (!id) return;
+              var cur = byId[id];
+              if (!cur || (orderNeedsFullDetail_(cur) && !orderNeedsFullDetail_(o))) {
+                byId[id] = o;
+              }
+            });
+          }
+          return Object.keys(byId).map(function(k) { return byId[k]; }).sort(function(a, b) {
+            var ma = String((a && a.id) || "").match(/^ORD(\d+)$/i);
+            var mb = String((b && b.id) || "").match(/^ORD(\d+)$/i);
+            return (ma ? parseInt(ma[1], 10) : 0) - (mb ? parseInt(mb[1], 10) : 0);
+          });
+        }
+
+        /** 產 PDF／併箱前：強制重抓群組明細，並合併顧客總覽／關聯／備註來源 */
+        function prepareOrdersForPdf_(triggerOrd, opts) {
+          opts = opts || {};
           if (!triggerOrd) return Promise.reject(new Error("缺少訂單"));
           showOrderMessage("載入訂單明細中...");
-          return ensureFullOrder_(triggerOrd).then(function(full) {
+          var force = opts.force !== false;
+          return ensureFullOrder_(triggerOrd, { force: force }).then(function(full) {
             if (!full) throw new Error("找不到訂單");
-            var ids = collectCombineGroupIds_(full);
-            return ensureFullOrdersByIds_(ids).then(function() {
+            var ids = collectCombineGroupIds_(full, opts.extraIds);
+            return ensureFullOrdersByIds_(ids, { force: force }).then(function() {
               var refreshed = findLocalOrderById_(full.id) || full;
-              var group = resolveCombineShipPdfOrders_(refreshed).filter(function(o) {
+              var linkedGroup = resolveCombineShipPdfOrders_(refreshed).filter(function(o) {
                 return o && !o._missing && o.status !== "已取消";
               });
+              var extraGroup = (opts.extraIds || []).map(function(id) {
+                return findLocalOrderById_(id);
+              }).filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
+              var group = mergeOrderGroupsById_(linkedGroup, extraGroup, [refreshed]);
               return { trigger: refreshed, group: group.length ? group : [refreshed] };
             });
           });
@@ -5681,6 +5740,12 @@
           return 0;
         }
 
+        function orderCreditInAmount_(ord) {
+          var n = ord && ord.creditInAmount != null && ord.creditInAmount !== "" ? Number(ord.creditInAmount) : 0;
+          if (isNaN(n) || n < 0) return 0;
+          return Math.floor(n);
+        }
+
         function orderGrossBeforeDeposit(ord) {
           if (!orderHasAmountBreakdown(ord)) {
             var t = ord.total != null ? Number(ord.total) : 0;
@@ -5691,7 +5756,8 @@
           if (isNaN(disc)) disc = 0;
           var ptsDisc = orderPointsDiscountForOrder(ord);
           var ship = orderEffectiveShippingForOrder(ord);
-          return Math.max(0, Math.ceil(sub - disc - ptsDisc + ship));
+          var creditIn = orderCreditInAmount_(ord);
+          return Math.max(0, Math.ceil(sub - disc - ptsDisc + ship - creditIn));
         }
 
         function showOrderPointsHint_(text, isError) {
@@ -5988,6 +6054,7 @@
             if (!isFinite(t) || t < 0) t = 0;
             return Math.max(0, Math.ceil(t));
           }
+          // 公式：小計 − 折扣 + 運費 − 跨團轉入 − 訂金
           return Math.max(0, orderGrossBeforeDeposit(ord) - dep);
         }
 
@@ -6471,9 +6538,22 @@
             var from = String(o.creditInFromOrderId || "").trim();
             if (!from) return;
             var first = normalizeOrderIdToken_(from.split(/[,，\s]+/).filter(Boolean)[0] || "");
-            if (first === fromId && (!toId || outAmt <= 0 || first !== toId)) {
+            if (first !== fromId) return;
+            var oid = normalizeOrderIdToken_(o.id);
+            // 清掉「曾由此來源轉入、但已不是目前去向」的單；目前去向單保留稍後覆寫
+            if (!toId || outAmt <= 0 || oid !== toId) {
               o.creditInAmount = 0;
               o.creditInFromOrderId = "";
+              // 重算該單待結清（已無轉入）
+              if (orderHasAmountBreakdown(o)) {
+                var cSub = Number(o.subtotal) || 0;
+                var cDisc = Number(o.discount) || 0;
+                var cShip = orderEffectiveShippingForOrder(o);
+                var cDep = Number(o.depositAmount) || 0;
+                var cGross = Math.max(0, Math.ceil(cSub - cDisc + cShip));
+                o.total = cDep > 0 ? Math.max(0, cGross - cDep) : cGross;
+                o.amountDue = o.total;
+              }
             }
           });
           if (!toId || outAmt <= 0) {
@@ -7314,6 +7394,11 @@
           if (pointsUsedPdf > 0) {
             pdfPointsRows += "<tr><td>紅利折抵（" + pointsUsedPdf + " 點）</td><td>- NT$ " + pointsDiscountPdf + "</td></tr>";
           }
+          var creditInPdf = orderCreditInAmount_(ord);
+          if (creditInPdf > 0) {
+            var creditFromPdf = String(ord.creditInFromOrderId || "").trim();
+            pdfPointsRows += "<tr><td>跨團轉入抵扣" + (creditFromPdf ? ("（來自 " + escapeHtml(creditFromPdf) + "）") : "") + "</td><td>- NT$ " + creditInPdf + "</td></tr>";
+          }
           var pdfAmountCloseRows = "";
           if (depNum > 0) {
             if (orderHasAmountBreakdown(ord)) {
@@ -7454,6 +7539,11 @@
           var pdfPointsRows = "";
           if (sumPointsUsed > 0) {
             pdfPointsRows += "<tr><td>紅利折抵合計（" + sumPointsUsed + " 點）</td><td>- NT$ " + sumPointsDiscount + "</td></tr>";
+          }
+          var sumCreditIn = 0;
+          (orderGroup || []).forEach(function(o) { sumCreditIn += orderCreditInAmount_(o); });
+          if (sumCreditIn > 0) {
+            pdfPointsRows += "<tr><td>跨團轉入抵扣合計</td><td>- NT$ " + sumCreditIn + "</td></tr>";
           }
           var pdfAmountCloseRows = "";
           if (sumDeposit > 0) {
