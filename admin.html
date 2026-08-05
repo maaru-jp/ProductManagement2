@@ -7311,6 +7311,12 @@
             "body.pdf-compact table{margin:4px 0;} body.pdf-compact table th,body.pdf-compact table td{padding:4px 5px;font-size:13px;} " +
             "table.pdf-items-table{page-break-inside:auto;} table.pdf-items-table tr{page-break-inside:avoid;break-inside:avoid;} " +
             "table.pdf-amount-table,.pdf-amount-block{page-break-inside:avoid;break-inside:avoid;} " +
+            ".pdf-stockout-note{margin-top:8px;border:1px solid #fecaca;border-radius:6px;background:#fff7f7;padding:8px 10px;page-break-inside:avoid;break-inside:avoid;} " +
+            ".pdf-stockout-note h2{margin:0 0 6px 0;font-size:13px;color:#9f1239;} " +
+            ".pdf-stockout-note ul{margin:0;padding-left:1.2em;} " +
+            ".pdf-stockout-note li{margin:3px 0;font-size:13px;line-height:1.4;color:#7f1d1d;} " +
+            ".pdf-stockout-note .note-meta{margin-top:6px;font-size:12px;color:#881337;line-height:1.45;} " +
+            "body.pdf-compact .pdf-stockout-note{margin-top:6px;padding:6px 8px;} body.pdf-compact .pdf-stockout-note li{font-size:12px;} " +
             ".pdf-deposit-box{border:2px solid #64748b;border-radius:6px;padding:8px 10px;margin-top:4px;min-height:1.2em;background:#f8fafc;white-space:pre-wrap;font-size:14px;line-height:1.45;page-break-inside:auto;} " +
             "body.pdf-compact .pdf-deposit-box{padding:6px 8px;font-size:13px;line-height:1.35;} " +
             ".pdf-page-deposit{page-break-before:always;break-before:page;padding-top:0;} .pdf-page-deposit h2{page-break-after:avoid;break-after:avoid;} " +
@@ -7335,6 +7341,86 @@
 
         function buildOrderPdfFooterHtml_(printedAtStr) {
           return "<div class=\"pdf-page-footer\"><span class=\"pdf-printed-at\">印單時間：" + escapeHtml(printedAtStr) + "</span></div>";
+        }
+
+        /** PDF 金額區下方：缺貨取消品項＋跨團轉入／轉出說明（主表仍只印待出貨） */
+        function buildOrderPdfStockoutCreditNoteHtml_(orderOrGroup) {
+          var list = Array.isArray(orderOrGroup) ? orderOrGroup : (orderOrGroup ? [orderOrGroup] : []);
+          list = list.filter(function(o) { return o && !o._missing && o.status !== "已取消"; });
+          if (!list.length) return "";
+
+          var cancelledLines = [];
+          var creditNotes = [];
+          var multi = list.length > 1;
+
+          list.forEach(function(o) {
+            var oid = normalizeOrderIdToken_(o.id);
+            var items = normalizeOrderItems_(o.items || []);
+            items.forEach(function(it) {
+              if (!isCancelledShipStatus_(it.shipStatus)) return;
+              var name = (it.lineName != null ? String(it.lineName).trim() : "") || "商品";
+              var qty = Math.max(0, Math.floor(Number(it.qty) || 0));
+              var price = (it.price != null && it.price !== "" && !isNaN(Number(it.price))) ? Number(it.price) : null;
+              var lineAmt = (price != null && qty > 0) ? Math.round(price * qty) : null;
+              var amtText = lineAmt != null ? ("原 NT$ " + lineAmt + " → 不計入") : "不計入本單";
+              cancelledLines.push(
+                (multi ? (escapeHtml(oid) + "｜") : "") +
+                escapeHtml(name) +
+                (qty > 0 ? (" × " + qty) : "") +
+                "（缺貨取消，" + amtText + "）"
+              );
+            });
+
+            var cancelSum = calcCancelledAmountFromItems_(items);
+            var creditOut = Math.max(0, Math.floor(Number(o.creditOutAmount) || 0));
+            var creditOutTo = normalizeOrderIdToken_(o.creditOutToOrderId || "");
+            var creditIn = orderCreditInAmount_(o);
+            var creditInFrom = String(o.creditInFromOrderId || "").trim();
+
+            if (cancelSum > 0 && !cancelledLines.length) {
+              // 有取消金額但品項未帶狀態時，仍給摘要
+              creditNotes.push(
+                (multi ? (escapeHtml(oid) + "：") : "") +
+                "缺貨取消扣除 NT$ " + cancelSum + "（不計入本單出貨）"
+              );
+            }
+            if (creditOut > 0 && creditOutTo) {
+              creditNotes.push(
+                (multi ? (escapeHtml(oid) + "：") : "") +
+                "因缺貨無法供貨，NT$ " + creditOut + " 已轉至 " + escapeHtml(creditOutTo) + " 折抵"
+              );
+            } else if (creditOut > 0) {
+              creditNotes.push(
+                (multi ? (escapeHtml(oid) + "：") : "") +
+                "缺貨取消款 NT$ " + creditOut + " 已轉出至其他團折抵"
+              );
+            }
+            if (creditIn > 0) {
+              creditNotes.push(
+                (multi ? (escapeHtml(oid) + "：") : "") +
+                (creditInFrom
+                  ? ("已自 " + escapeHtml(creditInFrom) + " 缺貨取消款轉入本單折抵 NT$ " + creditIn)
+                  : ("已自其他團訂單轉入本單折抵 NT$ " + creditIn))
+              );
+            }
+          });
+
+          if (!cancelledLines.length && !creditNotes.length) return "";
+
+          var html = "<div class=\"pdf-stockout-note\"><h2>缺貨取消／跨團說明</h2>";
+          if (cancelledLines.length) {
+            html += "<ul>" + cancelledLines.map(function(line) {
+              return "<li>" + line + "</li>";
+            }).join("") + "</ul>";
+          }
+          if (creditNotes.length) {
+            html += "<div class=\"note-meta\">" + creditNotes.join("<br>") + "</div>";
+          }
+          if (cancelledLines.length) {
+            html += "<div class=\"note-meta\" style=\"margin-top:4px;\">以上取消品項未列入本次出貨商品。</div>";
+          }
+          html += "</div>";
+          return html;
         }
 
         function buildOrderPdfDepositPageHtml_(innerHtml, options) {
@@ -7456,6 +7542,7 @@
             pdfAmountCloseRows +
             (showRemark ? "<div class=\"row\"><span class=\"label\">備註</span><div class=\"value\">" + escapeHtml(displayRemark) + "</div></div>" : "") +
             "</div>" +
+            buildOrderPdfStockoutCreditNoteHtml_(ord) +
             buildOrderPdfDepositPageHtml_(depositInner, { itemCount: itemCountForPdf }) +
             buildOrderPdfFooterHtml_(printedAtStr) +
             "</body></html>";
@@ -7604,6 +7691,7 @@
             "<tr><td>" + shipLabel + "</td><td>" + shipCell + "</td></tr>" +
             pdfAmountCloseRows +
             "</div>" +
+            buildOrderPdfStockoutCreditNoteHtml_(orderGroup) +
             buildOrderPdfDepositPageHtml_(depositInnerCombine, { itemCount: combineItemCount }) +
             buildOrderPdfFooterHtml_(printedAtStr) +
             "</body></html>";
