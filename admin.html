@@ -1350,6 +1350,32 @@
                 <span class="text-sm text-slate-600">元</span>
               </div>
             </div>
+            <div class="sm:col-span-2 rounded-lg border border-rose-200 bg-rose-50/60 px-3 py-3" id="orderStockoutCreditPanel">
+              <div class="text-xs font-semibold text-rose-800 mb-2">缺貨取消／跨團轉移折抵</div>
+              <p class="text-xs text-rose-700/90 mb-2 leading-relaxed">品項設為「缺貨取消」後，可將該金額轉移到同會員其他進行中訂單折抵。</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">本單缺貨取消金額</label>
+                  <div class="text-sm font-semibold text-rose-700">NT$ <span id="orderCancelledAmountDisplay">0</span></div>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">轉移至訂單</label>
+                  <select id="orderCreditOutToOrderId" class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white">
+                    <option value="">— 不轉移／稍後處理 —</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">跨團轉出金額</label>
+                  <input type="number" id="orderCreditOutAmount" min="0" value="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">跨團轉入金額（來自其他單）</label>
+                  <input type="number" id="orderCreditInAmount" min="0" value="0" step="1" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                  <input type="hidden" id="orderCreditInFromOrderId" value="" />
+                  <p class="mt-1 text-xs text-slate-500" id="orderCreditInFromHint"></p>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -6345,6 +6371,7 @@
                   "<option value=\"待到貨\"" + (it.shipStatus === "待到貨" ? " selected" : "") + ">待到貨</option>" +
                   "<option value=\"待出貨\"" + (it.shipStatus === "待出貨" ? " selected" : "") + ">待出貨</option>" +
                   "<option value=\"已出貨\"" + (it.shipStatus === "已出貨" ? " selected" : "") + ">已出貨</option>" +
+                  "<option value=\"缺貨取消\"" + (it.shipStatus === "缺貨取消" || it.shipStatus === "已取消" ? " selected" : "") + ">缺貨取消</option>" +
                 "</select>" +
               "</td>" +
               "<td class=\"py-2 px-2\">" +
@@ -6360,6 +6387,7 @@
           var subtotalSum = 0;
           for (var i = 0; i < orderItemsState.length; i++) {
             var it = orderItemsState[i];
+            if (isCancelledShipStatus_(it && it.shipStatus)) continue;
             if (it.qty > 0 && it.price != null && !isNaN(Number(it.price))) {
               subtotalSum += Number(it.price) * Number(it.qty);
             }
@@ -6368,6 +6396,110 @@
           subtotalSum = Math.max(0, Math.ceil(subtotalSum));
           document.getElementById("orderSubtotal").value = String(subtotalSum);
           updateOrderTotal();
+          refreshStockoutCreditPanel_();
+        }
+
+        function isCancelledShipStatus_(status) {
+          var st = String(status || "").trim();
+          return st === "缺貨取消" || st === "已取消" || (st.indexOf("缺貨") >= 0 && st.indexOf("取消") >= 0);
+        }
+
+        function calcCancelledAmountFromItems_(items) {
+          var list = Array.isArray(items) ? items : [];
+          var sum = 0;
+          for (var i = 0; i < list.length; i++) {
+            var it = list[i] || {};
+            if (!isCancelledShipStatus_(it.shipStatus)) continue;
+            var qty = Math.max(0, Math.floor(Number(it.qty) || 0));
+            var price = Number(it.price);
+            if (qty > 0 && !isNaN(price)) sum += price * qty;
+          }
+          return Math.max(0, Math.ceil(sum));
+        }
+
+        function refreshStockoutCreditPanel_() {
+          syncOrderItemsStateFromEditor_();
+          var cancelled = calcCancelledAmountFromItems_(orderItemsState);
+          var disp = document.getElementById("orderCancelledAmountDisplay");
+          if (disp) disp.textContent = String(cancelled);
+          var outAmtEl = document.getElementById("orderCreditOutAmount");
+          var toEl = document.getElementById("orderCreditOutToOrderId");
+          if (outAmtEl && cancelled > 0) {
+            var cur = Number(outAmtEl.value);
+            if (!isFinite(cur) || cur <= 0 || cur > cancelled) outAmtEl.value = String(cancelled);
+          } else if (outAmtEl && cancelled <= 0 && (!toEl || !toEl.value)) {
+            outAmtEl.value = "0";
+          }
+          populateCreditOutTargetOptions_();
+          updateOrderTotal();
+        }
+
+        function populateCreditOutTargetOptions_() {
+          var sel = document.getElementById("orderCreditOutToOrderId");
+          if (!sel) return;
+          var prev = sel.value || "";
+          var selfId = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id"))
+            || ((document.getElementById("orderId") && document.getElementById("orderId").value) || "");
+          selfId = normalizeOrderIdToken_(selfId);
+          var card = String(getOrderMemberCardFromForm_() || "").replace(/\D/g, "");
+          var opts = ['<option value="">— 不轉移／稍後處理 —</option>'];
+          (orders || []).forEach(function(o) {
+            if (!o || o._missing) return;
+            var oid = normalizeOrderIdToken_(o.id);
+            if (!oid || oid === selfId) return;
+            if (o.status === "已取消") return;
+            var oCard = String(o.memberCardNo || "").replace(/\D/g, "");
+            if (card && oCard && oCard !== card) return;
+            if (card && !oCard) return;
+            var due = (o.total != null && o.total !== "") ? o.total : o.amountDue;
+            opts.push('<option value="' + escapeHtmlAttr(oid) + '">' + escapeHtml(oid)
+              + (o.status ? (" · " + escapeHtml(String(o.status))) : "")
+              + (due != null ? (" · 待結清 NT$" + escapeHtml(String(due))) : "")
+              + "</option>");
+          });
+          sel.innerHTML = opts.join("");
+          if (prev) sel.value = prev;
+        }
+
+        function applyCrossOrderCreditTransfer_(sourceOrd) {
+          if (!sourceOrd) return;
+          var toId = normalizeOrderIdToken_(sourceOrd.creditOutToOrderId || "");
+          var outAmt = Math.max(0, Math.floor(Number(sourceOrd.creditOutAmount) || 0));
+          var fromId = normalizeOrderIdToken_(sourceOrd.id || "");
+          (orders || []).forEach(function(o) {
+            if (!o || normalizeOrderIdToken_(o.id) === fromId) return;
+            var from = String(o.creditInFromOrderId || "").trim();
+            if (!from) return;
+            var first = normalizeOrderIdToken_(from.split(/[,，\s]+/).filter(Boolean)[0] || "");
+            if (first === fromId && (!toId || outAmt <= 0 || first !== toId)) {
+              o.creditInAmount = 0;
+              o.creditInFromOrderId = "";
+            }
+          });
+          if (!toId || outAmt <= 0) {
+            sourceOrd.creditOutAmount = 0;
+            sourceOrd.creditOutToOrderId = "";
+            return;
+          }
+          sourceOrd.creditOutAmount = outAmt;
+          sourceOrd.creditOutToOrderId = toId;
+          var target = null;
+          for (var i = 0; i < (orders || []).length; i++) {
+            if (normalizeOrderIdToken_(orders[i].id) === toId) {
+              target = orders[i];
+              break;
+            }
+          }
+          if (!target) return;
+          target.creditInAmount = outAmt;
+          target.creditInFromOrderId = fromId;
+          var tSub = Number(target.subtotal) || 0;
+          var tDisc = Number(target.discount) || 0;
+          var tShip = orderEffectiveShippingForOrder(target);
+          var tDep = Number(target.depositAmount) || 0;
+          var tGross = Math.max(0, Math.ceil(tSub - tDisc + tShip - outAmt));
+          target.total = tDep > 0 ? Math.max(0, tGross - tDep) : tGross;
+          target.amountDue = target.total;
         }
 
         function syncOrderItemsStateFromEditor_() {
@@ -6444,6 +6576,7 @@
                 if (batchInput) batchInput.value = "";
               }
               syncOrderItemsStateFromEditor_();
+              recalcOrderSubtotalFromItems_();
               return;
             }
           });
@@ -6484,7 +6617,15 @@
           var depEl = document.getElementById("orderDepositAmount");
           var depositNum = (depEl && depEl.value !== "" && !isNaN(Number(depEl.value))) ? Number(depEl.value) : 0;
           if (isNaN(depositNum) || depositNum < 0) depositNum = 0;
-          var gross = Math.max(0, Math.ceil(subtotal - discount + effectiveShipping));
+          var creditInEl = document.getElementById("orderCreditInAmount");
+          var creditInNum = (creditInEl && creditInEl.value !== "" && !isNaN(Number(creditInEl.value))) ? Number(creditInEl.value) : 0;
+          if (isNaN(creditInNum) || creditInNum < 0) creditInNum = 0;
+          var creditOutEl = document.getElementById("orderCreditOutAmount");
+          var creditOutNum = (creditOutEl && creditOutEl.value !== "" && !isNaN(Number(creditOutEl.value))) ? Number(creditOutEl.value) : 0;
+          if (isNaN(creditOutNum) || creditOutNum < 0) creditOutNum = 0;
+          var creditOutTo = (document.getElementById("orderCreditOutToOrderId") && document.getElementById("orderCreditOutToOrderId").value) || "";
+          var creditInFrom = (document.getElementById("orderCreditInFromOrderId") && document.getElementById("orderCreditInFromOrderId").value) || "";
+          var gross = Math.max(0, Math.ceil(subtotal - discount + effectiveShipping - creditInNum));
           var total = depositNum > 0 ? Math.max(0, gross - depositNum) : gross;
           var editIdForLink = (document.getElementById("orderForm") && document.getElementById("orderForm").getAttribute("data-edit-id")) || "";
           var selfIdForLink = editIdForLink || ((document.getElementById("orderId") && document.getElementById("orderId").value) || "");
@@ -6511,6 +6652,10 @@
             remark: (document.getElementById("orderRemark").value || "").trim(),
             depositRemark: (document.getElementById("orderDepositRemark").value || "").trim(),
             depositAmount: depositNum,
+            creditInAmount: creditInNum,
+            creditInFromOrderId: String(creditInFrom || "").trim(),
+            creditOutAmount: creditOutNum,
+            creditOutToOrderId: normalizeOrderIdToken_(creditOutTo),
             preorderDate: (document.getElementById("orderPreorderDate").value || "").trim(),
             shipDate: (document.getElementById("orderShipDate").value || "").trim(),
             linkedOrderIds: sanitizeLinkedOrderIdsForOrder_(linkedRaw, selfIdForLink)
@@ -6548,11 +6693,27 @@
           document.getElementById("orderDepositRemark").value = o.depositRemark || "";
           var depEl = document.getElementById("orderDepositAmount");
           if (depEl) depEl.value = o.depositAmount != null && o.depositAmount !== "" ? String(o.depositAmount) : "0";
+          var creditInEl = document.getElementById("orderCreditInAmount");
+          if (creditInEl) creditInEl.value = o.creditInAmount != null && o.creditInAmount !== "" ? String(o.creditInAmount) : "0";
+          var creditInFromEl = document.getElementById("orderCreditInFromOrderId");
+          if (creditInFromEl) creditInFromEl.value = o.creditInFromOrderId || "";
+          var creditInHint = document.getElementById("orderCreditInFromHint");
+          if (creditInHint) {
+            creditInHint.textContent = o.creditInFromOrderId
+              ? ("來源訂單：" + o.creditInFromOrderId)
+              : "";
+          }
+          var creditOutEl = document.getElementById("orderCreditOutAmount");
+          if (creditOutEl) creditOutEl.value = o.creditOutAmount != null && o.creditOutAmount !== "" ? String(o.creditOutAmount) : "0";
           document.getElementById("orderPreorderDate").value = o.preorderDate || "";
           document.getElementById("orderShipDate").value = o.shipDate || "";
           var pdfBatchEl = document.getElementById("orderPdfShipBatch");
           if (pdfBatchEl) pdfBatchEl.value = "";
           renderOrderItemsEditor_(o.items || []);
+          populateCreditOutTargetOptions_();
+          var creditOutToEl = document.getElementById("orderCreditOutToOrderId");
+          if (creditOutToEl) creditOutToEl.value = normalizeOrderIdToken_(o.creditOutToOrderId || "");
+          refreshStockoutCreditPanel_();
           updateOrderTotal();
           refreshOrderMemberCardHint_();
           refreshCombineShipPanel_();
@@ -6638,7 +6799,11 @@
 
           var pointsUsed = 0;
 
-          var total = subtotal - discount + (shipCouponOn ? 0 : shipping);
+          var creditInEl = document.getElementById("orderCreditInAmount");
+          var creditInNum = (creditInEl && creditInEl.value !== "" && !isNaN(Number(creditInEl.value))) ? Number(creditInEl.value) : 0;
+          if (isNaN(creditInNum) || creditInNum < 0) creditInNum = 0;
+
+          var total = subtotal - discount + (shipCouponOn ? 0 : shipping) - creditInNum;
           total = Math.ceil(total);
           if (total < 0) total = 0;
           var depositEl = document.getElementById("orderDepositAmount");
@@ -7840,6 +8005,21 @@
             updateOrderTotal();
           });
         }
+        ["orderCreditInAmount", "orderCreditOutAmount", "orderCreditOutToOrderId", "orderDepositAmount"].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          el.addEventListener("input", function() { updateOrderTotal(); });
+          el.addEventListener("change", function() {
+            if (id === "orderCreditOutToOrderId") {
+              var cancelled = calcCancelledAmountFromItems_(orderItemsState);
+              var outEl = document.getElementById("orderCreditOutAmount");
+              if (el.value && outEl && (!Number(outEl.value) || Number(outEl.value) <= 0) && cancelled > 0) {
+                outEl.value = String(cancelled);
+              }
+            }
+            updateOrderTotal();
+          });
+        });
 
         document.getElementById("orderForm").addEventListener("submit", function(e) {
           e.preventDefault();
@@ -7884,17 +8064,28 @@
               ord.remark = data.remark;
               ord.depositRemark = data.depositRemark;
               ord.depositAmount = data.depositAmount != null ? data.depositAmount : 0;
+              ord.creditInAmount = data.creditInAmount != null ? data.creditInAmount : 0;
+              ord.creditInFromOrderId = data.creditInFromOrderId || "";
+              ord.creditOutAmount = data.creditOutAmount != null ? data.creditOutAmount : 0;
+              ord.creditOutToOrderId = data.creditOutToOrderId || "";
               ord.preorderDate = data.preorderDate;
               ord.shipDate = data.shipDate;
               ord.linkedOrderIds = data.linkedOrderIds || "";
               ord.items = normalizeOrderItems_(orderItemsState).filter(function(it) { return String(it.lineName || "").trim() !== ""; });
+              applyCrossOrderCreditTransfer_(ord);
               var loyaltyResult = applyLoyaltyToOrder_(ord, null);
               ord = loyaltyResult.order;
               saveOrders();
               renderOrders();
               closeOrderModal();
               showOrderMessage("訂單已更新（含 " + ord.items.length + " 筆品項）");
-              upsertOrderWithPointsSync_(ord, loyaltyResult.pointsChanged, "訂單已更新（試算表已同步）").finally(function() {
+              var targetId = normalizeOrderIdToken_(ord.creditOutToOrderId || "");
+              var targetOrd = targetId
+                ? (orders || []).find(function(o) { return normalizeOrderIdToken_(o.id) === targetId; })
+                : null;
+              upsertOrderWithPointsSync_(ord, loyaltyResult.pointsChanged, "訂單已更新（試算表已同步）").then(function() {
+                if (targetOrd) return upsertOrderWithPointsSync_(targetOrd, false, "");
+              }).finally(function() {
                 if (submitBtn) submitBtn.disabled = false;
               });
             }
@@ -7946,6 +8137,10 @@
               remark: data.remark,
               depositRemark: data.depositRemark,
               depositAmount: data.depositAmount != null ? data.depositAmount : 0,
+              creditInAmount: data.creditInAmount != null ? data.creditInAmount : 0,
+              creditInFromOrderId: data.creditInFromOrderId || "",
+              creditOutAmount: data.creditOutAmount != null ? data.creditOutAmount : 0,
+              creditOutToOrderId: data.creditOutToOrderId || "",
               preorderDate: data.preorderDate,
               shipDate: data.shipDate,
               linkedOrderIds: data.linkedOrderIds || ""
@@ -7953,6 +8148,7 @@
             newOrder.items = normalizeOrderItems_(orderItemsState).filter(function(it) { return String(it.lineName || "").trim() !== ""; });
             window.__lastPastedOrderItems = null;
             orders.unshift(newOrder);
+            applyCrossOrderCreditTransfer_(newOrder);
             saveOrders();
             renderOrders();
             upsertOrderToSheet(newOrder).then(function() {
