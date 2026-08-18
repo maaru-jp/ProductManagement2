@@ -2214,10 +2214,21 @@ function buildRowFromPointRecord_(sheet, rec) {
 
 function normalizeSheetDateValue_(val) {
   if (val == null || val === "") return "";
+  var tz = "Asia/Taipei";
   if (Object.prototype.toString.call(val) === "[object Date]" && !isNaN(val.getTime())) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd");
+    return Utilities.formatDate(val, tz, "yyyy-MM-dd");
   }
   var s = String(val).trim();
+  var dateOnly = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (dateOnly) {
+    return dateOnly[1] + "-" + ("0" + dateOnly[2]).slice(-2) + "-" + ("0" + dateOnly[3]).slice(-2);
+  }
+  if (/T\d{2}:\d{2}/.test(s) || /GMT|UTC|Z$|[+-]\d{2}:?\d{2}$/.test(s)) {
+    var d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return Utilities.formatDate(d, tz, "yyyy-MM-dd");
+    }
+  }
   var m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
   if (m) {
     return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
@@ -3731,7 +3742,7 @@ function applyOrderStatusMoneyFields_(result, ord, items) {
   if (!result || !ord) return result;
   var list = (items && items.length) ? items : (Array.isArray(result.items) ? result.items : []);
   var depositRemark = String(ord.depositRemark || "").trim();
-  result.orderDate = normalizeSheetDateValue_(ord.date) || result.orderDate || result.updated || "";
+  result.orderDate = normalizeSheetDateValue_(ord.preorderDate) || normalizeSheetDateValue_(ord.date) || result.orderDate || result.updated || "";
   result.groupTitle = buildPublicGroupTitle_(ord, list)
     || buildPublicGroupTitle_({ product: result.product }, list);
   result.subtotal = Number(ord.subtotal) || 0;
@@ -3776,7 +3787,7 @@ function sanitizePublicOrder_(ord) {
   return {
     id: String(ord && ord.id != null ? ord.id : "").trim(),
     status: String(ord && ord.status != null ? ord.status : "").trim() || "待處理",
-    date: ord && ord.date != null ? String(ord.date) : "",
+    date: normalizeSheetDateValue_(ord && (ord.preorderDate || ord.date)),
     product: String(ord && ord.product != null ? ord.product : "").trim(),
     subtotal: Number(ord && ord.subtotal) || 0,
     discount: Number(ord && ord.discount) || 0,
