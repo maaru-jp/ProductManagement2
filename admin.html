@@ -4398,7 +4398,7 @@
                 throw new Error("找不到訂單 " + id);
               }
               var full = upsertLocalOrderMemory_(res.order);
-              saveOrders();
+              if (!opts.skipSave) saveOrders();
               return full;
             })
             .catch(function(err) {
@@ -4488,16 +4488,23 @@
           });
         }
 
-        /** 產 PDF／併箱前：強制重抓群組明細，並合併顧客總覽／關聯／備註來源 */
+        /** 產 PDF／併箱前：只補抓缺明細的單，不強制整組重抓 GAS */
         function prepareOrdersForPdf_(triggerOrd, opts) {
           opts = opts || {};
           if (!triggerOrd) return Promise.reject(new Error("缺少訂單"));
           showOrderMessage("載入訂單明細中...");
-          var force = opts.force !== false;
-          return ensureFullOrder_(triggerOrd, { force: force }).then(function(full) {
+          var force = !!opts.force;
+          return ensureFullOrder_(triggerOrd, { force: force, skipSave: true }).then(function(full) {
             if (!full) throw new Error("找不到訂單");
             var ids = collectCombineGroupIds_(full, opts.extraIds);
-            return ensureFullOrdersByIds_(ids, { force: force }).then(function() {
+            var needFetch = (ids || []).filter(function(id) {
+              if (force) return true;
+              var existing = findLocalOrderById_(id);
+              return !existing || orderNeedsFullDetail_(existing);
+            });
+            var loadIds = force ? ids : needFetch;
+            return ensureFullOrdersByIds_(loadIds, { force: force, skipSave: true }).then(function() {
+              saveOrders();
               var refreshed = findLocalOrderById_(full.id) || full;
               var linkedGroup = resolveCombineShipPdfOrders_(refreshed).filter(function(o) {
                 return o && !o._missing && o.status !== "已取消";
@@ -4798,6 +4805,42 @@
           return fetchOrderListPageFromServer_(opts);
         }
 
+        function toDateInputValue_(val) {
+          if (val == null || val === "") return "";
+          if (Object.prototype.toString.call(val) === "[object Date]" && !isNaN(val.getTime())) {
+            try {
+              var parts = new Intl.DateTimeFormat("en-CA", {
+                timeZone: "Asia/Taipei",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit"
+              }).formatToParts(val);
+              var y = (parts.find(function(p) { return p.type === "year"; }) || {}).value;
+              var mo = (parts.find(function(p) { return p.type === "month"; }) || {}).value;
+              var day = (parts.find(function(p) { return p.type === "day"; }) || {}).value;
+              if (y && mo && day) return y + "-" + mo + "-" + day;
+            } catch (e) {}
+            return val.getFullYear() + "-"
+              + String(val.getMonth() + 1).padStart(2, "0") + "-"
+              + String(val.getDate()).padStart(2, "0");
+          }
+          var s = String(val).trim();
+          if (!s) return "";
+          var dateOnly = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+          if (dateOnly) {
+            return dateOnly[1] + "-" + ("0" + dateOnly[2]).slice(-2) + "-" + ("0" + dateOnly[3]).slice(-2);
+          }
+          if (/T\d{2}:\d{2}/.test(s) || /GMT|UTC|Z$|[+-]\d{2}:?\d{2}$/.test(s)) {
+            var d = new Date(s);
+            if (!isNaN(d.getTime())) return toDateInputValue_(d);
+          }
+          var m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+          if (m) {
+            return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
+          }
+          return "";
+        }
+
         function normalizeOrderFieldsForAdmin_(ord) {
           if (!ord) return ord;
           if ((!ord.customerName || String(ord.customerName).trim() === "") && ord.name != null && String(ord.name).trim() !== "") {
@@ -4809,6 +4852,8 @@
           if ((!ord.lineId || String(ord.lineId).trim() === "") && ord.LineID != null) {
             ord.lineId = String(ord.LineID).trim();
           }
+          if (ord.preorderDate) ord.preorderDate = toDateInputValue_(ord.preorderDate);
+          if (ord.shipDate) ord.shipDate = toDateInputValue_(ord.shipDate);
           if (Array.isArray(ord.items) && ord.items.length) {
             delete ord.summary;
           }
@@ -6736,8 +6781,8 @@
             creditInFromOrderId: String(creditInFrom || "").trim(),
             creditOutAmount: creditOutNum,
             creditOutToOrderId: normalizeOrderIdToken_(creditOutTo),
-            preorderDate: (document.getElementById("orderPreorderDate").value || "").trim(),
-            shipDate: (document.getElementById("orderShipDate").value || "").trim(),
+            preorderDate: toDateInputValue_((document.getElementById("orderPreorderDate").value || "").trim()),
+            shipDate: toDateInputValue_((document.getElementById("orderShipDate").value || "").trim()),
             linkedOrderIds: sanitizeLinkedOrderIdsForOrder_(linkedRaw, selfIdForLink)
           };
         }
@@ -6785,8 +6830,8 @@
           }
           var creditOutEl = document.getElementById("orderCreditOutAmount");
           if (creditOutEl) creditOutEl.value = o.creditOutAmount != null && o.creditOutAmount !== "" ? String(o.creditOutAmount) : "0";
-          document.getElementById("orderPreorderDate").value = o.preorderDate || "";
-          document.getElementById("orderShipDate").value = o.shipDate || "";
+          document.getElementById("orderPreorderDate").value = toDateInputValue_(o.preorderDate);
+          document.getElementById("orderShipDate").value = toDateInputValue_(o.shipDate);
           var pdfBatchEl = document.getElementById("orderPdfShipBatch");
           if (pdfBatchEl) pdfBatchEl.value = "";
           renderOrderItemsEditor_(o.items || []);
@@ -7497,8 +7542,8 @@
           pdfAmountCloseRows += "<tr><td><strong>待結清總金額</strong></td><td><strong>NT$ " + dueNum + "</strong></td></tr></table>";
           var pdfLogoUrl = "";
           try { pdfLogoUrl = (localStorage.getItem("maaru_admin_pdf_logo") || "").trim(); } catch (e) {}
-          var preorderStr = (ord.preorderDate != null && String(ord.preorderDate).trim() !== "") ? String(ord.preorderDate).trim() : "";
-          var shipStr = (ord.shipDate != null && String(ord.shipDate).trim() !== "") ? String(ord.shipDate).trim() : "";
+          var preorderStr = toDateInputValue_(ord.preorderDate);
+          var shipStr = toDateInputValue_(ord.shipDate);
           var headerRight = "<div class=\"pdf-logo-wrap\">";
           if (pdfLogoUrl) {
             var safeLogoUrl = String(pdfLogoUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -7639,8 +7684,8 @@
           pdfAmountCloseRows += "<tr><td><strong>待結清總金額（合計）</strong></td><td><strong>NT$ " + sumDue + "</strong></td></tr></table>";
           var pdfLogoUrl = "";
           try { pdfLogoUrl = (localStorage.getItem("maaru_admin_pdf_logo") || "").trim(); } catch (e) {}
-          var preorderStr = (masterOrd.preorderDate != null && String(masterOrd.preorderDate).trim() !== "") ? String(masterOrd.preorderDate).trim() : "";
-          var shipStr = (masterOrd.shipDate != null && String(masterOrd.shipDate).trim() !== "") ? String(masterOrd.shipDate).trim() : "";
+          var preorderStr = toDateInputValue_(masterOrd.preorderDate);
+          var shipStr = toDateInputValue_(masterOrd.shipDate);
           var headerRight = "<div class=\"pdf-logo-wrap\">";
           if (pdfLogoUrl) {
             var safeLogoUrl = String(pdfLogoUrl).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -7785,17 +7830,43 @@
         }
 
         function openOrderPdfPrintWindow_(html) {
-          var w = window.open("", "_blank", "width=640,height=800");
-          if (!w) return false;
+          var blob = null;
+          var url = "";
           try {
-            w.document.open();
-            w.document.write(html);
-            w.document.close();
-            w.focus();
-            setTimeout(function() { w.print(); }, 300);
+            blob = new Blob([html], { type: "text/html;charset=utf-8" });
+            url = URL.createObjectURL(blob);
+          } catch (e) {
+            url = "";
+          }
+          var w = url ? window.open(url, "_blank", "width=640,height=800") : window.open("", "_blank", "width=640,height=800");
+          if (!w) {
+            if (url) try { URL.revokeObjectURL(url); } catch (e2) {}
+            return false;
+          }
+          try {
+            if (!url) {
+              w.document.open();
+              w.document.write(html);
+              w.document.close();
+            }
+            var printed = false;
+            function doPrint() {
+              if (printed) return;
+              printed = true;
+              try { w.focus(); } catch (e3) {}
+              try { w.print(); } catch (e4) {}
+              if (url) {
+                setTimeout(function() { try { URL.revokeObjectURL(url); } catch (e5) {} }, 60000);
+              }
+            }
+            if (w.addEventListener) {
+              w.addEventListener("load", function() { setTimeout(doPrint, 50); });
+            }
+            setTimeout(doPrint, 600);
             return true;
           } catch (err) {
-            try { w.close(); } catch (e2) {}
+            if (url) try { URL.revokeObjectURL(url); } catch (e7) {}
+            try { w.close(); } catch (e8) {}
             throw err;
           }
         }

@@ -1034,6 +1034,12 @@ function normalizeParsedOrderFields_(obj) {
   if ((!obj.updated || String(obj.updated).trim() === "") && obj.lastUpdated != null && String(obj.lastUpdated).trim() !== "") {
     obj.updated = String(obj.lastUpdated).trim();
   }
+  if (obj.preorderDate != null && obj.preorderDate !== "") {
+    obj.preorderDate = normalizeSheetDateValue_(obj.preorderDate);
+  }
+  if (obj.shipDate != null && obj.shipDate !== "") {
+    obj.shipDate = normalizeSheetDateValue_(obj.shipDate);
+  }
   return obj;
 }
 
@@ -1128,8 +1134,8 @@ function normalizeOrderForSheet_(order) {
     total: (o.total != null && o.total !== "") ? Number(o.total) : "",
     remark: (o.remark != null) ? String(o.remark) : "",
     depositRemark: (o.depositRemark != null) ? String(o.depositRemark) : "",
-    preorderDate: (o.preorderDate != null) ? String(o.preorderDate) : "",
-    shipDate: (o.shipDate != null) ? String(o.shipDate) : "",
+    preorderDate: toSheetCalendarDate_(o.preorderDate),
+    shipDate: toSheetCalendarDate_(o.shipDate),
     pointsUsed: (o.pointsUsed != null && o.pointsUsed !== "") ? Number(o.pointsUsed) : "",
     pointsEarned: (o.pointsEarned != null && o.pointsEarned !== "") ? Number(o.pointsEarned) : "",
     pointsProcessed: (o.pointsProcessed != null) ? String(o.pointsProcessed) : "",
@@ -2234,6 +2240,18 @@ function normalizeSheetDateValue_(val) {
     return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
   }
   return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function toSheetCalendarDate_(val) {
+  var s = normalizeSheetDateValue_(val);
+  if (!s) return "";
+  var p = s.split("-");
+  if (p.length !== 3) return s;
+  var y = parseInt(p[0], 10);
+  var mo = parseInt(p[1], 10) - 1;
+  var d = parseInt(p[2], 10);
+  if (!isFinite(y) || !isFinite(mo) || !isFinite(d)) return s;
+  return new Date(y, mo, d, 12, 0, 0);
 }
 
 function normalizePointLedgerType_(type) {
