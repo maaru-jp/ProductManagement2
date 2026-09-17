@@ -530,6 +530,7 @@
                   <input type="text" id="memberFormCard" required maxlength="13" inputmode="numeric" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" placeholder="13 碼純數字" />
                   <button type="button" id="btnMemberGenCard" class="shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-700 hover:bg-slate-50">自動產生</button>
                 </div>
+                <p class="text-[11px] text-slate-400 mt-1">既有顧客卡號維持不變。僅之後新客才用新規則：預購年(4)+月日(4)+隨機(5)</p>
               </div>
               <div>
                 <label class="block text-xs text-slate-500 mb-1">姓名</label>
@@ -1246,7 +1247,7 @@
                   <input type="text" id="orderMemberCardNo" maxlength="13" inputmode="numeric" pattern="\d{13}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" placeholder="13 碼純數字（顧客查詢訂單用）" />
                   <button type="button" id="btnGenerateMemberCard" class="shrink-0 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50">自動產生</button>
                 </div>
-                <p class="text-xs text-slate-400 mt-1">每位顧客唯一卡號；同客戶或編輯原訂單時按「自動產生」會沿用原卡號，新客才產生新卡號</p>
+                <p class="text-xs text-slate-400 mt-1">既有顧客卡號維持不變。僅之後新客才用新規則（前 4 碼＝首筆預購年、中 4 碼＝月日、後 5 碼隨機）。同客戶或編輯原訂單按「自動產生」會沿用原卡號</p>
                 <p id="orderMemberCardHint" class="text-xs mt-1 hidden"></p>
               </div>
               <div>
@@ -1524,9 +1525,9 @@
     </div>
   </div>
 
-  <script src="js/member-card.js?v=20260607-canonical"></script>
+  <script src="js/member-card.js?v=20260918-dateprefix"></script>
   <script src="js/admin-loyalty.js?v=20260526-disabled"></script>
-  <script src="js/admin-members.js?v=20260607-2"></script>
+  <script src="js/admin-members.js?v=20260918-dateprefix"></script>
   <script src="js/admin-711-store.js?v=20260606-5"></script>
   <script>
     (function() {
