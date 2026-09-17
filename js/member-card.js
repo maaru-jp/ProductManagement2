@@ -41,14 +41,94 @@
     return used;
   }
 
-  function generateUniqueMemberCardNo(used) {
+  /** 將日期轉成卡號前綴 YYYYMMDD（年 4 + 月日 4） */
+  function toMemberCardDatePrefix(dateValue) {
+    if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+      return (
+        String(dateValue.getFullYear()) +
+        ("0" + (dateValue.getMonth() + 1)).slice(-2) +
+        ("0" + dateValue.getDate()).slice(-2)
+      );
+    }
+    var s = String(dateValue || "").trim();
+    if (!s) return "";
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) {
+      return m[1] + ("0" + m[2]).slice(-2) + ("0" + m[3]).slice(-2);
+    }
+    m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+    if (m) {
+      return m[1] + ("0" + m[2]).slice(-2) + ("0" + m[3]).slice(-2);
+    }
+    m = s.match(/^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})/);
+    if (m) {
+      return m[1] + ("0" + m[2]).slice(-2) + ("0" + m[3]).slice(-2);
+    }
+    var digits = s.replace(/\D/g, "");
+    if (digits.length >= 8) {
+      var y = digits.slice(0, 4);
+      var mo = digits.slice(4, 6);
+      var d = digits.slice(6, 8);
+      var mi = Number(mo);
+      var di = Number(d);
+      if (mi >= 1 && mi <= 12 && di >= 1 && di <= 31) return y + mo + d;
+    }
+    var dt = new Date(s);
+    if (!isNaN(dt.getTime())) return toMemberCardDatePrefix(dt);
+    return "";
+  }
+
+  function todayMemberCardDatePrefix() {
+    return toMemberCardDatePrefix(new Date());
+  }
+
+  /**
+   * 以該顧客「第一筆訂單」預購日期為基準（無則用備援日期／今天）
+   * 回傳 YYYYMMDD
+   */
+  function resolveMemberCardDatePrefix(orders, customerName, phone, lineId, fallbackDate) {
+    var n = normalizeCustomerName(customerName);
+    var p = normalizePhone(phone);
+    var line = String(lineId || "").trim().toLowerCase();
+    var earliest = "";
+    (orders || []).forEach(function (ord) {
+      if (!ord) return;
+      var match = false;
+      if (n && normalizeCustomerName(ord.customerName) === n) match = true;
+      else if (!n && p && normalizePhone(ord.phone) === p) match = true;
+      else if (!n && !p && line && String(ord.lineId || "").trim().toLowerCase() === line) match = true;
+      if (!match) return;
+      var prefix = toMemberCardDatePrefix(ord.preorderDate || ord.date || "");
+      if (!prefix) return;
+      if (!earliest || prefix < earliest) earliest = prefix;
+    });
+    if (earliest) return earliest;
+    var fb = toMemberCardDatePrefix(fallbackDate);
+    if (fb) return fb;
+    return todayMemberCardDatePrefix();
+  }
+
+  /**
+   * 產生 13 碼唯一卡號：YYYY(4) + MMDD(4) + 隨機5碼
+   * 僅供「尚未有卡號的新客」使用；既有卡號不會被此函式改寫。
+   * @param {Object} used 已使用卡號集合
+   * @param {string|Date} [dateOrPrefix] 預購日期或 YYYYMMDD
+   */
+  function generateUniqueMemberCardNo(used, dateOrPrefix) {
     used = used || {};
-    for (var attempt = 0; attempt < 300; attempt++) {
-      var digits = "";
-      digits += String(1 + Math.floor(Math.random() * 9));
-      for (var i = 1; i < MEMBER_CARD_LENGTH; i++) {
-        digits += String(Math.floor(Math.random() * 10));
+    var prefix = toMemberCardDatePrefix(dateOrPrefix);
+    if (!prefix) {
+      var raw = String(dateOrPrefix || "").replace(/\D/g, "");
+      if (raw.length >= 8) prefix = raw.slice(0, 8);
+    }
+    if (!prefix || prefix.length !== 8) prefix = todayMemberCardDatePrefix();
+
+    for (var attempt = 0; attempt < 500; attempt++) {
+      var suffix = "";
+      for (var i = 0; i < 5; i++) {
+        suffix += String(Math.floor(Math.random() * 10));
       }
+      var digits = prefix + suffix;
       if (!used[digits]) return digits;
     }
     throw new Error("無法產生唯一會員卡號，請稍後再試");
@@ -342,13 +422,23 @@
       collectUsedMemberCardsFromOrders(orders),
       collectUsedMemberCardsFromLedger(ledger)
     );
-    return generateUniqueMemberCardNo(used);
+    var datePrefix = resolveMemberCardDatePrefix(
+      orders,
+      order.customerName,
+      order.phone,
+      order.lineId,
+      order.preorderDate || order.date
+    );
+    return generateUniqueMemberCardNo(used, datePrefix);
   }
 
   global.MaaruMemberCard = {
     MEMBER_CARD_LENGTH: MEMBER_CARD_LENGTH,
     normalizeMemberCardNo: normalizeMemberCardNo,
     isValidMemberCardNo: isValidMemberCardNo,
+    toMemberCardDatePrefix: toMemberCardDatePrefix,
+    todayMemberCardDatePrefix: todayMemberCardDatePrefix,
+    resolveMemberCardDatePrefix: resolveMemberCardDatePrefix,
     generateUniqueMemberCardNo: generateUniqueMemberCardNo,
     collectUsedMemberCardsFromLedger: collectUsedMemberCardsFromLedger,
     collectUsedMemberCardsFromOrders: collectUsedMemberCardsFromOrders,

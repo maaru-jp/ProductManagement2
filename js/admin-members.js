@@ -393,6 +393,14 @@
       return;
     }
     try {
+      var cardEl = document.getElementById("memberFormCard");
+      var nameEl = document.getElementById("memberFormName");
+      var phoneEl = document.getElementById("memberFormPhone");
+      var lineEl = document.getElementById("memberFormLineId");
+      var customerName = nameEl ? nameEl.value : "";
+      var phone = phoneEl ? phoneEl.value : "";
+      var lineId = lineEl ? lineEl.value : "";
+
       var orderList = [];
       try {
         if (typeof loadAdminOrdersForLoyalty_ === "function") {
@@ -401,6 +409,58 @@
           orderList = global.adminOrders;
         }
       } catch (e) { /* ignore */ }
+
+      // 編輯時：表單已有有效卡號 → 沿用
+      var currentCard = normalizeCard(cardEl && cardEl.value);
+      if (isValidCard(currentCard)) {
+        if (cardEl) {
+          cardEl.value = currentCard;
+          cardEl.readOnly = false;
+        }
+        showMessage("已沿用原卡號 " + formatCardDisplay(currentCard), false);
+        return;
+      }
+
+      // 同客戶：從訂單或會員名單沿用
+      var reused = "";
+      if (typeof MaaruMemberCard.findMemberCardForCustomer === "function") {
+        reused = MaaruMemberCard.findMemberCardForCustomer(
+          orderList,
+          customerName,
+          phone,
+          lineId,
+          ""
+        );
+      }
+      if (!isValidCard(reused)) {
+        var n = String(customerName || "").trim().replace(/\s+/g, "").toLowerCase();
+        var p = String(phone || "").replace(/\D/g, "");
+        for (var i = 0; i < membersCache.length; i++) {
+          var m = membersCache[i];
+          if (String(m.status || "") === "停用") continue;
+          var mn = String(m.customerName || "").trim().replace(/\s+/g, "").toLowerCase();
+          var mp = String(m.phone || "").replace(/\D/g, "");
+          var mc = normalizeCard(m.memberCardNo);
+          if (!isValidCard(mc)) continue;
+          if (n && mn === n) {
+            reused = mc;
+            break;
+          }
+          if (!n && p && mp === p) {
+            reused = mc;
+            break;
+          }
+        }
+      }
+      if (isValidCard(reused)) {
+        if (cardEl) {
+          cardEl.value = reused;
+          cardEl.readOnly = false;
+        }
+        showMessage("已沿用客戶原卡號 " + formatCardDisplay(reused), false);
+        return;
+      }
+
       var used = MaaruMemberCard.mergeUsedSets(
         MaaruMemberCard.collectUsedMemberCardsFromOrders(orderList),
         MaaruMemberCard.collectUsedMemberCardsFromLedger(
@@ -411,13 +471,23 @@
         var c = normalizeCard(m.memberCardNo);
         if (isValidCard(c)) used[c] = true;
       });
-      var card = MaaruMemberCard.generateUniqueMemberCardNo(used);
-      var cardEl = document.getElementById("memberFormCard");
+
+      var datePrefix =
+        typeof MaaruMemberCard.resolveMemberCardDatePrefix === "function"
+          ? MaaruMemberCard.resolveMemberCardDatePrefix(
+              orderList,
+              customerName,
+              phone,
+              lineId,
+              new Date()
+            )
+          : "";
+      var card = MaaruMemberCard.generateUniqueMemberCardNo(used, datePrefix);
       if (cardEl) {
         cardEl.value = card;
         cardEl.readOnly = false;
       }
-      showMessage("已產生卡號 " + formatCardDisplay(card), false);
+      showMessage("已產生新客卡號 " + formatCardDisplay(card), false);
     } catch (err) {
       showMessage(err.message || "無法產生卡號", true);
     }
