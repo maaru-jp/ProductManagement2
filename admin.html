@@ -968,6 +968,51 @@
             </div>
           </div>
 
+          <!-- LINE 官方帳號自動建單 -->
+          <div class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+            <h3 class="text-base font-semibold text-slate-800 mb-2">LINE 官方帳號自動建單</h3>
+            <p class="text-sm text-slate-600 mb-4">顧客從社群記事本喊單後，把訊息回傳到<strong>官方 LINE</strong>，系統可自動建立「待處理」訂單，並回覆下方「訂單成立」模板。詳細接線步驟請見專案內 <code class="text-xs bg-slate-100 px-1 rounded">LINE-官方帳號自動建單.md</code>。</p>
+            <div class="space-y-4">
+              <label class="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" id="lineAutoEnabled" class="rounded border-slate-300" />
+                啟用 LINE 自動建單與自動回覆
+              </label>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Channel access token</label>
+                <input type="password" id="lineChannelAccessToken" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="貼上 Messaging API 長期 token（留空＝不修改）" autocomplete="off" />
+                <p id="lineTokenHint" class="text-xs text-slate-500 mt-1"></p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Channel secret（選填，備援）</label>
+                <input type="password" id="lineChannelSecret" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="留空＝不修改" autocomplete="off" />
+                <p id="lineSecretHint" class="text-xs text-slate-500 mt-1"></p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Webhook 驗證 token</label>
+                <div class="flex flex-wrap gap-2">
+                  <input type="text" id="lineWebhookToken" class="flex-1 min-w-[180px] rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="儲存後會產生；請加在 Webhook URL" readonly />
+                  <button type="button" id="lineGenWebhookToken" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">重新產生</button>
+                </div>
+                <p class="text-xs text-slate-500 mt-1">LINE Developers → Messaging API → Webhook URL 請填：<br><code class="text-[11px] bg-slate-100 px-1 rounded break-all" id="lineWebhookUrlPreview">（儲存後顯示）</code></p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">訂單成立自動回覆模板</label>
+                <textarea id="lineOrderCreatedTemplate" rows="12" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed" placeholder="可用變數 {{orderId}} {{memberCardNo}} {{itemsSummary}} {{subtotal}} {{customerName}}"></textarea>
+                <p class="text-xs text-slate-500 mt-1">可用變數：<code class="bg-slate-100 px-1 rounded">{{orderId}}</code> <code class="bg-slate-100 px-1 rounded">{{memberCardNo}}</code> <code class="bg-slate-100 px-1 rounded">{{itemsSummary}}</code> <code class="bg-slate-100 px-1 rounded">{{subtotal}}</code> <code class="bg-slate-100 px-1 rounded">{{customerName}}</code></p>
+              </div>
+              <div class="rounded-lg bg-slate-50 border border-slate-100 p-3 text-xs text-slate-600 leading-relaxed">
+                <p class="font-medium text-slate-700 mb-1">顧客傳給官方 LINE 的建議格式</p>
+                <p class="font-mono whitespace-pre-wrap">吊飾娃 手機鍊 +1
+或直接貼官網複製的「登記清單」（含商品總計）</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" id="lineSettingsSaveBtn" class="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">儲存 LINE 設定</button>
+                <button type="button" id="lineSettingsReloadBtn" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">重新載入</button>
+              </div>
+              <p id="lineSettingsHint" class="text-xs text-slate-500 hidden"></p>
+            </div>
+          </div>
+
           <!-- 修改管理密碼 -->
           <div class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
             <h3 class="text-base font-semibold text-slate-800 mb-4">修改管理密碼</h3>
@@ -1766,7 +1811,12 @@
           if (typeof updatePurchaseKPI === "function") updatePurchaseKPI();
         }
         else if (sectionId === "sectionLayout") setNavActive("navLayout");
-        else if (sectionId === "sectionSettings") setNavActive("navSettings");
+        else if (sectionId === "sectionSettings") {
+          setNavActive("navSettings");
+          if (typeof window.loadLineAutomationSettings === "function") {
+            window.loadLineAutomationSettings();
+          }
+        }
         else setNavActive("navProducts");
       }
 
@@ -2000,6 +2050,130 @@
 
         loadCarouselSettings();
         if (carouselSaveBtn) carouselSaveBtn.addEventListener("click", saveCarouselSettings);
+
+        var lineAutoEnabled = document.getElementById("lineAutoEnabled");
+        var lineChannelAccessToken = document.getElementById("lineChannelAccessToken");
+        var lineChannelSecret = document.getElementById("lineChannelSecret");
+        var lineWebhookToken = document.getElementById("lineWebhookToken");
+        var lineOrderCreatedTemplate = document.getElementById("lineOrderCreatedTemplate");
+        var lineWebhookUrlPreview = document.getElementById("lineWebhookUrlPreview");
+        var lineSettingsHint = document.getElementById("lineSettingsHint");
+        var lineTokenHint = document.getElementById("lineTokenHint");
+        var lineSecretHint = document.getElementById("lineSecretHint");
+        var lineSettingsSaveBtn = document.getElementById("lineSettingsSaveBtn");
+        var lineSettingsReloadBtn = document.getElementById("lineSettingsReloadBtn");
+        var lineGenWebhookToken = document.getElementById("lineGenWebhookToken");
+        var lastLineWebhookToken = "";
+
+        function showLineSettingsHint_(msg, isErr) {
+          if (!lineSettingsHint) return;
+          lineSettingsHint.textContent = msg || "";
+          lineSettingsHint.classList.remove("hidden");
+          lineSettingsHint.classList.toggle("text-rose-600", !!isErr);
+          lineSettingsHint.classList.toggle("text-slate-500", !isErr);
+        }
+
+        function updateLineWebhookUrlPreview_(token) {
+          lastLineWebhookToken = token || lastLineWebhookToken || "";
+          if (!lineWebhookUrlPreview) return;
+          var base = API_BASE || "";
+          if (!lastLineWebhookToken) {
+            lineWebhookUrlPreview.textContent = base + "?webhook_token=（請先產生 token）";
+            return;
+          }
+          lineWebhookUrlPreview.textContent = base + "?webhook_token=" + encodeURIComponent(lastLineWebhookToken);
+        }
+
+        function applyLineSettingsToForm_(data) {
+          data = data || {};
+          if (lineAutoEnabled) lineAutoEnabled.checked = !!data.enabled;
+          if (lineChannelAccessToken) lineChannelAccessToken.value = "";
+          if (lineChannelSecret) lineChannelSecret.value = "";
+          if (lineTokenHint) {
+            lineTokenHint.textContent = data.hasChannelAccessToken
+              ? ("目前已設定：" + (data.channelAccessTokenMasked || "****"))
+              : "尚未設定 Channel access token";
+          }
+          if (lineSecretHint) {
+            lineSecretHint.textContent = data.hasChannelSecret
+              ? ("目前已設定：" + (data.channelSecretMasked || "****"))
+              : "尚未設定 Channel secret（可選）";
+          }
+          if (lineWebhookToken) {
+            lineWebhookToken.value = data.webhookToken || data.webhookTokenMasked || "";
+          }
+          if (data.webhookToken) lastLineWebhookToken = data.webhookToken;
+          else if (data.hasWebhookToken) lastLineWebhookToken = "";
+          updateLineWebhookUrlPreview_(data.webhookToken || "");
+          if (lineOrderCreatedTemplate && data.orderCreatedTemplate) {
+            lineOrderCreatedTemplate.value = data.orderCreatedTemplate;
+          }
+        }
+
+        function loadLineSettings_() {
+          if (typeof fetchWrite !== "function") {
+            showLineSettingsHint_("後台寫入 API 未就緒", true);
+            return Promise.resolve();
+          }
+          showLineSettingsHint_("載入 LINE 設定中…", false);
+          return fetchWrite({ action: "line_settings_get" })
+            .then(function(data) {
+              if (data && data.error) throw new Error(data.message || "載入失敗");
+              // get 不回傳明文 token；再存一次 generate 才有完整 token。先顯示遮罩。
+              applyLineSettingsToForm_(data);
+              // 若已有 token 但沒明文，用 save generateWebhookToken:false 無法取得。改顯示遮罩於 input。
+              if (data && data.hasWebhookToken && !data.webhookToken && lineWebhookToken) {
+                lineWebhookToken.value = data.webhookTokenMasked || "(已設定，請看下方 URL 或重新產生)";
+                lineWebhookUrlPreview.textContent = (API_BASE || "") + "?webhook_token=（已設定；若遺失請按重新產生）";
+              }
+              showLineSettingsHint_("已載入 LINE 設定", false);
+            })
+            .catch(function(err) {
+              showLineSettingsHint_((err && err.message) || "載入失敗（請確認已部署最新 Code.gs）", true);
+            });
+        }
+
+        function saveLineSettings_(extra) {
+          extra = extra || {};
+          if (typeof fetchWrite !== "function") {
+            showLineSettingsHint_("後台寫入 API 未就緒", true);
+            return;
+          }
+          var body = {
+            action: "line_settings_save",
+            enabled: !!(lineAutoEnabled && lineAutoEnabled.checked),
+            orderCreatedTemplate: lineOrderCreatedTemplate ? lineOrderCreatedTemplate.value : ""
+          };
+          if (lineChannelAccessToken && lineChannelAccessToken.value.trim()) {
+            body.channelAccessToken = lineChannelAccessToken.value.trim();
+          }
+          if (lineChannelSecret && lineChannelSecret.value.trim()) {
+            body.channelSecret = lineChannelSecret.value.trim();
+          }
+          if (extra.generateWebhookToken) body.generateWebhookToken = true;
+          showLineSettingsHint_("儲存中…", false);
+          fetchWrite(body)
+            .then(function(data) {
+              if (data && data.error) throw new Error(data.message || "儲存失敗");
+              applyLineSettingsToForm_(data);
+              if (data.webhookToken && lineWebhookToken) lineWebhookToken.value = data.webhookToken;
+              updateLineWebhookUrlPreview_(data.webhookToken || lastLineWebhookToken);
+              showLineSettingsHint_("已儲存 LINE 設定。請把 Webhook URL 貼到 LINE Developers。", false);
+            })
+            .catch(function(err) {
+              showLineSettingsHint_((err && err.message) || "儲存失敗", true);
+            });
+        }
+
+        window.loadLineAutomationSettings = loadLineSettings_;
+        if (lineSettingsSaveBtn) lineSettingsSaveBtn.addEventListener("click", function() { saveLineSettings_({}); });
+        if (lineSettingsReloadBtn) lineSettingsReloadBtn.addEventListener("click", loadLineSettings_);
+        if (lineGenWebhookToken) {
+          lineGenWebhookToken.addEventListener("click", function() {
+            if (!confirm("重新產生後，請同步更新 LINE Developers 的 Webhook URL。確定？")) return;
+            saveLineSettings_({ generateWebhookToken: true });
+          });
+        }
 
         if (saveShipping) saveShipping.addEventListener("click", function() { alert("運送方式已儲存（實際需串接後端）"); });
         if (saveCheckout) saveCheckout.addEventListener("click", function() { alert("結帳資訊已儲存（實際需串接後端）"); });
