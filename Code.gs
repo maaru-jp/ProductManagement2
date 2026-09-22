@@ -52,7 +52,7 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-23-line-webhook-v3",
+        apiVersion: "2026-09-23-line-webhook-v4",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
@@ -69,7 +69,7 @@ function doGet(e) {
       var lineDiag = getLineAutomationSettings_();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-23-line-webhook-v3",
+        apiVersion: "2026-09-23-line-webhook-v4",
         enabled: !!lineDiag.enabled,
         hasChannelAccessToken: !!lineDiag.channelAccessToken,
         hasWebhookToken: !!lineDiag.webhookToken,
@@ -813,7 +813,8 @@ function saveLineAutomationSettings_(body) {
     props.setProperty(LINE_PROP_ENABLED, body.enabled === true || body.enabled === "1" || body.enabled === 1 ? "1" : "0");
   }
   if (body.channelAccessToken != null && String(body.channelAccessToken).trim() !== "") {
-    props.setProperty(LINE_PROP_CHANNEL_TOKEN, String(body.channelAccessToken).trim());
+    var cat = String(body.channelAccessToken).trim().replace(/^Bearer\s+/i, "");
+    props.setProperty(LINE_PROP_CHANNEL_TOKEN, cat);
   }
   if (body.clearChannelAccessToken) props.deleteProperty(LINE_PROP_CHANNEL_TOKEN);
   if (body.channelSecret != null && String(body.channelSecret).trim() !== "") {
@@ -916,6 +917,28 @@ function handleLineWebhookPost_(e, body) {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
+/** LINE 逾時重試時同一則 message.id 會再打一次 → 用快取去重，避免重複建單 */
+function claimLineEventOnce_(event) {
+  event = event || {};
+  var msgId = (event.message && event.message.id) ? String(event.message.id).trim() : "";
+  var evId = event.webhookEventId ? String(event.webhookEventId).trim() : "";
+  var key = "line_dedup_" + (msgId || evId || "");
+  if (key === "line_dedup_") return { ok: true, skipped: false };
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch (e) { /* 搶不到鎖仍嘗試去重 */ }
+  try {
+    var cache = CacheService.getScriptCache();
+    if (cache.get(key)) {
+      return { ok: true, skipped: true, reason: "duplicate_event", key: key };
+    }
+    cache.put(key, "1", 21600); // 6 小時
+    return { ok: true, skipped: false, key: key };
+  } finally {
+    try { lock.releaseLock(); } catch (e2) { /* ignore */ }
+  }
+}
+
 function processLineEvent_(event, settings) {
   event = event || {};
   if (event.type === "follow") {
@@ -932,24 +955,26 @@ function processLineEvent_(event, settings) {
     return { ok: true, skipped: "not_order_like" };
   }
 
+  var claim = claimLineEventOnce_(event);
+  if (claim && claim.skipped) {
+    Logger.log("LINE skip duplicate: " + (claim.key || ""));
+    return { ok: true, skipped: "duplicate_event" };
+  }
+
   var replyToken = event.replyToken || "";
   var source = event.source || {};
   var userId = String(source.userId || "").trim();
+  var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
   var displayName = "";
-  if (userId && settings.channelAccessToken) {
-    displayName = fetchLineDisplayName_(userId, settings.channelAccessToken) || "";
+  if (userId && accessToken) {
+    displayName = fetchLineDisplayName_(userId, accessToken) || "";
   }
 
   var parsed = parseLineOrderMessage_(text);
   if (!parsed || !parsed.items || !parsed.items.length) {
-    if (settings.channelAccessToken) {
+    if (accessToken) {
       var parseFailMsg = "已收到訊息，但無法辨識商品列。\n請用例如：\n商品名稱 款式 +1\n或貼上完整「登記清單」（含商品總計）。";
-      if (replyToken) {
-        var r1 = replyLineText_(replyToken, settings.channelAccessToken, parseFailMsg);
-        if (!(r1 && r1.ok) && userId) pushLineText_(userId, settings.channelAccessToken, parseFailMsg);
-      } else if (userId) {
-        pushLineText_(userId, settings.channelAccessToken, parseFailMsg);
-      }
+      sendLineUserText_(userId, replyToken, accessToken, parseFailMsg);
     }
     return { ok: false, message: "parse_failed" };
   }
@@ -960,39 +985,16 @@ function processLineEvent_(event, settings) {
     rawText: text
   });
   if (created.error) {
-    if (settings.channelAccessToken) {
-      var failMsg = "建單失敗：" + (created.message || "請稍後再試或聯絡店家");
-      if (replyToken) {
-        var r2 = replyLineText_(replyToken, settings.channelAccessToken, failMsg);
-        if (!(r2 && r2.ok) && userId) pushLineText_(userId, settings.channelAccessToken, failMsg);
-      } else if (userId) {
-        pushLineText_(userId, settings.channelAccessToken, failMsg);
-      }
+    if (accessToken) {
+      sendLineUserText_(userId, replyToken, accessToken, "建單失敗：" + (created.message || "請稍後再試或聯絡店家"));
     }
     return created;
   }
 
   var replyText = renderLineOrderCreatedTemplate_(settings.orderCreatedTemplate, created);
-  var replied = false;
-  var replyMode = "";
-  if (settings.channelAccessToken) {
-    if (replyToken) {
-      var replyRes = replyLineText_(replyToken, settings.channelAccessToken, replyText);
-      if (replyRes && replyRes.ok) {
-        replied = true;
-        replyMode = "reply";
-      }
-    }
-    // GAS 冷啟動常超過 30 秒 → replyToken 失效；改用 Push 補送
-    if (!replied && userId) {
-      var pushRes = pushLineText_(userId, settings.channelAccessToken, replyText);
-      if (pushRes && pushRes.ok) {
-        replied = true;
-        replyMode = "push";
-      } else {
-        Logger.log("LINE reply/push failed: reply=" + JSON.stringify(replyRes) + " push=" + JSON.stringify(pushRes));
-      }
-    }
+  var sendRes = { replied: false, replyMode: "", detail: null };
+  if (accessToken) {
+    sendRes = sendLineUserText_(userId, replyToken, accessToken, replyText);
   } else {
     Logger.log("LINE: 無 Channel access token，已建單但無法回覆");
   }
@@ -1001,9 +1003,40 @@ function processLineEvent_(event, settings) {
     orderId: created.orderId,
     memberCardNo: created.memberCardNo,
     subtotal: created.subtotal,
-    replied: replied,
-    replyMode: replyMode
+    replied: !!sendRes.replied,
+    replyMode: sendRes.replyMode || "",
+    replyDetail: sendRes.detail || null
   };
+}
+
+/**
+ * 優先 reply；失敗（含 token 過期）改 push。
+ * GAS 冷啟動常超過 30 秒，reply 常失敗，push 才穩。
+ */
+function sendLineUserText_(userId, replyToken, accessToken, text) {
+  var replied = false;
+  var replyMode = "";
+  var detail = {};
+  if (replyToken) {
+    var replyRes = replyLineText_(replyToken, accessToken, text);
+    detail.reply = replyRes;
+    if (replyRes && replyRes.ok) {
+      replied = true;
+      replyMode = "reply";
+      return { replied: replied, replyMode: replyMode, detail: detail };
+    }
+  }
+  if (userId) {
+    var pushRes = pushLineText_(userId, accessToken, text);
+    detail.push = pushRes;
+    if (pushRes && pushRes.ok) {
+      replied = true;
+      replyMode = "push";
+    } else {
+      Logger.log("LINE send failed: " + JSON.stringify(detail));
+    }
+  }
+  return { replied: replied, replyMode: replyMode, detail: detail };
 }
 
 function looksLikeLineOrderMessage_(text) {
@@ -1033,18 +1066,21 @@ function parseLineOrderMessage_(text) {
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].replace(/^\s*\d+[、．.]\s*/, "").trim();
     if (!line) continue;
-    var mQty = line.match(/^(.+?)\s*[+＋]?\s*(\d{1,3})\s*$/);
-    var mPlusOne = line.match(/^(.+?)\s*[+＋]\s*1\s*$/i) || line.match(/^(.+?)\s*加\s*1\s*$/);
+    // 先抓「...+1 / ＋1 / 加1」（允許無空白）
+    var mPlusOne = line.match(/^(.+?)\s*[+＋]\s*1\s*$/i)
+      || line.match(/^(.+?)\s*加\s*1\s*$/)
+      || line.match(/^(.+?)[+＋]1\s*$/);
+    var mQty = line.match(/^(.+?)\s*[+＋]\s*(\d{1,3})\s*$/);
     var namePart = "";
     var qty = 0;
     if (mPlusOne) {
       namePart = String(mPlusOne[1] || "").trim();
       qty = 1;
-    } else if (mQty && /[+＋]|加/.test(line)) {
+    } else if (mQty) {
       namePart = String(mQty[1] || "").trim();
       qty = parseInt(mQty[2], 10) || 0;
-    } else if (/[+＋]\s*1|加\s*1/.test(line)) {
-      namePart = line.replace(/[+＋]\s*1|加\s*1/g, "").trim();
+    } else if (/[+＋]\s*1|加\s*1|[+＋]1/.test(line)) {
+      namePart = line.replace(/[+＋]\s*1|加\s*1|[+＋]1/g, "").trim();
       qty = 1;
     }
     if (!namePart || qty < 1) continue;
