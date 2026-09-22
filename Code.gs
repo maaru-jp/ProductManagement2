@@ -14,6 +14,9 @@
  * - customer_orders  歷史訂單：交易紀錄 + 每筆獲得／折抵點數（試算表「歷史訂單」）
  * - order_status     單筆配送進度（orderId，5 碼或 ORD00001）
  * - （相容）?orderId=00001 同 order_status
+ *
+ * 顧客端 POST（免後台 token）：
+ * - customer_order_submit  官網購物車直接送單 → 寫入「歷史訂單」（狀態：待處理）
  */
 
 var CONFIG = {
@@ -49,13 +52,14 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-08-05-stockout-credit",
+        apiVersion: "2026-09-22-line-webhook",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"],
-        postRoutes: ["order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
+        postRoutes: ["customer_order_submit", "line_settings_get", "line_settings_save", "line_webhook", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
+        lineWebhookHint: "Webhook URL 請用本 GAS 網頁應用程式 URL，並在查詢字串加上 webhook_token（於後台 LINE 自動化設定）",
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
         memberSpreadsheetName: getMemberSpreadsheetMeta_().name
@@ -106,6 +110,17 @@ function doPost(e) {
       out.message = "請求內容不是有效 JSON";
       return jsonOutput(out);
     }
+
+    var actionEarly = (body.action || "").toString().toLowerCase().trim();
+    // 顧客官網直接送單：不需後台 token（仍做欄位驗證與頻率限制）
+    if (actionEarly === "customer_order_submit") {
+      return jsonOutput(submitCustomerOrderPublic_(body));
+    }
+    // LINE Messaging API Webhook（官方帳號收到訊息 → 自動建單＋回覆）
+    if (body.events && Object.prototype.toString.call(body.events) === "[object Array]") {
+      return handleLineWebhookPost_(e, body);
+    }
+
     if (!isAuthorizedPost_(body)) {
       out.error = true;
       out.message = "未授權：token 無效";
@@ -126,6 +141,13 @@ function doPost(e) {
       out.rowCount = info.rowCount;
       out.message = "已連線";
       return jsonOutput(out);
+    }
+
+    if (action === "line_settings_get") {
+      return jsonOutput(getLineAutomationSettingsPublic_(false));
+    }
+    if (action === "line_settings_save") {
+      return jsonOutput(saveLineAutomationSettings_(body));
     }
 
     // 紅利紀錄：list / sync / repair
@@ -460,6 +482,694 @@ function isAuthorizedPost_(body) {
   if (!expected) return false;
   var actual = (body && body.token != null) ? String(body.token).trim() : "";
   return actual === expected;
+}
+
+/**
+ * 顧客官網送單（公開）。狀態固定「待處理」，訂單編號由伺服器配號。
+ * body: { customerName, phone, lineId?, email?, memberCardNo?, remark?, items:[{lineName,qty,price}], subtotal? }
+ */
+function submitCustomerOrderPublic_(body) {
+  body = body || {};
+  var customerName = String(body.customerName || body.name || "").trim();
+  var phone = String(body.phone || "").replace(/\D/g, "");
+  var lineId = String(body.lineId || "").trim();
+  var email = String(body.email || "").trim();
+  var remark = String(body.remark || "").trim();
+  var memberCardNo = normalizeMemberCardNo_(body.memberCardNo || body.memberCard || "");
+
+  if (!customerName) {
+    return { error: true, message: "請填寫姓名" };
+  }
+  if (customerName.length > 40) {
+    return { error: true, message: "姓名過長" };
+  }
+  if (phone.length < 8 || phone.length > 15) {
+    return { error: true, message: "請填寫有效電話（8～15 碼數字）" };
+  }
+  if (memberCardNo && !isValidMemberCardNo_(memberCardNo)) {
+    return { error: true, message: "會員卡號須為 13 碼數字（可留空由系統產生）" };
+  }
+  if (email && email.length > 80) {
+    return { error: true, message: "Email 過長" };
+  }
+  if (remark.length > 4000) {
+    remark = remark.slice(0, 4000);
+  }
+
+  var rateKey = "cosub_" + phone.slice(-8);
+  try {
+    var cache = CacheService.getScriptCache();
+    if (cache.get(rateKey)) {
+      return { error: true, message: "送單過於頻繁，請稍候約 20 秒再試" };
+    }
+    cache.put(rateKey, "1", 20);
+  } catch (eCache) { /* ignore */ }
+
+  var rawItems = Array.isArray(body.items) ? body.items : [];
+  if (!rawItems.length) {
+    return { error: true, message: "購物車沒有商品" };
+  }
+  if (rawItems.length > 80) {
+    return { error: true, message: "單次最多 80 項商品，請分批送單" };
+  }
+
+  var items = [];
+  var subtotal = 0;
+  for (var i = 0; i < rawItems.length; i++) {
+    var it = rawItems[i] || {};
+    var lineName = String(it.lineName || it.name || "").trim();
+    if (it.variant) {
+      var v = String(it.variant).trim();
+      if (v && lineName.indexOf(v) < 0) lineName = (lineName + " " + v).trim();
+    }
+    var qty = Math.floor(Number(it.qty) || 0);
+    var price = Math.round(Number(it.price) || 0);
+    if (!lineName || qty < 1) continue;
+    if (qty > 999) qty = 999;
+    if (price < 0) price = 0;
+    if (price > 999999) price = 999999;
+    if (lineName.length > 120) lineName = lineName.slice(0, 120);
+    items.push({
+      lineName: lineName,
+      qty: qty,
+      price: price,
+      shipStatus: "待出貨",
+      shipBatch: null
+    });
+    subtotal += price * qty;
+  }
+  if (!items.length) {
+    return { error: true, message: "找不到有效商品列" };
+  }
+  if (subtotal > 5000000) {
+    return { error: true, message: "金額異常，請聯絡店家協助建單" };
+  }
+
+  var clientSub = Math.round(Number(body.subtotal) || 0);
+  if (clientSub > 0 && Math.abs(clientSub - subtotal) <= 2) {
+    subtotal = clientSub;
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var orderSheet = getOrderSheet(ss);
+  if (!orderSheet) {
+    return { error: true, message: "找不到訂單工作表，請聯絡店家" };
+  }
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (lockErr) {
+    return { error: true, message: "系統忙碌中，請稍後再送一次" };
+  }
+
+  try {
+    var allOrders = getOrders(orderSheet);
+    var orderId = computeNextOrderId_(allOrders);
+
+    if (!isValidMemberCardNo_(memberCardNo)) {
+      memberCardNo = findExistingMemberCardForCustomerSubmit_(allOrders, customerName, phone) || "";
+    }
+    if (!isValidMemberCardNo_(memberCardNo)) {
+      var usedCards = {};
+      for (var u = 0; u < allOrders.length; u++) {
+        var uc = normalizeMemberCardNo_(allOrders[u] && allOrders[u].memberCardNo);
+        if (isValidMemberCardNo_(uc)) usedCards[uc] = true;
+      }
+      memberCardNo = generateMemberCardNoForSubmit_(usedCards, new Date());
+    }
+
+    var nowIso = Utilities.formatDate(
+      new Date(),
+      Session.getScriptTimeZone() || "Asia/Taipei",
+      "yyyy-MM-dd'T'HH:mm:ss"
+    );
+    var todayDate = Utilities.formatDate(
+      new Date(),
+      Session.getScriptTimeZone() || "Asia/Taipei",
+      "yyyy-MM-dd"
+    );
+
+    var order = {
+      id: orderId,
+      status: "待處理",
+      date: nowIso,
+      customerName: customerName,
+      phone: phone,
+      email: email,
+      lineId: lineId,
+      memberCardNo: memberCardNo,
+      shippingMethod: "",
+      storeName: "",
+      storeId: "",
+      address: "",
+      subtotal: subtotal,
+      discount: 0,
+      shippingFee: 0,
+      shippingStatus: "",
+      depositAmount: 0,
+      total: subtotal,
+      remark: remark || buildCustomerSubmitRemark_(items, subtotal),
+      items: items,
+      preorderDate: todayDate,
+      shipDate: "",
+      updated: nowIso,
+      pointsProcessed: ""
+    };
+
+    order = enrichOrderForSheetWrite_(order, ss);
+    upsertOrder(orderSheet, order);
+    clearOrderListCache_(orderSheet);
+    if (isValidMemberCardNo_(normalizeMemberCardNo_(order.memberCardNo))) {
+      try { upsertMemberFromOrder_(ss, order); } catch (eMem) { /* ignore */ }
+    }
+
+    return {
+      error: false,
+      ok: true,
+      message: "已送出登記",
+      orderId: order.id,
+      memberCardNo: normalizeMemberCardNo_(order.memberCardNo),
+      subtotal: subtotal,
+      status: "待處理",
+      sheetName: orderSheet.getName()
+    };
+  } catch (err) {
+    return { error: true, message: "送單失敗：" + String(err && err.message ? err.message : err) };
+  } finally {
+    try { lock.releaseLock(); } catch (e2) { /* ignore */ }
+  }
+}
+
+function findExistingMemberCardForCustomerSubmit_(orders, customerName, phone) {
+  var n = String(customerName || "").trim().replace(/\s+/g, "").toLowerCase();
+  var p = String(phone || "").replace(/\D/g, "");
+  for (var i = 0; i < (orders || []).length; i++) {
+    var ord = orders[i];
+    if (!ord) continue;
+    var card = normalizeMemberCardNo_(ord.memberCardNo);
+    if (!isValidMemberCardNo_(card)) continue;
+    var on = String(ord.customerName || "").trim().replace(/\s+/g, "").toLowerCase();
+    if (n && on === n) return card;
+    var op = String(ord.phone || "").replace(/\D/g, "");
+    if (!n && p && op === p) return card;
+  }
+  return "";
+}
+
+function toMemberCardDatePrefixSubmit_(dateValue) {
+  var d = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (isNaN(d.getTime())) d = new Date();
+  var y = d.getFullYear();
+  var m = ("0" + (d.getMonth() + 1)).slice(-2);
+  var day = ("0" + d.getDate()).slice(-2);
+  return String(y) + m + day;
+}
+
+/** 新客卡號：YYYY(4)+MMDD(4)+隨機5碼；既有卡號不經此改寫 */
+function generateMemberCardNoForSubmit_(used, dateValue) {
+  used = used || {};
+  var prefix = toMemberCardDatePrefixSubmit_(dateValue);
+  for (var attempt = 0; attempt < 500; attempt++) {
+    var suffix = "";
+    for (var i = 0; i < 5; i++) {
+      suffix += String(Math.floor(Math.random() * 10));
+    }
+    var digits = prefix + suffix;
+    if (!used[digits]) return digits;
+  }
+  throw new Error("無法產生唯一會員卡號");
+}
+
+function buildCustomerSubmitRemark_(items, subtotal) {
+  var lines = ["MAARU 日本萌GO代購登記清單：", "（官網直接送單）", ""];
+  for (var i = 0; i < (items || []).length; i++) {
+    var it = items[i];
+    var lineTotal = Math.round((Number(it.price) || 0) * (Number(it.qty) || 0));
+    lines.push(String(it.lineName || "") + " × " + it.qty + "  NT$" + lineTotal);
+  }
+  lines.push("");
+  lines.push("商品總計：NT$" + Math.round(Number(subtotal) || 0));
+  return lines.join("\n");
+}
+
+/* ========== LINE 官方帳號：Webhook 自動建單 + 訂單成立回覆 ========== */
+
+var LINE_PROP_ENABLED = "line_auto_enabled";
+var LINE_PROP_CHANNEL_TOKEN = "line_channel_access_token";
+var LINE_PROP_CHANNEL_SECRET = "line_channel_secret";
+var LINE_PROP_WEBHOOK_TOKEN = "line_webhook_token";
+var LINE_PROP_REPLY_TEMPLATE = "line_order_created_template";
+
+function defaultLineOrderCreatedTemplate_() {
+  return [
+    "【MAARU 訂單成立通知】",
+    "",
+    "您好，已收到您的登記！",
+    "",
+    "訂單編號：{{orderId}}",
+    "會員卡號：{{memberCardNo}}",
+    "",
+    "登記內容：",
+    "{{itemsSummary}}",
+    "",
+    "商品小計：NT${{subtotal}}",
+    "目前狀態：待處理",
+    "",
+    "請保留本訊息。運費／訂金與出貨進度，店家確認後會再通知您。",
+    "如有問題請直接回覆此對話。"
+  ].join("\n");
+}
+
+function getLineAutomationSettings_() {
+  var props = PropertiesService.getScriptProperties();
+  return {
+    enabled: String(props.getProperty(LINE_PROP_ENABLED) || "") === "1",
+    channelAccessToken: String(props.getProperty(LINE_PROP_CHANNEL_TOKEN) || ""),
+    channelSecret: String(props.getProperty(LINE_PROP_CHANNEL_SECRET) || ""),
+    webhookToken: String(props.getProperty(LINE_PROP_WEBHOOK_TOKEN) || ""),
+    orderCreatedTemplate: String(props.getProperty(LINE_PROP_REPLY_TEMPLATE) || "") || defaultLineOrderCreatedTemplate_()
+  };
+}
+
+function getLineAutomationSettingsPublic_(includeSecrets) {
+  var s = getLineAutomationSettings_();
+  var token = s.channelAccessToken || "";
+  var secret = s.channelSecret || "";
+  var wh = s.webhookToken || "";
+  return {
+    error: false,
+    enabled: s.enabled,
+    hasChannelAccessToken: !!token,
+    hasChannelSecret: !!secret,
+    hasWebhookToken: !!wh,
+    channelAccessTokenMasked: token ? (token.slice(0, 6) + "…" + token.slice(-4)) : "",
+    channelSecretMasked: secret ? (secret.slice(0, 4) + "…" + secret.slice(-2)) : "",
+    webhookTokenMasked: wh ? (wh.slice(0, 4) + "…" + wh.slice(-2)) : "",
+    // Webhook token 需給後台組 URL；Channel token／secret 不回傳明文
+    webhookToken: wh,
+    orderCreatedTemplate: s.orderCreatedTemplate,
+    message: "OK"
+  };
+}
+
+function saveLineAutomationSettings_(body) {
+  body = body || {};
+  var props = PropertiesService.getScriptProperties();
+  if (body.enabled != null) {
+    props.setProperty(LINE_PROP_ENABLED, body.enabled === true || body.enabled === "1" || body.enabled === 1 ? "1" : "0");
+  }
+  if (body.channelAccessToken != null && String(body.channelAccessToken).trim() !== "") {
+    props.setProperty(LINE_PROP_CHANNEL_TOKEN, String(body.channelAccessToken).trim());
+  }
+  if (body.clearChannelAccessToken) props.deleteProperty(LINE_PROP_CHANNEL_TOKEN);
+  if (body.channelSecret != null && String(body.channelSecret).trim() !== "") {
+    props.setProperty(LINE_PROP_CHANNEL_SECRET, String(body.channelSecret).trim());
+  }
+  if (body.clearChannelSecret) props.deleteProperty(LINE_PROP_CHANNEL_SECRET);
+  if (body.webhookToken != null && String(body.webhookToken).trim() !== "") {
+    props.setProperty(LINE_PROP_WEBHOOK_TOKEN, String(body.webhookToken).trim());
+  }
+  if (body.clearWebhookToken) props.deleteProperty(LINE_PROP_WEBHOOK_TOKEN);
+  if (body.orderCreatedTemplate != null) {
+    var tpl = String(body.orderCreatedTemplate || "").trim();
+    if (!tpl) tpl = defaultLineOrderCreatedTemplate_();
+    if (tpl.length > 1800) tpl = tpl.slice(0, 1800);
+    props.setProperty(LINE_PROP_REPLY_TEMPLATE, tpl);
+  }
+  if (body.generateWebhookToken) {
+    var gen = Utilities.getUuid().replace(/-/g, "").slice(0, 24);
+    props.setProperty(LINE_PROP_WEBHOOK_TOKEN, gen);
+  }
+  return getLineAutomationSettingsPublic_(true);
+}
+
+function handleLineWebhookPost_(e, body) {
+  var settings = getLineAutomationSettings_();
+  var params = (e && e.parameter) ? e.parameter : {};
+  var tokenInUrl = String(params.webhook_token || params.line_token || "").trim();
+  if (!settings.enabled) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, skipped: "disabled" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (!settings.webhookToken) {
+    return ContentService.createTextOutput(JSON.stringify({ error: true, message: "尚未設定 webhook_token" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  if (!tokenInUrl || tokenInUrl !== settings.webhookToken) {
+    return ContentService.createTextOutput(JSON.stringify({ error: true, message: "webhook_token 無效" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  var events = body.events || [];
+  var results = [];
+  for (var i = 0; i < events.length; i++) {
+    try {
+      results.push(processLineEvent_(events[i], settings));
+    } catch (err) {
+      results.push({ ok: false, message: String(err && err.message ? err.message : err) });
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, results: results }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function processLineEvent_(event, settings) {
+  event = event || {};
+  if (event.type === "follow") {
+    return { ok: true, type: "follow" };
+  }
+  if (event.type !== "message" || !event.message || event.message.type !== "text") {
+    return { ok: true, skipped: "not_text" };
+  }
+  var text = String(event.message.text || "").trim();
+  if (!text) return { ok: true, skipped: "empty" };
+
+  // 僅處理像喊單／登記清單的訊息，一般閒聊不回
+  if (!looksLikeLineOrderMessage_(text)) {
+    return { ok: true, skipped: "not_order_like" };
+  }
+
+  var replyToken = event.replyToken || "";
+  var source = event.source || {};
+  var userId = String(source.userId || "").trim();
+  var displayName = "";
+  if (userId && settings.channelAccessToken) {
+    displayName = fetchLineDisplayName_(userId, settings.channelAccessToken) || "";
+  }
+
+  var parsed = parseLineOrderMessage_(text);
+  if (!parsed || !parsed.items || !parsed.items.length) {
+    if (replyToken && settings.channelAccessToken) {
+      replyLineText_(replyToken, settings.channelAccessToken,
+        "已收到訊息，但無法辨識商品列。\n請用例如：\n商品名稱 款式 +1\n或貼上完整「登記清單」（含商品總計）。");
+    }
+    return { ok: false, message: "parse_failed" };
+  }
+
+  var created = createOrderFromLineParsed_(parsed, {
+    lineUserId: userId,
+    displayName: displayName,
+    rawText: text
+  });
+  if (created.error) {
+    if (replyToken && settings.channelAccessToken) {
+      replyLineText_(replyToken, settings.channelAccessToken, "建單失敗：" + (created.message || "請稍後再試或聯絡店家"));
+    }
+    return created;
+  }
+
+  var replyText = renderLineOrderCreatedTemplate_(settings.orderCreatedTemplate, created);
+  if (replyToken && settings.channelAccessToken) {
+    replyLineText_(replyToken, settings.channelAccessToken, replyText);
+  }
+  return {
+    ok: true,
+    orderId: created.orderId,
+    memberCardNo: created.memberCardNo,
+    subtotal: created.subtotal,
+    replied: !!(replyToken && settings.channelAccessToken)
+  };
+}
+
+function looksLikeLineOrderMessage_(text) {
+  var t = String(text || "");
+  if (/商品總計|代購登記清單|登記清單/i.test(t)) return true;
+  if (/[＋+]?\s*1\b|[＋+]１|加\s*1|＋1|\+1/.test(t)) return true;
+  if (/[×xX]\s*\d+\s*NT\s*\$/.test(t)) return true;
+  return false;
+}
+
+function parseLineOrderMessage_(text) {
+  var normalized = String(text || "")
+    .replace(/ＮＴ＄/g, "NT$")
+    .replace(/＄/g, "$")
+    .replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    .replace(/＋/g, "+")
+    .trim();
+
+  // 完整登記清單
+  if (/商品總計|代購登記清單/i.test(normalized)) {
+    return parseLineRegistrationList_(normalized);
+  }
+
+  // 喊單：每行「商品 款式 +1」或「商品+1」
+  var items = [];
+  var lines = normalized.split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/^\s*\d+[、．.]\s*/, "").trim();
+    if (!line) continue;
+    var mQty = line.match(/^(.+?)\s*[+＋]?\s*(\d{1,3})\s*$/);
+    var mPlusOne = line.match(/^(.+?)\s*[+＋]\s*1\s*$/i) || line.match(/^(.+?)\s*加\s*1\s*$/);
+    var namePart = "";
+    var qty = 0;
+    if (mPlusOne) {
+      namePart = String(mPlusOne[1] || "").trim();
+      qty = 1;
+    } else if (mQty && /[+＋]|加/.test(line)) {
+      namePart = String(mQty[1] || "").trim();
+      qty = parseInt(mQty[2], 10) || 0;
+    } else if (/[+＋]\s*1|加\s*1/.test(line)) {
+      namePart = line.replace(/[+＋]\s*1|加\s*1/g, "").trim();
+      qty = 1;
+    }
+    if (!namePart || qty < 1) continue;
+    namePart = namePart.replace(/\s+/g, " ").trim();
+    if (namePart.length > 120) namePart = namePart.slice(0, 120);
+    var matched = matchProductPriceForLineItem_(namePart);
+    items.push({
+      lineName: namePart,
+      qty: qty,
+      price: matched.price,
+      shipStatus: "待出貨",
+      shipBatch: null
+    });
+  }
+  if (!items.length) return null;
+  var subtotal = 0;
+  for (var s = 0; s < items.length; s++) {
+    subtotal += (Number(items[s].price) || 0) * (Number(items[s].qty) || 0);
+  }
+  return { items: items, subtotal: subtotal, source: "plus_one" };
+}
+
+function parseLineRegistrationList_(normalized) {
+  var parseBlock = normalized;
+  var idxList = normalized.indexOf("MAARU");
+  if (idxList >= 0) parseBlock = normalized.substring(idxList).trim();
+  var subtotal = 0;
+  var match = parseBlock.match(/(?:商品總計|總金額)[：:]\s*NT\s*\$?\s*([\d,\s]+)/i);
+  if (match) {
+    var n = parseInt(String(match[1] || "").replace(/[\s,]/g, ""), 10);
+    if (!isNaN(n) && n >= 0) subtotal = n;
+  }
+  var items = [];
+  var lines = parseBlock.split(/\r?\n/);
+  var lineReA = /^(.+?)\s+[×*x]\s*(\d+)\s+NT\$\s*([\d\s,.]+)/i;
+  var lineReB = /^(?:\d+[、．.]\s*)?(.+?)\s*\$?\s*([\d,]+)\s*[×*x]\s*(\d+)/i;
+  for (var i = 0; i < lines.length; i++) {
+    var norm = lines[i].trim();
+    if (!norm || /商品總計|登記清單|以下/.test(norm)) continue;
+    var m = norm.match(lineReA);
+    if (m) {
+      var qty = parseInt(m[2], 10);
+      var lineTotal = parseFloat(String(m[3] || "").replace(/,/g, "").replace(/\s/g, ""));
+      var unit = (isFinite(lineTotal) && qty > 0) ? Math.round(lineTotal / qty) : 0;
+      items.push({ lineName: String(m[1] || "").trim(), qty: qty, price: unit, shipStatus: "待出貨", shipBatch: null });
+      continue;
+    }
+    m = norm.match(lineReB);
+    if (m) {
+      var unit2 = parseInt(String(m[2] || "").replace(/,/g, ""), 10) || 0;
+      var qty2 = parseInt(m[3], 10) || 0;
+      items.push({ lineName: String(m[1] || "").trim(), qty: qty2, price: unit2, shipStatus: "待出貨", shipBatch: null });
+    }
+  }
+  if (!items.length) return null;
+  if (!subtotal) {
+    for (var j = 0; j < items.length; j++) {
+      subtotal += (Number(items[j].price) || 0) * (Number(items[j].qty) || 0);
+    }
+  }
+  return { items: items, subtotal: subtotal, source: "registration_list" };
+}
+
+function matchProductPriceForLineItem_(lineName) {
+  var price = 0;
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var products = getProducts(ss) || [];
+    var q = String(lineName || "").replace(/\s+/g, "").toLowerCase();
+    var best = null;
+    var bestScore = 0;
+    for (var i = 0; i < products.length; i++) {
+      var p = products[i];
+      var name = String(p.name || p["商品名稱"] || p.title || p["品名"] || "").trim();
+      var variant = String(p.variant || p["規格"] || "").trim();
+      var full = (name + (variant ? " " + variant : "")).replace(/\s+/g, "").toLowerCase();
+      if (!full) continue;
+      var score = 0;
+      if (q === full) score = 100;
+      else if (q.indexOf(full) >= 0 || full.indexOf(q) >= 0) score = 80;
+      else if (name && q.indexOf(name.replace(/\s+/g, "").toLowerCase()) >= 0) score = 60;
+      if (score > bestScore) {
+        bestScore = score;
+        best = p;
+      }
+    }
+    if (best && bestScore >= 60) {
+      var sp = Number(best.sellingPrice != null ? best.sellingPrice : best["售價"]);
+      var cd = Number(best.customerDisplayPrice != null ? best.customerDisplayPrice : best["顧客顯示售價"]);
+      if (isFinite(cd) && cd > 0) price = Math.round(cd);
+      else if (isFinite(sp) && sp > 0) price = Math.round(sp);
+    }
+  } catch (e) { /* ignore */ }
+  return { price: price };
+}
+
+function createOrderFromLineParsed_(parsed, meta) {
+  meta = meta || {};
+  var items = (parsed && parsed.items) ? parsed.items : [];
+  if (!items.length) return { error: true, message: "沒有商品" };
+  var subtotal = Math.round(Number(parsed.subtotal) || 0);
+  if (!subtotal) {
+    for (var i = 0; i < items.length; i++) {
+      subtotal += (Number(items[i].price) || 0) * (Number(items[i].qty) || 0);
+    }
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var orderSheet = getOrderSheet(ss);
+  if (!orderSheet) return { error: true, message: "找不到訂單工作表" };
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) {
+    return { error: true, message: "系統忙碌，請稍後再傳一次" };
+  }
+  try {
+    var allOrders = getOrders(orderSheet);
+    var orderId = computeNextOrderId_(allOrders);
+    var customerName = String(meta.displayName || "").trim() || "LINE顧客";
+    var lineId = String(meta.lineUserId || "").trim();
+
+    var memberCardNo = findExistingMemberCardForCustomerSubmit_(allOrders, customerName, "") || "";
+    if (!isValidMemberCardNo_(memberCardNo) && lineId) {
+      for (var j = 0; j < allOrders.length; j++) {
+        if (String(allOrders[j].lineId || "").trim() === lineId) {
+          var c = normalizeMemberCardNo_(allOrders[j].memberCardNo);
+          if (isValidMemberCardNo_(c)) { memberCardNo = c; break; }
+        }
+      }
+    }
+    if (!isValidMemberCardNo_(memberCardNo)) {
+      var used = {};
+      for (var u = 0; u < allOrders.length; u++) {
+        var uc = normalizeMemberCardNo_(allOrders[u] && allOrders[u].memberCardNo);
+        if (isValidMemberCardNo_(uc)) used[uc] = true;
+      }
+      memberCardNo = generateMemberCardNoForSubmit_(used, new Date());
+    }
+
+    var nowIso = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
+    var todayDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd");
+    var remark = String(meta.rawText || "");
+    if (remark.length > 3500) remark = remark.slice(0, 3500);
+    remark = "（LINE 自動建單）\n" + remark;
+
+    var order = {
+      id: orderId,
+      status: "待處理",
+      date: nowIso,
+      customerName: customerName,
+      phone: "",
+      email: "",
+      lineId: lineId,
+      memberCardNo: memberCardNo,
+      shippingMethod: "",
+      storeName: "",
+      storeId: "",
+      address: "",
+      subtotal: subtotal,
+      discount: 0,
+      shippingFee: 0,
+      shippingStatus: "",
+      depositAmount: 0,
+      total: subtotal,
+      remark: remark,
+      items: items,
+      preorderDate: todayDate,
+      shipDate: "",
+      updated: nowIso,
+      pointsProcessed: ""
+    };
+    order = enrichOrderForSheetWrite_(order, ss);
+    upsertOrder(orderSheet, order);
+    clearOrderListCache_(orderSheet);
+    try { upsertMemberFromOrder_(ss, order); } catch (e2) { /* ignore */ }
+
+    return {
+      error: false,
+      orderId: order.id,
+      memberCardNo: normalizeMemberCardNo_(order.memberCardNo),
+      subtotal: subtotal,
+      items: items,
+      customerName: customerName
+    };
+  } catch (err) {
+    return { error: true, message: String(err && err.message ? err.message : err) };
+  } finally {
+    try { lock.releaseLock(); } catch (e3) { /* ignore */ }
+  }
+}
+
+function renderLineOrderCreatedTemplate_(template, created) {
+  var tpl = String(template || defaultLineOrderCreatedTemplate_());
+  var items = created.items || [];
+  var summaryLines = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var lineTotal = Math.round((Number(it.price) || 0) * (Number(it.qty) || 0));
+    var pricePart = (Number(it.price) || 0) > 0 ? ("  NT$" + lineTotal) : "";
+    summaryLines.push("・" + it.lineName + " × " + it.qty + pricePart);
+  }
+  var itemsSummary = summaryLines.length ? summaryLines.join("\n") : "（詳見備註）";
+  return tpl
+    .replace(/\{\{orderId\}\}/g, created.orderId || "")
+    .replace(/\{\{memberCardNo\}\}/g, created.memberCardNo || "")
+    .replace(/\{\{subtotal\}\}/g, String(Math.round(Number(created.subtotal) || 0)))
+    .replace(/\{\{customerName\}\}/g, created.customerName || "")
+    .replace(/\{\{itemsSummary\}\}/g, itemsSummary);
+}
+
+function fetchLineDisplayName_(userId, accessToken) {
+  try {
+    var res = UrlFetchApp.fetch("https://api.line.me/v2/bot/profile/" + encodeURIComponent(userId), {
+      method: "get",
+      headers: { Authorization: "Bearer " + accessToken },
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) return "";
+    var data = JSON.parse(res.getContentText() || "{}");
+    return String(data.displayName || "").trim();
+  } catch (e) {
+    return "";
+  }
+}
+
+function replyLineText_(replyToken, accessToken, text) {
+  text = String(text || "");
+  if (text.length > 4500) text = text.slice(0, 4500);
+  var payload = {
+    replyToken: replyToken,
+    messages: [{ type: "text", text: text }]
+  };
+  UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "post",
+    contentType: "application/json",
+    headers: { Authorization: "Bearer " + accessToken },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
 }
 
 function isPointsLedgerSheetName_(name) {
