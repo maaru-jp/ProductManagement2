@@ -52,17 +52,33 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-22-line-webhook",
+        apiVersion: "2026-09-23-line-webhook-v2",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
-        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info"],
-        postRoutes: ["customer_order_submit", "line_settings_get", "line_settings_save", "line_webhook", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
-        lineWebhookHint: "Webhook URL 請用本 GAS 網頁應用程式 URL，並在查詢字串加上 webhook_token（於後台 LINE 自動化設定）",
+        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info", "line_diag"],
+        postRoutes: ["customer_order_submit", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
+        lineWebhookHint: "Webhook URL 用本 GAS 網頁應用程式 URL（可加 ?webhook_token=）。若 POST 轉址吃掉 query，只要後台已啟用仍會處理 LINE events。",
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
         memberSpreadsheetName: getMemberSpreadsheetMeta_().name
+      });
+    }
+    if (action === "line_diag") {
+      var lineDiag = getLineAutomationSettings_();
+      return jsonOutput({
+        ok: true,
+        apiVersion: "2026-09-23-line-webhook-v2",
+        enabled: !!lineDiag.enabled,
+        hasChannelAccessToken: !!lineDiag.channelAccessToken,
+        hasWebhookToken: !!lineDiag.webhookToken,
+        webhookTokenMasked: lineDiag.webhookToken
+          ? (lineDiag.webhookToken.slice(0, 4) + "…" + lineDiag.webhookToken.slice(-2))
+          : "",
+        queryWebhookTokenPresent: !!(params.webhook_token || params.line_token),
+        queryWebhookTokenMatch: !!(lineDiag.webhookToken && String(params.webhook_token || params.line_token || "").trim() === lineDiag.webhookToken),
+        message: "OK"
       });
     }
     if (action === "points_balance") {
@@ -148,6 +164,23 @@ function doPost(e) {
     }
     if (action === "line_settings_save") {
       return jsonOutput(saveLineAutomationSettings_(body));
+    }
+    if (action === "line_test_order") {
+      // 後台診斷：不經 LINE，直接用文字模擬建單
+      var testText = String(body.text || body.message || "測試商品 +1").trim();
+      if (!looksLikeLineOrderMessage_(testText)) {
+        return jsonOutput({ error: true, message: "文字不像喊單（需含 +1 或登記清單）" });
+      }
+      var testParsed = parseLineOrderMessage_(testText);
+      if (!testParsed || !testParsed.items || !testParsed.items.length) {
+        return jsonOutput({ error: true, message: "無法解析商品列", text: testText });
+      }
+      var testCreated = createOrderFromLineParsed_(testParsed, {
+        lineUserId: "LINE_TEST",
+        displayName: "LINE測試",
+        rawText: testText
+      });
+      return jsonOutput(testCreated);
     }
 
     // 紅利紀錄：list / sync / repair
@@ -807,10 +840,45 @@ function saveLineAutomationSettings_(body) {
   return getLineAutomationSettingsPublic_(true);
 }
 
+function extractWebhookTokenFromEvent_(e) {
+  var params = (e && e.parameter) ? e.parameter : {};
+  var fromParam = String(params.webhook_token || params.line_token || "").trim();
+  if (fromParam) return fromParam;
+  // 有些轉址只留 queryString
+  var qs = String((e && e.queryString) || "").trim();
+  if (qs) {
+    var m = qs.match(/(?:^|&)(?:webhook_token|line_token)=([^&]*)/);
+    if (m && m[1]) {
+      try { return decodeURIComponent(m[1]).trim(); } catch (err) { return String(m[1]).trim(); }
+    }
+  }
+  return "";
+}
+
+function isLikelyLineWebhookBody_(body) {
+  if (!body || Object.prototype.toString.call(body.events) !== "[object Array]") return false;
+  // LINE 正式 webhook 常帶 destination；Verify 可能 events 為 []
+  if (body.destination) return true;
+  if (body.events.length === 0) return true;
+  var ev0 = body.events[0] || {};
+  return !!(ev0.type || ev0.replyToken || ev0.source || ev0.message);
+}
+
+/**
+ * LINE → GAS 的 POST 常經 Google 轉址，query 上的 webhook_token 可能被吃掉。
+ * 規則：
+ * 1) 有帶 token → 必須與後台設定相符
+ * 2) 沒帶 token（轉址丟失）→ 若已啟用，且 payload 像 LINE webhook，則放行
+ *    （網頁應用程式 URL 本身已夠長，可視為密鑰）
+ */
 function handleLineWebhookPost_(e, body) {
   var settings = getLineAutomationSettings_();
-  var params = (e && e.parameter) ? e.parameter : {};
-  var tokenInUrl = String(params.webhook_token || params.line_token || "").trim();
+  var tokenInUrl = extractWebhookTokenFromEvent_(e);
+  Logger.log("LINE webhook: enabled=" + settings.enabled +
+    " hasToken=" + !!settings.webhookToken +
+    " urlTokenPresent=" + !!tokenInUrl +
+    " events=" + ((body && body.events) ? body.events.length : 0));
+
   if (!settings.enabled) {
     return ContentService.createTextOutput(JSON.stringify({ ok: true, skipped: "disabled" }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -819,10 +887,17 @@ function handleLineWebhookPost_(e, body) {
     return ContentService.createTextOutput(JSON.stringify({ error: true, message: "尚未設定 webhook_token" }))
       .setMimeType(ContentService.MimeType.JSON);
   }
-  if (!tokenInUrl || tokenInUrl !== settings.webhookToken) {
-    return ContentService.createTextOutput(JSON.stringify({ error: true, message: "webhook_token 無效" }))
+
+  if (tokenInUrl) {
+    if (tokenInUrl !== settings.webhookToken) {
+      return ContentService.createTextOutput(JSON.stringify({ error: true, message: "webhook_token 無效" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  } else if (!isLikelyLineWebhookBody_(body)) {
+    return ContentService.createTextOutput(JSON.stringify({ error: true, message: "缺少 webhook_token，且內容不像 LINE webhook" }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+  // token 缺失但 payload 像 LINE：允許（因 Google POST 轉址常吃掉 query）
 
   var events = body.events || [];
   var results = [];
@@ -830,11 +905,15 @@ function handleLineWebhookPost_(e, body) {
     try {
       results.push(processLineEvent_(events[i], settings));
     } catch (err) {
+      Logger.log("LINE event error: " + err);
       results.push({ ok: false, message: String(err && err.message ? err.message : err) });
     }
   }
-  return ContentService.createTextOutput(JSON.stringify({ ok: true, results: results }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({
+    ok: true,
+    auth: tokenInUrl ? "url_token" : "line_payload_fallback",
+    results: results
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function processLineEvent_(event, settings) {
