@@ -52,7 +52,7 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-23-line-webhook-v2",
+        apiVersion: "2026-09-23-line-webhook-v3",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
@@ -69,7 +69,7 @@ function doGet(e) {
       var lineDiag = getLineAutomationSettings_();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-23-line-webhook-v2",
+        apiVersion: "2026-09-23-line-webhook-v3",
         enabled: !!lineDiag.enabled,
         hasChannelAccessToken: !!lineDiag.channelAccessToken,
         hasWebhookToken: !!lineDiag.webhookToken,
@@ -942,9 +942,14 @@ function processLineEvent_(event, settings) {
 
   var parsed = parseLineOrderMessage_(text);
   if (!parsed || !parsed.items || !parsed.items.length) {
-    if (replyToken && settings.channelAccessToken) {
-      replyLineText_(replyToken, settings.channelAccessToken,
-        "已收到訊息，但無法辨識商品列。\n請用例如：\n商品名稱 款式 +1\n或貼上完整「登記清單」（含商品總計）。");
+    if (settings.channelAccessToken) {
+      var parseFailMsg = "已收到訊息，但無法辨識商品列。\n請用例如：\n商品名稱 款式 +1\n或貼上完整「登記清單」（含商品總計）。";
+      if (replyToken) {
+        var r1 = replyLineText_(replyToken, settings.channelAccessToken, parseFailMsg);
+        if (!(r1 && r1.ok) && userId) pushLineText_(userId, settings.channelAccessToken, parseFailMsg);
+      } else if (userId) {
+        pushLineText_(userId, settings.channelAccessToken, parseFailMsg);
+      }
     }
     return { ok: false, message: "parse_failed" };
   }
@@ -955,22 +960,49 @@ function processLineEvent_(event, settings) {
     rawText: text
   });
   if (created.error) {
-    if (replyToken && settings.channelAccessToken) {
-      replyLineText_(replyToken, settings.channelAccessToken, "建單失敗：" + (created.message || "請稍後再試或聯絡店家"));
+    if (settings.channelAccessToken) {
+      var failMsg = "建單失敗：" + (created.message || "請稍後再試或聯絡店家");
+      if (replyToken) {
+        var r2 = replyLineText_(replyToken, settings.channelAccessToken, failMsg);
+        if (!(r2 && r2.ok) && userId) pushLineText_(userId, settings.channelAccessToken, failMsg);
+      } else if (userId) {
+        pushLineText_(userId, settings.channelAccessToken, failMsg);
+      }
     }
     return created;
   }
 
   var replyText = renderLineOrderCreatedTemplate_(settings.orderCreatedTemplate, created);
-  if (replyToken && settings.channelAccessToken) {
-    replyLineText_(replyToken, settings.channelAccessToken, replyText);
+  var replied = false;
+  var replyMode = "";
+  if (settings.channelAccessToken) {
+    if (replyToken) {
+      var replyRes = replyLineText_(replyToken, settings.channelAccessToken, replyText);
+      if (replyRes && replyRes.ok) {
+        replied = true;
+        replyMode = "reply";
+      }
+    }
+    // GAS 冷啟動常超過 30 秒 → replyToken 失效；改用 Push 補送
+    if (!replied && userId) {
+      var pushRes = pushLineText_(userId, settings.channelAccessToken, replyText);
+      if (pushRes && pushRes.ok) {
+        replied = true;
+        replyMode = "push";
+      } else {
+        Logger.log("LINE reply/push failed: reply=" + JSON.stringify(replyRes) + " push=" + JSON.stringify(pushRes));
+      }
+    }
+  } else {
+    Logger.log("LINE: 無 Channel access token，已建單但無法回覆");
   }
   return {
     ok: true,
     orderId: created.orderId,
     memberCardNo: created.memberCardNo,
     subtotal: created.subtotal,
-    replied: !!(replyToken && settings.channelAccessToken)
+    replied: replied,
+    replyMode: replyMode
   };
 }
 
@@ -1241,17 +1273,55 @@ function fetchLineDisplayName_(userId, accessToken) {
 function replyLineText_(replyToken, accessToken, text) {
   text = String(text || "");
   if (text.length > 4500) text = text.slice(0, 4500);
-  var payload = {
-    replyToken: replyToken,
-    messages: [{ type: "text", text: text }]
-  };
-  UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", {
-    method: "post",
-    contentType: "application/json",
-    headers: { Authorization: "Bearer " + accessToken },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  });
+  if (!replyToken || !accessToken) return { ok: false, message: "missing_token" };
+  try {
+    var res = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", {
+      method: "post",
+      contentType: "application/json",
+      headers: { Authorization: "Bearer " + accessToken },
+      payload: JSON.stringify({
+        replyToken: replyToken,
+        messages: [{ type: "text", text: text }]
+      }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    var bodyText = res.getContentText() || "";
+    if (code >= 300) {
+      Logger.log("LINE reply HTTP " + code + ": " + bodyText);
+      return { ok: false, code: code, body: bodyText.slice(0, 300) };
+    }
+    return { ok: true, code: code };
+  } catch (e) {
+    return { ok: false, message: String(e && e.message ? e.message : e) };
+  }
+}
+
+function pushLineText_(userId, accessToken, text) {
+  text = String(text || "");
+  if (text.length > 4500) text = text.slice(0, 4500);
+  if (!userId || !accessToken) return { ok: false, message: "missing_user_or_token" };
+  try {
+    var res = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
+      method: "post",
+      contentType: "application/json",
+      headers: { Authorization: "Bearer " + accessToken },
+      payload: JSON.stringify({
+        to: userId,
+        messages: [{ type: "text", text: text }]
+      }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    var bodyText = res.getContentText() || "";
+    if (code >= 300) {
+      Logger.log("LINE push HTTP " + code + ": " + bodyText);
+      return { ok: false, code: code, body: bodyText.slice(0, 300) };
+    }
+    return { ok: true, code: code };
+  } catch (e) {
+    return { ok: false, message: String(e && e.message ? e.message : e) };
+  }
 }
 
 function isPointsLedgerSheetName_(name) {
