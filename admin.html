@@ -990,8 +990,8 @@
               <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">Webhook 驗證 token</label>
                 <div class="flex flex-wrap gap-2">
-                  <input type="text" id="lineWebhookToken" class="flex-1 min-w-[180px] rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="儲存後會產生；請加在 Webhook URL" readonly />
-                  <button type="button" id="lineGenWebhookToken" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">重新產生</button>
+                  <input type="text" id="lineWebhookToken" class="flex-1 min-w-[180px] rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono bg-slate-50" placeholder="請按右側「重新產生」" readonly />
+                  <button type="button" id="lineGenWebhookToken" class="shrink-0 px-3 py-2 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-sm font-medium hover:bg-rose-100">重新產生</button>
                 </div>
                 <p class="text-xs text-slate-500 mt-1">LINE Developers → Messaging API → Webhook URL 請填：<br><code class="text-[11px] bg-slate-100 px-1 rounded break-all" id="lineWebhookUrlPreview">（儲存後顯示）</code></p>
               </div>
@@ -2151,6 +2151,10 @@
             body.channelSecret = lineChannelSecret.value.trim();
           }
           if (extra.generateWebhookToken) body.generateWebhookToken = true;
+          // 欄位空白時，請伺服器產生 webhook token
+          if (!lastLineWebhookToken && !(lineWebhookToken && String(lineWebhookToken.value || "").replace(/[()已設定請看下方 URL 或重新產生…]/g, "").trim().length > 8)) {
+            body.generateWebhookToken = true;
+          }
           showLineSettingsHint_("儲存中…", false);
           fetchWrite(body)
             .then(function(data) {
