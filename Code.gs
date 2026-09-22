@@ -787,19 +787,22 @@ function saveLineAutomationSettings_(body) {
     props.setProperty(LINE_PROP_CHANNEL_SECRET, String(body.channelSecret).trim());
   }
   if (body.clearChannelSecret) props.deleteProperty(LINE_PROP_CHANNEL_SECRET);
-  if (body.webhookToken != null && String(body.webhookToken).trim() !== "") {
-    props.setProperty(LINE_PROP_WEBHOOK_TOKEN, String(body.webhookToken).trim());
-  }
   if (body.clearWebhookToken) props.deleteProperty(LINE_PROP_WEBHOOK_TOKEN);
+  if (body.webhookToken != null && String(body.webhookToken).trim() !== "") {
+    // 前端已產生的 token 優先寫入（勿再被下方 generate 覆寫成另一組）
+    props.setProperty(LINE_PROP_WEBHOOK_TOKEN, String(body.webhookToken).trim());
+  } else if (body.generateWebhookToken) {
+    var gen = Utilities.getUuid().replace(/-/g, "").slice(0, 24);
+    props.setProperty(LINE_PROP_WEBHOOK_TOKEN, gen);
+  } else if (!String(props.getProperty(LINE_PROP_WEBHOOK_TOKEN) || "").trim()) {
+    // 首次儲存若尚未有 token，自動產生一組
+    props.setProperty(LINE_PROP_WEBHOOK_TOKEN, Utilities.getUuid().replace(/-/g, "").slice(0, 24));
+  }
   if (body.orderCreatedTemplate != null) {
     var tpl = String(body.orderCreatedTemplate || "").trim();
     if (!tpl) tpl = defaultLineOrderCreatedTemplate_();
     if (tpl.length > 1800) tpl = tpl.slice(0, 1800);
     props.setProperty(LINE_PROP_REPLY_TEMPLATE, tpl);
-  }
-  if (body.generateWebhookToken) {
-    var gen = Utilities.getUuid().replace(/-/g, "").slice(0, 24);
-    props.setProperty(LINE_PROP_WEBHOOK_TOKEN, gen);
   }
   return getLineAutomationSettingsPublic_(true);
 }

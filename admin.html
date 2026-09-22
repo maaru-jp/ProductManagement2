@@ -993,7 +993,12 @@
                   <input type="text" id="lineWebhookToken" class="flex-1 min-w-[180px] rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono bg-slate-50" placeholder="請按右側「重新產生」" readonly />
                   <button type="button" id="lineGenWebhookToken" class="shrink-0 px-3 py-2 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-sm font-medium hover:bg-rose-100">重新產生</button>
                 </div>
-                <p class="text-xs text-slate-500 mt-1">LINE Developers → Messaging API → Webhook URL 請填：<br><code class="text-[11px] bg-slate-100 px-1 rounded break-all" id="lineWebhookUrlPreview">（儲存後顯示）</code></p>
+                <p class="text-xs text-slate-500 mt-1">此欄位由系統產生（反灰無法手貼）。請改複製<strong>下方完整 Webhook URL</strong>貼到 LINE Developers。</p>
+                <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p class="text-xs font-medium text-slate-700 mb-1">完整 Webhook URL（複製這整段貼到 LINE）</p>
+                  <code class="block text-[11px] text-slate-800 break-all select-all" id="lineWebhookUrlPreview">（請先按「重新產生」）</code>
+                  <button type="button" id="lineCopyWebhookUrl" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-medium hover:bg-slate-100">複製 Webhook URL</button>
+                </div>
               </div>
               <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">訂單成立自動回覆模板</label>
@@ -2063,6 +2068,7 @@
         var lineSettingsSaveBtn = document.getElementById("lineSettingsSaveBtn");
         var lineSettingsReloadBtn = document.getElementById("lineSettingsReloadBtn");
         var lineGenWebhookToken = document.getElementById("lineGenWebhookToken");
+        var lineCopyWebhookUrl = document.getElementById("lineCopyWebhookUrl");
         var lastLineWebhookToken = "";
 
         function showLineSettingsHint_(msg, isErr) {
@@ -2073,15 +2079,28 @@
           lineSettingsHint.classList.toggle("text-slate-500", !isErr);
         }
 
-        function updateLineWebhookUrlPreview_(token) {
-          lastLineWebhookToken = token || lastLineWebhookToken || "";
-          if (!lineWebhookUrlPreview) return;
+        function parseLineSettingsResponse_(r) {
+          return r.text().then(function(t) {
+            try { return t ? JSON.parse(t) : {}; } catch (e) {
+              return { error: true, message: "回應非 JSON（請部署最新 Code.gs）" };
+            }
+          });
+        }
+
+        function buildLineWebhookUrl_(token) {
           var base = API_BASE || "";
+          if (!token) return "";
+          return base + (base.indexOf("?") >= 0 ? "&" : "?") + "webhook_token=" + encodeURIComponent(token);
+        }
+
+        function updateLineWebhookUrlPreview_(token) {
+          if (token) lastLineWebhookToken = token;
+          if (!lineWebhookUrlPreview) return;
           if (!lastLineWebhookToken) {
-            lineWebhookUrlPreview.textContent = base + "?webhook_token=（請先產生 token）";
+            lineWebhookUrlPreview.textContent = "（請先按「重新產生」）";
             return;
           }
-          lineWebhookUrlPreview.textContent = base + "?webhook_token=" + encodeURIComponent(lastLineWebhookToken);
+          lineWebhookUrlPreview.textContent = buildLineWebhookUrl_(lastLineWebhookToken);
         }
 
         function applyLineSettingsToForm_(data) {
@@ -2099,12 +2118,13 @@
               ? ("目前已設定：" + (data.channelSecretMasked || "****"))
               : "尚未設定 Channel secret（可選）";
           }
-          if (lineWebhookToken) {
-            lineWebhookToken.value = data.webhookToken || data.webhookTokenMasked || "";
+          if (data.webhookToken) {
+            lastLineWebhookToken = data.webhookToken;
+            if (lineWebhookToken) lineWebhookToken.value = data.webhookToken;
+          } else if (data.hasWebhookToken && lineWebhookToken) {
+            lineWebhookToken.value = data.webhookTokenMasked || "(已設定)";
           }
-          if (data.webhookToken) lastLineWebhookToken = data.webhookToken;
-          else if (data.hasWebhookToken) lastLineWebhookToken = "";
-          updateLineWebhookUrlPreview_(data.webhookToken || "");
+          updateLineWebhookUrlPreview_(data.webhookToken || lastLineWebhookToken || "");
           if (lineOrderCreatedTemplate && data.orderCreatedTemplate) {
             lineOrderCreatedTemplate.value = data.orderCreatedTemplate;
           }
@@ -2117,15 +2137,10 @@
           }
           showLineSettingsHint_("載入 LINE 設定中…", false);
           return fetchWrite({ action: "line_settings_get" })
+            .then(parseLineSettingsResponse_)
             .then(function(data) {
               if (data && data.error) throw new Error(data.message || "載入失敗");
-              // get 不回傳明文 token；再存一次 generate 才有完整 token。先顯示遮罩。
               applyLineSettingsToForm_(data);
-              // 若已有 token 但沒明文，用 save generateWebhookToken:false 無法取得。改顯示遮罩於 input。
-              if (data && data.hasWebhookToken && !data.webhookToken && lineWebhookToken) {
-                lineWebhookToken.value = data.webhookTokenMasked || "(已設定，請看下方 URL 或重新產生)";
-                lineWebhookUrlPreview.textContent = (API_BASE || "") + "?webhook_token=（已設定；若遺失請按重新產生）";
-              }
               showLineSettingsHint_("已載入 LINE 設定", false);
             })
             .catch(function(err) {
@@ -2133,10 +2148,20 @@
             });
         }
 
+        function genWebhookTokenClient_() {
+          try {
+            if (window.crypto && typeof crypto.randomUUID === "function") {
+              return crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+            }
+          } catch (e) {}
+          return "wh" + Date.now().toString(36) + Math.random().toString(36).slice(2, 14);
+        }
+
         function saveLineSettings_(extra) {
           extra = extra || {};
           if (typeof fetchWrite !== "function") {
             showLineSettingsHint_("後台寫入 API 未就緒", true);
+            alert("後台寫入 API 未就緒。請用 http://localhost:3000/admin.html 開啟，或確認網路。");
             return;
           }
           var body = {
@@ -2150,22 +2175,63 @@
           if (lineChannelSecret && lineChannelSecret.value.trim()) {
             body.channelSecret = lineChannelSecret.value.trim();
           }
-          if (extra.generateWebhookToken) body.generateWebhookToken = true;
-          // 欄位空白時，請伺服器產生 webhook token
-          if (!lastLineWebhookToken && !(lineWebhookToken && String(lineWebhookToken.value || "").replace(/[()已設定請看下方 URL 或重新產生…]/g, "").trim().length > 8)) {
+          var clientToken = "";
+          if (extra.generateWebhookToken) {
             body.generateWebhookToken = true;
+            clientToken = genWebhookTokenClient_();
+            body.webhookToken = clientToken;
+            // 立刻顯示在畫面上，不等伺服器回應
+            if (lineWebhookToken) lineWebhookToken.value = clientToken;
+            lastLineWebhookToken = clientToken;
+            updateLineWebhookUrlPreview_(clientToken);
+          } else if (!lastLineWebhookToken) {
+            body.generateWebhookToken = true;
+            clientToken = genWebhookTokenClient_();
+            body.webhookToken = clientToken;
+            if (lineWebhookToken) lineWebhookToken.value = clientToken;
+            lastLineWebhookToken = clientToken;
+            updateLineWebhookUrlPreview_(clientToken);
           }
-          showLineSettingsHint_("儲存中…", false);
+          showLineSettingsHint_(extra.generateWebhookToken ? "正在產生 Webhook token…" : "儲存中…", false);
+          if (lineGenWebhookToken) {
+            lineGenWebhookToken.disabled = true;
+            lineGenWebhookToken.textContent = "產生中…";
+          }
           fetchWrite(body)
+            .then(parseLineSettingsResponse_)
             .then(function(data) {
               if (data && data.error) throw new Error(data.message || "儲存失敗");
-              applyLineSettingsToForm_(data);
-              if (data.webhookToken && lineWebhookToken) lineWebhookToken.value = data.webhookToken;
-              updateLineWebhookUrlPreview_(data.webhookToken || lastLineWebhookToken);
-              showLineSettingsHint_("已儲存 LINE 設定。請把 Webhook URL 貼到 LINE Developers。", false);
+              var finalToken = (data && data.webhookToken) || clientToken || lastLineWebhookToken || "";
+              applyLineSettingsToForm_(Object.assign({}, data || {}, { webhookToken: finalToken, hasWebhookToken: !!finalToken }));
+              if (lineWebhookToken) lineWebhookToken.value = finalToken;
+              updateLineWebhookUrlPreview_(finalToken);
+              var url = buildLineWebhookUrl_(finalToken);
+              if (finalToken) {
+                showLineSettingsHint_("已產生。請按「複製 Webhook URL」貼到 LINE Developers。", false);
+                if (extra.generateWebhookToken) {
+                  alert("已產生 Webhook token！\n\n請按「複製 Webhook URL」，貼到 LINE Developers 的 Webhook URL。\n\n" + url);
+                }
+              } else {
+                showLineSettingsHint_("儲存成功，但未取得 token。請確認已部署最新 Code.gs。", true);
+                alert("儲存成功，但未取得 Webhook token。\n請到 Google 試算表重新部署最新 Code.gs 後再試。");
+              }
             })
             .catch(function(err) {
-              showLineSettingsHint_((err && err.message) || "儲存失敗", true);
+              var msg = (err && err.message) || "儲存失敗";
+              // 即使 API 失敗，若已在本機產生 token，仍可讓使用者複製 URL（需之後部署 Code.gs 才會真正生效）
+              if (clientToken) {
+                showLineSettingsHint_("本機已產生 token，但寫入伺服器失敗：" + msg, true);
+                alert("本機已產生 token，但寫入伺服器失敗：\n" + msg + "\n\n下方 URL 仍可複製。請先部署最新 Code.gs，再按一次「重新產生」或「儲存」。\n\n" + buildLineWebhookUrl_(clientToken));
+              } else {
+                showLineSettingsHint_(msg, true);
+                alert("產生／儲存失敗：\n" + msg + "\n\n請確認：\n1. 用 http://localhost:3000/admin.html\n2. Code.gs 已重新部署\n3. 瀏覽器按 Ctrl+F5");
+              }
+            })
+            .finally(function() {
+              if (lineGenWebhookToken) {
+                lineGenWebhookToken.disabled = false;
+                lineGenWebhookToken.textContent = "重新產生";
+              }
             });
         }
 
@@ -2174,8 +2240,31 @@
         if (lineSettingsReloadBtn) lineSettingsReloadBtn.addEventListener("click", loadLineSettings_);
         if (lineGenWebhookToken) {
           lineGenWebhookToken.addEventListener("click", function() {
-            if (!confirm("重新產生後，請同步更新 LINE Developers 的 Webhook URL。確定？")) return;
+            var hasExisting = !!(lastLineWebhookToken || (lineWebhookToken && lineWebhookToken.value && lineWebhookToken.value.indexOf("(") < 0 && lineWebhookToken.value.length >= 8));
+            if (hasExisting) {
+              if (!confirm("重新產生後，請同步更新 LINE Developers 的 Webhook URL。確定？")) return;
+            }
             saveLineSettings_({ generateWebhookToken: true });
+          });
+        }
+        if (lineCopyWebhookUrl) {
+          lineCopyWebhookUrl.addEventListener("click", function() {
+            var url = (lineWebhookUrlPreview && lineWebhookUrlPreview.textContent) || buildLineWebhookUrl_(lastLineWebhookToken);
+            if (!url || url.indexOf("webhook_token=") < 0 || url.indexOf("請先") >= 0) {
+              alert("尚未產生 Webhook URL，請先按「重新產生」。");
+              return;
+            }
+            function ok() {
+              showLineSettingsHint_("已複製 Webhook URL，請貼到 LINE Developers。", false);
+              alert("已複製！請到 LINE Developers → Messaging API → Webhook URL → Edit 貼上。");
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(url).then(ok).catch(function() {
+                window.prompt("請手動複製這段 URL：", url);
+              });
+            } else {
+              window.prompt("請手動複製這段 URL：", url);
+            }
           });
         }
 
