@@ -479,11 +479,12 @@
         </div>
 
         <div class="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-5 mb-6">
-          <p class="text-sm font-semibold text-sky-900 mb-2">為什麼需要會員名單？</p>
-          <ul class="text-sm text-slate-700 space-y-1.5 list-disc pl-5">
+          <p className="text-sm font-semibold text-sky-900 mb-2">為什麼需要會員名單？</p>
+          <ul className="text-sm text-slate-700 space-y-1.5 list-disc pl-5">
             <li><strong>一個顧客 = 一張 13 碼卡</strong>，作為歷史訂單、會員中心的共同主鍵</li>
+            <li><strong>新客流程：</strong>後台先「新增會員」（姓名＋產生卡號）→ 告知顧客卡號 → 顧客才能在官網送出登記</li>
             <li>資料寫入獨立試算表 <strong>Memberist</strong> 的「<strong>會員名單</strong>」分頁（非 ProductManagement2 本簿）</li>
-            <li>訂單儲存至試算表時會<strong>自動更新</strong>會員名單；亦可按「從訂單匯入」一次補齊</li>
+            <li>官網送單會驗證卡號是否已在名單內；查詢訂單也請用卡號（勿用訂單編號）</li>
             <li>同名多卡、電話重複時會<strong>提示衝突</strong>，避免顧客查不到訂單</li>
           </ul>
           <p class="text-xs text-slate-500 mt-3" id="membersStatLine">載入中…</p>
@@ -994,10 +995,12 @@
                   <button type="button" id="lineGenWebhookToken" class="shrink-0 px-3 py-2 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-sm font-medium hover:bg-rose-100">重新產生</button>
                 </div>
                 <p class="text-xs text-slate-500 mt-1">此欄位由系統產生（反灰無法手貼）。請改複製<strong>下方完整 Webhook URL</strong>貼到 LINE Developers。</p>
-                <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p class="text-xs font-medium text-slate-700 mb-1">完整 Webhook URL（複製這整段貼到 LINE）</p>
+                <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p class="text-xs font-medium text-amber-900 mb-1">⚠️ LINE 不能直接填下方 GAS 網址</p>
+                  <p class="text-xs text-amber-900/90 leading-relaxed mb-2">GAS 會回 HTTP 302，LINE Verify 會失敗。請用專案內 <code class="bg-amber-100 px-1 rounded">line-webhook-proxy/cloudflare-worker.js</code> 建立 Cloudflare Worker，把 Worker 網址貼到 LINE；Worker 內再填入下方完整 URL。</p>
+                  <p class="text-xs font-medium text-slate-700 mb-1">完整 GAS Webhook URL（貼進 Worker 的 GAS_WEBHOOK_URL）</p>
                   <code class="block text-[11px] text-slate-800 break-all select-all" id="lineWebhookUrlPreview">（請先按「重新產生」）</code>
-                  <button type="button" id="lineCopyWebhookUrl" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-medium hover:bg-slate-100">複製 Webhook URL</button>
+                  <button type="button" id="lineCopyWebhookUrl" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-medium hover:bg-slate-100">複製 GAS Webhook URL</button>
                 </div>
               </div>
               <div>
@@ -2258,7 +2261,7 @@
             }
             function ok() {
               showLineSettingsHint_("已複製 Webhook URL，請貼到 LINE Developers。", false);
-              alert("已複製！請到 LINE Developers → Messaging API → Webhook URL → Edit 貼上。");
+              alert("已複製 GAS Webhook URL！\n\n請貼進 Cloudflare Worker 的 GAS_WEBHOOK_URL，\n再把 Worker 網址貼到 LINE Developers（不要直接貼 GAS）。");
             }
             if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(url).then(ok).catch(function() {

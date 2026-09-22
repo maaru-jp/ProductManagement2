@@ -52,7 +52,7 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-23-line-webhook-v4",
+        apiVersion: "2026-09-23-line-webhook-v5",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
@@ -69,7 +69,7 @@ function doGet(e) {
       var lineDiag = getLineAutomationSettings_();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-23-line-webhook-v4",
+        apiVersion: "2026-09-23-line-webhook-v5",
         enabled: !!lineDiag.enabled,
         hasChannelAccessToken: !!lineDiag.channelAccessToken,
         hasWebhookToken: !!lineDiag.webhookToken,
@@ -519,7 +519,8 @@ function isAuthorizedPost_(body) {
 
 /**
  * 顧客官網送單（公開）。狀態固定「待處理」，訂單編號由伺服器配號。
- * body: { customerName, phone, lineId?, email?, memberCardNo?, remark?, items:[{lineName,qty,price}], subtotal? }
+ * 須先由店家在後台「會員名單」建檔（姓名＋13 碼卡號），顧客持卡號才能送單。
+ * body: { customerName, phone, lineId?, email?, memberCardNo, remark?, items:[{lineName,qty,price}], subtotal? }
  */
 function submitCustomerOrderPublic_(body) {
   body = body || {};
@@ -539,14 +540,34 @@ function submitCustomerOrderPublic_(body) {
   if (phone.length < 8 || phone.length > 15) {
     return { error: true, message: "請填寫有效電話（8～15 碼數字）" };
   }
-  if (memberCardNo && !isValidMemberCardNo_(memberCardNo)) {
-    return { error: true, message: "會員卡號須為 13 碼數字（可留空由系統產生）" };
+  if (!isValidMemberCardNo_(memberCardNo)) {
+    return { error: true, message: "請輸入店家提供的 13 碼會員卡號（新客請先向店家索取卡號）" };
   }
   if (email && email.length > 80) {
     return { error: true, message: "Email 過長" };
   }
   if (remark.length > 4000) {
     remark = remark.slice(0, 4000);
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var roster = getMemberCardRosterStatus_(ss, memberCardNo);
+  if (!roster.exists) {
+    return { error: true, message: "查無此會員卡號。請先向店家登記姓名，取得卡號後再送出。" };
+  }
+  if (!roster.active) {
+    return { error: true, message: "此會員卡號已停用，請聯絡店家" };
+  }
+  var memberRec = getMemberRecordByCard_(ss, memberCardNo);
+  if (memberRec && memberRec.customerName) {
+    var rosterName = String(memberRec.customerName || "").trim().replace(/\s+/g, "").toLowerCase();
+    var submitName = customerName.replace(/\s+/g, "").toLowerCase();
+    if (rosterName && submitName && rosterName !== submitName) {
+      return {
+        error: true,
+        message: "姓名與店家登記的會員資料不符，請確認後再送（或聯絡店家更正名單）"
+      };
+    }
   }
 
   var rateKey = "cosub_" + phone.slice(-8);
@@ -603,7 +624,6 @@ function submitCustomerOrderPublic_(body) {
     subtotal = clientSub;
   }
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var orderSheet = getOrderSheet(ss);
   if (!orderSheet) {
     return { error: true, message: "找不到訂單工作表，請聯絡店家" };
@@ -620,18 +640,6 @@ function submitCustomerOrderPublic_(body) {
     var allOrders = getOrders(orderSheet);
     var orderId = computeNextOrderId_(allOrders);
 
-    if (!isValidMemberCardNo_(memberCardNo)) {
-      memberCardNo = findExistingMemberCardForCustomerSubmit_(allOrders, customerName, phone) || "";
-    }
-    if (!isValidMemberCardNo_(memberCardNo)) {
-      var usedCards = {};
-      for (var u = 0; u < allOrders.length; u++) {
-        var uc = normalizeMemberCardNo_(allOrders[u] && allOrders[u].memberCardNo);
-        if (isValidMemberCardNo_(uc)) usedCards[uc] = true;
-      }
-      memberCardNo = generateMemberCardNoForSubmit_(usedCards, new Date());
-    }
-
     var nowIso = Utilities.formatDate(
       new Date(),
       Session.getScriptTimeZone() || "Asia/Taipei",
@@ -643,6 +651,12 @@ function submitCustomerOrderPublic_(body) {
       "yyyy-MM-dd"
     );
 
+    // 名單有電話且顧客未填完整時，可帶入名單電話（仍以顧客送出為準）
+    if (phone.length < 8 && memberRec && memberRec.phone) {
+      var rosterPhone = String(memberRec.phone || "").replace(/\D/g, "");
+      if (rosterPhone.length >= 8) phone = rosterPhone;
+    }
+
     var order = {
       id: orderId,
       status: "待處理",
@@ -650,7 +664,7 @@ function submitCustomerOrderPublic_(body) {
       customerName: customerName,
       phone: phone,
       email: email,
-      lineId: lineId,
+      lineId: lineId || (memberRec && memberRec.lineId ? String(memberRec.lineId) : ""),
       memberCardNo: memberCardNo,
       shippingMethod: "",
       storeName: "",
@@ -753,6 +767,8 @@ var LINE_PROP_CHANNEL_TOKEN = "line_channel_access_token";
 var LINE_PROP_CHANNEL_SECRET = "line_channel_secret";
 var LINE_PROP_WEBHOOK_TOKEN = "line_webhook_token";
 var LINE_PROP_REPLY_TEMPLATE = "line_order_created_template";
+/** 同一 LINE 用戶、狀態仍為「待處理」、且在此時間內再 +1 → 併入同一張訂單（毫秒） */
+var LINE_MERGE_WINDOW_MS_ = 2 * 60 * 60 * 1000;
 
 function defaultLineOrderCreatedTemplate_() {
   return [
@@ -769,9 +785,56 @@ function defaultLineOrderCreatedTemplate_() {
     "商品小計：NT${{subtotal}}",
     "目前狀態：待處理",
     "",
+    "之後若要再加購：2 小時內傳 +1 會併入同一張訂單；",
+    "超過時間、或訂單已在處理／已收訂金，則會開新單。",
+    "",
     "請保留本訊息。運費／訂金與出貨進度，店家確認後會再通知您。",
     "如有問題請直接回覆此對話。"
   ].join("\n");
+}
+
+function defaultLineOrderMergedTemplate_() {
+  return [
+    "【MAARU 加單成功】",
+    "",
+    "已幫您併入原訂單（未另開新單）。",
+    "",
+    "訂單編號：{{orderId}}",
+    "會員卡號：{{memberCardNo}}",
+    "",
+    "本次新增：",
+    "{{itemsSummary}}",
+    "",
+    "訂單目前小計：NT${{subtotal}}",
+    "目前狀態：待處理",
+    "",
+    "如有問題請直接回覆此對話。"
+  ].join("\n");
+}
+
+/** 找可併單的待處理訂單：同 lineId、待處理、2 小時內有更新 */
+function findMergeableLineOrder_(allOrders, lineId) {
+  lineId = String(lineId || "").trim();
+  if (!lineId) return null;
+  var now = Date.now();
+  var best = null;
+  var bestTs = 0;
+  for (var i = 0; i < (allOrders || []).length; i++) {
+    var o = allOrders[i];
+    if (!o) continue;
+    if (String(o.lineId || "").trim() !== lineId) continue;
+    if (String(o.status || "").trim() !== "待處理") continue;
+    if (Number(o.depositAmount) > 0) continue;
+    var ship = String(o.shippingStatus || "").trim();
+    if (ship && ship !== "待出貨" && ship !== "未出貨") continue;
+    var ts = Date.parse(String(o.updated || o.date || "")) || 0;
+    if (!ts || (now - ts) > LINE_MERGE_WINDOW_MS_) continue;
+    if (ts >= bestTs) {
+      bestTs = ts;
+      best = o;
+    }
+  }
+  return best;
 }
 
 function getLineAutomationSettings_() {
@@ -991,7 +1054,9 @@ function processLineEvent_(event, settings) {
     return created;
   }
 
-  var replyText = renderLineOrderCreatedTemplate_(settings.orderCreatedTemplate, created);
+  var replyText = created.merged
+    ? renderLineOrderCreatedTemplate_(defaultLineOrderMergedTemplate_(), created)
+    : renderLineOrderCreatedTemplate_(settings.orderCreatedTemplate, created);
   var sendRes = { replied: false, replyMode: "", detail: null };
   if (accessToken) {
     sendRes = sendLineUserText_(userId, replyToken, accessToken, replyText);
@@ -1000,6 +1065,7 @@ function processLineEvent_(event, settings) {
   }
   return {
     ok: true,
+    merged: !!created.merged,
     orderId: created.orderId,
     memberCardNo: created.memberCardNo,
     subtotal: created.subtotal,
@@ -1181,10 +1247,10 @@ function createOrderFromLineParsed_(parsed, meta) {
   meta = meta || {};
   var items = (parsed && parsed.items) ? parsed.items : [];
   if (!items.length) return { error: true, message: "沒有商品" };
-  var subtotal = Math.round(Number(parsed.subtotal) || 0);
-  if (!subtotal) {
+  var addSubtotal = Math.round(Number(parsed.subtotal) || 0);
+  if (!addSubtotal) {
     for (var i = 0; i < items.length; i++) {
-      subtotal += (Number(items[i].price) || 0) * (Number(items[i].qty) || 0);
+      addSubtotal += (Number(items[i].price) || 0) * (Number(items[i].qty) || 0);
     }
   }
 
@@ -1198,9 +1264,58 @@ function createOrderFromLineParsed_(parsed, meta) {
   }
   try {
     var allOrders = getOrders(orderSheet);
-    var orderId = computeNextOrderId_(allOrders);
     var customerName = String(meta.displayName || "").trim() || "LINE顧客";
     var lineId = String(meta.lineUserId || "").trim();
+    var nowIso = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
+    var todayDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd");
+    var rawText = String(meta.rawText || "");
+    if (rawText.length > 2000) rawText = rawText.slice(0, 2000);
+
+    // —— 併單：同 LINE、待處理、2 小時內 ——
+    var existing = findMergeableLineOrder_(allOrders, lineId);
+    if (existing && existing.id) {
+      var oldItems = Array.isArray(existing.items) ? existing.items.slice() : [];
+      var mergedItems = oldItems.concat(items);
+      var newSubtotal = 0;
+      for (var mi = 0; mi < mergedItems.length; mi++) {
+        newSubtotal += (Number(mergedItems[mi].price) || 0) * (Number(mergedItems[mi].qty) || 0);
+      }
+      newSubtotal = Math.round(newSubtotal);
+      var shipFee = Math.round(Number(existing.shippingFee) || 0);
+      var discount = Math.round(Number(existing.discount) || 0);
+      var remark = String(existing.remark || "");
+      remark += (remark ? "\n" : "") + "——\n（LINE 加單 " + nowIso + "）\n" + rawText;
+      if (remark.length > 3500) remark = remark.slice(-3500);
+
+      var mergedOrder = Object.assign({}, existing, {
+        items: mergedItems,
+        subtotal: newSubtotal,
+        total: Math.max(0, newSubtotal - discount + shipFee),
+        remark: remark,
+        updated: nowIso,
+        customerName: customerName || existing.customerName,
+        lineId: lineId || existing.lineId
+      });
+      if (!mergedOrder.preorderDate) mergedOrder.preorderDate = todayDate;
+      mergedOrder = enrichOrderForSheetWrite_(mergedOrder, ss);
+      upsertOrder(orderSheet, mergedOrder);
+      clearOrderListCache_(orderSheet);
+      try { upsertMemberFromOrder_(ss, mergedOrder); } catch (e2) { /* ignore */ }
+
+      return {
+        error: false,
+        merged: true,
+        orderId: mergedOrder.id,
+        memberCardNo: normalizeMemberCardNo_(mergedOrder.memberCardNo),
+        subtotal: newSubtotal,
+        items: items, // 回覆只顯示本次新增
+        allItems: mergedItems,
+        customerName: mergedOrder.customerName || customerName
+      };
+    }
+
+    // —— 新開單 ——
+    var orderId = computeNextOrderId_(allOrders);
 
     var memberCardNo = findExistingMemberCardForCustomerSubmit_(allOrders, customerName, "") || "";
     if (!isValidMemberCardNo_(memberCardNo) && lineId) {
@@ -1220,11 +1335,8 @@ function createOrderFromLineParsed_(parsed, meta) {
       memberCardNo = generateMemberCardNoForSubmit_(used, new Date());
     }
 
-    var nowIso = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
-    var todayDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd");
-    var remark = String(meta.rawText || "");
-    if (remark.length > 3500) remark = remark.slice(0, 3500);
-    remark = "（LINE 自動建單）\n" + remark;
+    var remarkNew = "（LINE 自動建單）\n" + rawText;
+    if (remarkNew.length > 3500) remarkNew = remarkNew.slice(0, 3500);
 
     var order = {
       id: orderId,
@@ -1239,13 +1351,13 @@ function createOrderFromLineParsed_(parsed, meta) {
       storeName: "",
       storeId: "",
       address: "",
-      subtotal: subtotal,
+      subtotal: addSubtotal,
       discount: 0,
       shippingFee: 0,
       shippingStatus: "",
       depositAmount: 0,
-      total: subtotal,
-      remark: remark,
+      total: addSubtotal,
+      remark: remarkNew,
       items: items,
       preorderDate: todayDate,
       shipDate: "",
@@ -1255,20 +1367,21 @@ function createOrderFromLineParsed_(parsed, meta) {
     order = enrichOrderForSheetWrite_(order, ss);
     upsertOrder(orderSheet, order);
     clearOrderListCache_(orderSheet);
-    try { upsertMemberFromOrder_(ss, order); } catch (e2) { /* ignore */ }
+    try { upsertMemberFromOrder_(ss, order); } catch (e3) { /* ignore */ }
 
     return {
       error: false,
+      merged: false,
       orderId: order.id,
       memberCardNo: normalizeMemberCardNo_(order.memberCardNo),
-      subtotal: subtotal,
+      subtotal: addSubtotal,
       items: items,
       customerName: customerName
     };
   } catch (err) {
     return { error: true, message: String(err && err.message ? err.message : err) };
   } finally {
-    try { lock.releaseLock(); } catch (e3) { /* ignore */ }
+    try { lock.releaseLock(); } catch (e4) { /* ignore */ }
   }
 }
 
