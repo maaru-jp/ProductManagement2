@@ -1013,6 +1013,7 @@
               <div class="flex flex-wrap gap-2">
                 <button type="button" id="lineSettingsSaveBtn" class="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">儲存 LINE 設定</button>
                 <button type="button" id="lineSettingsReloadBtn" class="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm hover:bg-slate-50">重新載入</button>
+                <button type="button" id="lineTestOrderBtn" class="px-4 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 text-sm font-medium hover:bg-amber-100">模擬建單測試</button>
               </div>
               <p id="lineSettingsHint" class="text-xs text-slate-500 hidden"></p>
             </div>
@@ -2069,6 +2070,7 @@
         var lineSettingsReloadBtn = document.getElementById("lineSettingsReloadBtn");
         var lineGenWebhookToken = document.getElementById("lineGenWebhookToken");
         var lineCopyWebhookUrl = document.getElementById("lineCopyWebhookUrl");
+        var lineTestOrderBtn = document.getElementById("lineTestOrderBtn");
         var lastLineWebhookToken = "";
 
         function showLineSettingsHint_(msg, isErr) {
@@ -2265,6 +2267,31 @@
             } else {
               window.prompt("請手動複製這段 URL：", url);
             }
+          });
+        }
+        if (lineTestOrderBtn) {
+          lineTestOrderBtn.addEventListener("click", function() {
+            if (!confirm("會在後台直接建立一筆測試訂單（不經 LINE）。確定？")) return;
+            lineTestOrderBtn.disabled = true;
+            lineTestOrderBtn.textContent = "測試中…";
+            showLineSettingsHint_("模擬建單中…", false);
+            fetchWrite({ action: "line_test_order", text: "測試商品 +1" })
+              .then(parseLineSettingsResponse_)
+              .then(function(data) {
+                if (data && data.error) throw new Error(data.message || "測試失敗");
+                var oid = (data && data.orderId) || "";
+                showLineSettingsHint_("模擬建單成功：" + oid + "（請到訂單管理查看）", false);
+                alert("模擬建單成功！\n訂單編號：" + oid + "\n\n請到「訂單管理」確認有這一筆。\n若這裡成功但 LINE 仍無反應，請重新部署 Code.gs 後再從 LINE 傳訊。");
+              })
+              .catch(function(err) {
+                var msg = (err && err.message) || "測試失敗";
+                showLineSettingsHint_(msg, true);
+                alert("模擬建單失敗：\n" + msg + "\n\n請確認已部署最新 Code.gs（需含 line_test_order）。");
+              })
+              .finally(function() {
+                lineTestOrderBtn.disabled = false;
+                lineTestOrderBtn.textContent = "模擬建單測試";
+              });
           });
         }
 
