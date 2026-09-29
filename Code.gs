@@ -52,7 +52,7 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-30-line-notify-v1",
+        apiVersion: "2026-09-30-line-notify-v2",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
@@ -69,7 +69,7 @@ function doGet(e) {
       var lineDiag = getLineAutomationSettings_();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-30-line-notify-v1",
+        apiVersion: "2026-09-30-line-notify-v2",
         enabled: !!lineDiag.enabled,
         hasChannelAccessToken: !!lineDiag.channelAccessToken,
         hasWebhookToken: !!lineDiag.webhookToken,
@@ -1159,10 +1159,10 @@ function processLineEvent_(event, settings) {
     }
 
     var bindRes = bindLineUserIdToMemberCard_(SpreadsheetApp.getActiveSpreadsheet(), userId, bindCard);
-    var bindMsg = bindRes.error
-      ? ("綁定失敗：" + (bindRes.message || "請確認卡號或稍後再試"))
-      : ("綁定成功！\n會員卡號：" + bindCard + "\n之後店家更新訂單進度時，會透過官方 LINE 通知您。");
-    if (accessToken) sendLineUserText_(userId, replyToken, accessToken, bindMsg);
+    if (accessToken) {
+      var bindMessages = buildLineBindResultMessages_(!bindRes.error, bindCard, bindRes.message || "");
+      sendLineUserMessages_(userId, replyToken, accessToken, bindMessages);
+    }
     return { ok: !bindRes.error, type: "bind", memberCardNo: bindCard, message: bindRes.message || "OK" };
   }
 
@@ -1239,26 +1239,81 @@ function processLineEvent_(event, settings) {
  * GAS 冷啟動常超過 30 秒，reply 常失敗，push 才穩。
  */
 function sendLineUserText_(userId, replyToken, accessToken, text) {
+  return sendLineUserMessages_(userId, replyToken, accessToken, [{ type: "text", text: String(text || "") }]);
+}
+
+/** 綁定結果：文字 + Flex 卡片（較容易在聊天室看到） */
+function buildLineBindResultMessages_(ok, memberCardNo, detailMsg) {
+  var card = String(memberCardNo || "").trim();
+  var title = ok ? "綁定成功" : "綁定失敗";
+  var color = ok ? "#059669" : "#E11D48";
+  var bodyText = ok
+    ? ("會員卡號：" + card + "\n之後店家更新訂單進度時，會透過官方 LINE 通知您。")
+    : ("會員卡號：" + (card || "（無）") + "\n" + (detailMsg || "請確認卡號後再試"));
+  var flex = {
+    type: "flex",
+    altText: title + (card ? ("｜" + card) : ""),
+    contents: {
+      type: "bubble",
+      size: "kilo",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          { type: "text", text: title, weight: "bold", size: "lg", color: color },
+          { type: "separator" },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+              { type: "text", text: "會員卡號", size: "xs", color: "#94A3B8" },
+              { type: "text", text: card || "—", size: "md", weight: "bold", wrap: true }
+            ]
+          },
+          {
+            type: "text",
+            text: ok
+              ? "已連結此官方帳號。後台訂單管理可一鍵推播進度通知。"
+              : String(detailMsg || "請確認 13 碼卡號後再傳一次。"),
+            size: "sm",
+            color: "#475569",
+            wrap: true
+          }
+        ]
+      }
+    }
+  };
+  return [
+    { type: "text", text: title + "！\n" + bodyText },
+    flex
+  ];
+}
+
+function sendLineUserMessages_(userId, replyToken, accessToken, messages) {
   var replied = false;
   var replyMode = "";
   var detail = {};
+  messages = Array.isArray(messages) ? messages : [];
+  if (!messages.length) return { replied: false, replyMode: "", detail: { message: "empty" } };
+  // LINE 單次最多 5 則
+  if (messages.length > 5) messages = messages.slice(0, 5);
   if (replyToken) {
-    var replyRes = replyLineText_(replyToken, accessToken, text);
+    var replyRes = replyLineMessages_(replyToken, accessToken, messages);
     detail.reply = replyRes;
     if (replyRes && replyRes.ok) {
-      replied = true;
-      replyMode = "reply";
-      return { replied: replied, replyMode: replyMode, detail: detail };
+      return { replied: true, replyMode: "reply", detail: detail };
     }
   }
   if (userId) {
-    var pushRes = pushLineText_(userId, accessToken, text);
+    var pushRes = pushLineMessages_(userId, accessToken, messages);
     detail.push = pushRes;
     if (pushRes && pushRes.ok) {
       replied = true;
       replyMode = "push";
     } else {
-      Logger.log("LINE send failed: " + JSON.stringify(detail));
+      Logger.log("LINE send messages failed: " + JSON.stringify(detail));
     }
   }
   return { replied: replied, replyMode: replyMode, detail: detail };
@@ -1579,9 +1634,17 @@ function fetchLineDisplayName_(userId, accessToken) {
 }
 
 function replyLineText_(replyToken, accessToken, text) {
-  text = String(text || "");
-  if (text.length > 4500) text = text.slice(0, 4500);
+  return replyLineMessages_(replyToken, accessToken, [{ type: "text", text: String(text || "") }]);
+}
+
+function pushLineText_(userId, accessToken, text) {
+  return pushLineMessages_(userId, accessToken, [{ type: "text", text: String(text || "") }]);
+}
+
+function replyLineMessages_(replyToken, accessToken, messages) {
   if (!replyToken || !accessToken) return { ok: false, message: "missing_token" };
+  messages = Array.isArray(messages) ? messages : [];
+  if (!messages.length) return { ok: false, message: "empty" };
   try {
     var res = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", {
       method: "post",
@@ -1589,7 +1652,7 @@ function replyLineText_(replyToken, accessToken, text) {
       headers: { Authorization: "Bearer " + accessToken },
       payload: JSON.stringify({
         replyToken: replyToken,
-        messages: [{ type: "text", text: text }]
+        messages: messages
       }),
       muteHttpExceptions: true
     });
@@ -1605,10 +1668,10 @@ function replyLineText_(replyToken, accessToken, text) {
   }
 }
 
-function pushLineText_(userId, accessToken, text) {
-  text = String(text || "");
-  if (text.length > 4500) text = text.slice(0, 4500);
+function pushLineMessages_(userId, accessToken, messages) {
   if (!userId || !accessToken) return { ok: false, message: "missing_user_or_token" };
+  messages = Array.isArray(messages) ? messages : [];
+  if (!messages.length) return { ok: false, message: "empty" };
   try {
     var res = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
       method: "post",
@@ -1616,7 +1679,7 @@ function pushLineText_(userId, accessToken, text) {
       headers: { Authorization: "Bearer " + accessToken },
       payload: JSON.stringify({
         to: userId,
-        messages: [{ type: "text", text: text }]
+        messages: messages
       }),
       muteHttpExceptions: true
     });
