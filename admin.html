@@ -1008,10 +1008,40 @@
                 <textarea id="lineOrderCreatedTemplate" rows="12" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed" placeholder="可用變數 {{orderId}} {{memberCardNo}} {{itemsSummary}} {{subtotal}} {{customerName}}"></textarea>
                 <p class="text-xs text-slate-500 mt-1">可用變數：<code class="bg-slate-100 px-1 rounded">{{orderId}}</code> <code class="bg-slate-100 px-1 rounded">{{memberCardNo}}</code> <code class="bg-slate-100 px-1 rounded">{{itemsSummary}}</code> <code class="bg-slate-100 px-1 rounded">{{subtotal}}</code> <code class="bg-slate-100 px-1 rounded">{{customerName}}</code></p>
               </div>
+              <div class="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-3">
+                <div>
+                  <p class="text-sm font-medium text-emerald-900">訂單進度一鍵推播模板</p>
+                  <p class="text-xs text-emerald-900/80 mt-1 leading-relaxed">顧客需先加官方帳號並傳送 <code class="bg-emerald-100 px-1 rounded">綁定 13碼會員卡號</code>。後台訂單管理可一鍵推播以下五種通知。</p>
+                  <p class="text-xs text-slate-600 mt-1">變數：<code class="bg-white/80 px-1 rounded">{{orderId}}</code> <code class="bg-white/80 px-1 rounded">{{memberCardNo}}</code> <code class="bg-white/80 px-1 rounded">{{customerName}}</code> <code class="bg-white/80 px-1 rounded">{{itemsSummary}}</code> <code class="bg-white/80 px-1 rounded">{{amountDue}}</code> <code class="bg-white/80 px-1 rounded">{{subtotal}}</code> <code class="bg-white/80 px-1 rounded">{{shippingMethod}}</code> <code class="bg-white/80 px-1 rounded">{{storeName}}</code></p>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-700 mb-1">① 確認訂單／請匯款</label>
+                  <textarea id="lineNotifyTpl_confirm_pay" rows="5" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-700 mb-1">② 已確認匯款</label>
+                  <textarea id="lineNotifyTpl_paid" rows="4" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-700 mb-1">③ 出貨通知</label>
+                  <textarea id="lineNotifyTpl_shipping" rows="5" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-700 mb-1">④ 到店／可取貨</label>
+                  <textarea id="lineNotifyTpl_arrived" rows="4" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-700 mb-1">⑤ 取貨完成</label>
+                  <textarea id="lineNotifyTpl_completed" rows="4" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
+                </div>
+              </div>
               <div class="rounded-lg bg-slate-50 border border-slate-100 p-3 text-xs text-slate-600 leading-relaxed">
                 <p class="font-medium text-slate-700 mb-1">顧客傳給官方 LINE 的建議格式</p>
                 <p class="font-mono whitespace-pre-wrap">吊飾娃 手機鍊 +1
-或直接貼官網複製的「登記清單」（含商品總計）</p>
+或直接貼官網複製的「登記清單」（含商品總計）
+
+綁定 2026092312345
+（綁定後即可接收訂單進度推播）</p>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button type="button" id="lineSettingsSaveBtn" class="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800">儲存 LINE 設定</button>
@@ -1483,6 +1513,15 @@
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">收訂金歷程記錄（PDF 備註欄）</label>
             <textarea id="orderDepositRemark" rows="4" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+          </div>
+
+          <div id="orderLineNotifyPanel" class="hidden rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-3 space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="text-sm font-medium text-emerald-900">LINE 訂單進度通知</p>
+              <span id="orderLineNotifyBadge" class="text-[11px] px-1.5 py-0.5 rounded border"></span>
+            </div>
+            <p id="orderLineNotifyHint" class="text-xs text-emerald-900/80 leading-relaxed"></p>
+            <div id="orderLineNotifyBtns" class="flex flex-wrap gap-1.5"></div>
           </div>
 
           <div class="flex justify-end gap-2 pt-4 border-t border-slate-200">
@@ -2075,6 +2114,41 @@
         var lineCopyWebhookUrl = document.getElementById("lineCopyWebhookUrl");
         var lineTestOrderBtn = document.getElementById("lineTestOrderBtn");
         var lastLineWebhookToken = "";
+        var LINE_NOTIFY_TYPE_KEYS_ = ["confirm_pay", "paid", "shipping", "arrived", "completed"];
+        var LINE_NOTIFY_LABELS_ = {
+          confirm_pay: "確認／請匯款",
+          paid: "已確認匯款",
+          shipping: "出貨通知",
+          arrived: "到店／可取貨",
+          completed: "取貨完成"
+        };
+        window.LINE_NOTIFY_TYPE_KEYS_ = LINE_NOTIFY_TYPE_KEYS_;
+        window.LINE_NOTIFY_LABELS_ = LINE_NOTIFY_LABELS_;
+
+        function getLineNotifyTemplateEls_() {
+          var out = {};
+          LINE_NOTIFY_TYPE_KEYS_.forEach(function(k) {
+            out[k] = document.getElementById("lineNotifyTpl_" + k);
+          });
+          return out;
+        }
+
+        function collectLineNotifyTemplatesFromForm_() {
+          var els = getLineNotifyTemplateEls_();
+          var out = {};
+          LINE_NOTIFY_TYPE_KEYS_.forEach(function(k) {
+            out[k] = els[k] ? String(els[k].value || "") : "";
+          });
+          return out;
+        }
+
+        function applyLineNotifyTemplatesToForm_(templates) {
+          templates = templates || {};
+          var els = getLineNotifyTemplateEls_();
+          LINE_NOTIFY_TYPE_KEYS_.forEach(function(k) {
+            if (els[k] && templates[k] != null) els[k].value = templates[k];
+          });
+        }
 
         function showLineSettingsHint_(msg, isErr) {
           if (!lineSettingsHint) return;
@@ -2133,6 +2207,7 @@
           if (lineOrderCreatedTemplate && data.orderCreatedTemplate) {
             lineOrderCreatedTemplate.value = data.orderCreatedTemplate;
           }
+          if (data.notifyTemplates) applyLineNotifyTemplatesToForm_(data.notifyTemplates);
         }
 
         function loadLineSettings_() {
@@ -2172,7 +2247,8 @@
           var body = {
             action: "line_settings_save",
             enabled: !!(lineAutoEnabled && lineAutoEnabled.checked),
-            orderCreatedTemplate: lineOrderCreatedTemplate ? lineOrderCreatedTemplate.value : ""
+            orderCreatedTemplate: lineOrderCreatedTemplate ? lineOrderCreatedTemplate.value : "",
+            notifyTemplates: collectLineNotifyTemplatesFromForm_()
           };
           if (lineChannelAccessToken && lineChannelAccessToken.value.trim()) {
             body.channelAccessToken = lineChannelAccessToken.value.trim();
@@ -7151,8 +7227,10 @@
           if (editOrder) {
             document.querySelector("#orderModal h3").textContent = "編輯訂單";
             setFormFromOrder(editOrder);
+            fillOrderLineNotifyPanel_(editOrder);
           } else {
             document.querySelector("#orderModal h3").textContent = "訂單詳情 (新訂單)";
+            fillOrderLineNotifyPanel_(null);
             var orderIdEl = document.getElementById("orderId");
             if (orderIdEl) { orderIdEl.value = getNextOrderId(); orderIdEl.readOnly = false; }
             document.getElementById("orderSubtotal").value = "0";
@@ -7386,6 +7464,16 @@
           orderTableBody.addEventListener("click", function(e) {
             var t = e.target;
             if (!t || !t.closest) return;
+            var lineBtn = t.closest(".order-line-notify-btn");
+            if (lineBtn && orderTableBody.contains(lineBtn)) {
+              e.preventDefault();
+              sendOrderLineNotifyFromAdmin_(
+                lineBtn.getAttribute("data-order-id") || "",
+                lineBtn.getAttribute("data-notify-type") || "",
+                lineBtn
+              );
+              return;
+            }
             var overviewBtn = t.closest(".order-customer-overview-btn");
             if (overviewBtn && orderTableBody.contains(overviewBtn)) {
               openCustomerOverviewModal_(
@@ -7459,6 +7547,115 @@
           });
         }
 
+        function fillOrderLineNotifyPanel_(ord) {
+          var panel = document.getElementById("orderLineNotifyPanel");
+          var badge = document.getElementById("orderLineNotifyBadge");
+          var hint = document.getElementById("orderLineNotifyHint");
+          var btns = document.getElementById("orderLineNotifyBtns");
+          if (!panel) return;
+          if (!ord || !ord.id) {
+            panel.classList.add("hidden");
+            if (btns) btns.innerHTML = "";
+            return;
+          }
+          panel.classList.remove("hidden");
+          var can = orderLooksLineNotifyBound_(ord);
+          var card = String(ord.memberCardNo || "").replace(/\D/g, "");
+          if (badge) {
+            badge.textContent = can ? "可推播" : "未綁定";
+            badge.className = can
+              ? "text-[11px] px-1.5 py-0.5 rounded border border-emerald-300 bg-emerald-100 text-emerald-900"
+              : "text-[11px] px-1.5 py-0.5 rounded border border-slate-300 bg-slate-100 text-slate-600";
+          }
+          if (hint) {
+            hint.textContent = can
+              ? "按下方按鈕即可推播對應進度到顧客官方 LINE（不會自動改訂單狀態）。"
+              : ("請請顧客加官方帳號後傳送：綁定 " + (card.length === 13 ? card : "13碼會員卡號"));
+          }
+          if (btns) {
+            var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "shipping", "arrived", "completed"];
+            var labels = window.LINE_NOTIFY_LABELS_ || {};
+            btns.innerHTML = keys.map(function(k) {
+              var label = labels[k] || k;
+              var disabled = can ? "" : " disabled";
+              var cls = can
+                ? "order-line-notify-btn px-2 py-1 rounded border border-emerald-300 bg-white text-emerald-900 text-xs hover:bg-emerald-50"
+                : "order-line-notify-btn px-2 py-1 rounded border border-slate-200 bg-slate-50 text-slate-400 text-xs cursor-not-allowed";
+              return "<button type=\"button\" class=\"" + cls + "\" data-order-id=\"" + escapeHtml(ord.id) + "\" data-notify-type=\"" + escapeHtml(k) + "\"" + disabled + ">" + escapeHtml(label) + "</button>";
+            }).join("");
+            btns.onclick = function(ev) {
+              var b = ev.target && ev.target.closest ? ev.target.closest(".order-line-notify-btn") : null;
+              if (!b || b.disabled) return;
+              sendOrderLineNotifyFromAdmin_(b.getAttribute("data-order-id"), b.getAttribute("data-notify-type"), b);
+            };
+          }
+        }
+
+        function orderLooksLineNotifyBound_(ord) {
+          if (!ord) return false;
+          if (ord.canLineNotify === true) return true;
+          if (ord.canLineNotify === false) return false;
+          var lid = String(ord.lineId || "").trim();
+          return /^U[0-9a-fA-F]{20,}$/.test(lid);
+        }
+
+        function renderOrderLineNotifyControls_(ord) {
+          var can = orderLooksLineNotifyBound_(ord);
+          var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "shipping", "arrived", "completed"];
+          var labels = window.LINE_NOTIFY_LABELS_ || {
+            confirm_pay: "確認／請匯款",
+            paid: "已確認匯款",
+            shipping: "出貨通知",
+            arrived: "到店／可取貨",
+            completed: "取貨完成"
+          };
+          var badge = can
+            ? "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 mr-1\" title=\"已綁定 LINE 推播\">可推播</span>"
+            : "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 mr-1\" title=\"請請顧客傳：綁定 會員卡號\">未綁定</span>";
+          var btns = keys.map(function(k) {
+            var label = labels[k] || k;
+            var disabled = can ? "" : " disabled";
+            var cls = can
+              ? "order-line-notify-btn px-1.5 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-900 text-[10px] hover:bg-emerald-100"
+              : "order-line-notify-btn px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-400 text-[10px] cursor-not-allowed";
+            return "<button type=\"button\" class=\"" + cls + "\" data-order-id=\"" + escapeHtml(ord.id) + "\" data-notify-type=\"" + escapeHtml(k) + "\"" + disabled + " title=\"LINE：" + escapeHtml(label) + "\">" + escapeHtml(label) + "</button>";
+          }).join("");
+          return "<div class=\"mb-1.5 flex flex-wrap items-center gap-1\">" + badge + btns + "</div>";
+        }
+
+        function sendOrderLineNotifyFromAdmin_(orderId, notifyType, btnEl) {
+          orderId = String(orderId || "").trim();
+          notifyType = String(notifyType || "").trim();
+          if (!orderId || !notifyType) return;
+          var labels = window.LINE_NOTIFY_LABELS_ || {};
+          var label = labels[notifyType] || notifyType;
+          if (!confirm("確定對訂單 " + orderId + " 推播「" + label + "」？")) return;
+          if (typeof fetchWrite !== "function") {
+            showOrderMessage("後台寫入 API 未就緒", true);
+            return;
+          }
+          if (btnEl) btnEl.disabled = true;
+          showOrderMessage("正在推播 LINE：「" + label + "」…", false);
+          fetchWrite({ action: "order_line_notify", orderId: orderId, notifyType: notifyType })
+            .then(function(r) { return r.text().then(function(t) {
+              try { return t ? JSON.parse(t) : {}; } catch (e) {
+                return { error: true, message: "回應非 JSON（請部署最新 Code.gs）" };
+              }
+            }); })
+            .then(function(data) {
+              if (data && data.error) throw new Error(data.message || "推播失敗");
+              showOrderMessage("已推播「" + label + "」→ " + orderId, false);
+            })
+            .catch(function(err) {
+              showOrderMessage((err && err.message) || "推播失敗", true);
+            })
+            .finally(function() {
+              if (btnEl) {
+                btnEl.disabled = btnEl.classList.contains("cursor-not-allowed");
+              }
+            });
+        }
+
         function paintOrderTable_(pageList, paintOpts) {
           if (!orderTableBody) return;
           paintOpts = paintOpts || {};
@@ -7494,7 +7691,9 @@
               "</div>" + customerSub + "</td>" +
               "<td class=\"py-3 px-4 text-slate-600\">" + escapeHtml(ord.shippingMethod || "-") + "</td>" +
               "<td class=\"py-3 px-4 font-medium text-slate-800\">NT$ " + orderAmountDue(ord) + "</td>" +
-              "<td class=\"py-3 px-4\"><button type=\"button\" class=\"order-pdf-btn px-2 py-1 rounded bg-slate-700 text-white text-xs hover:bg-slate-800 mr-1\">產生 PDF</button>" +
+              "<td class=\"py-3 px-4\">" +
+              renderOrderLineNotifyControls_(ord) +
+              "<button type=\"button\" class=\"order-pdf-btn px-2 py-1 rounded bg-slate-700 text-white text-xs hover:bg-slate-800 mr-1\">產生 PDF</button>" +
               "<button type=\"button\" class=\"order-append-btn px-2 py-1 rounded bg-amber-100 text-amber-800 text-xs hover:bg-amber-200 mr-1\" data-order-id=\"" + escapeHtml(ord.id) + "\">追加</button>" +
               "<button type=\"button\" class=\"order-edit-btn text-rose-600 hover:underline text-xs mr-1\">編輯</button>" +
               "<button type=\"button\" class=\"order-delete-btn text-red-600 hover:underline text-xs\" data-name=\"" + escapeHtml(ord.customerName || ord.id) + "\">刪除</button></td>" +
