@@ -52,14 +52,14 @@ function doGet(e) {
       var ssMeta = SpreadsheetApp.getActiveSpreadsheet();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-23-line-webhook-v5",
+        apiVersion: "2026-09-30-line-notify-v1",
         spreadsheetId: ssMeta.getId(),
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info", "line_diag"],
-        postRoutes: ["customer_order_submit", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
-        lineWebhookHint: "Webhook URL 用本 GAS 網頁應用程式 URL（可加 ?webhook_token=）。若 POST 轉址吃掉 query，只要後台已啟用仍會處理 LINE events。",
+        postRoutes: ["customer_order_submit", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_line_notify", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
+        lineWebhookHint: "Webhook URL 用 Cloudflare Worker 中繼。顧客傳「綁定 13碼卡號」可綁定推播。後台可一鍵 LINE 通知訂單進度。",
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
         memberSpreadsheetName: getMemberSpreadsheetMeta_().name
@@ -69,7 +69,7 @@ function doGet(e) {
       var lineDiag = getLineAutomationSettings_();
       return jsonOutput({
         ok: true,
-        apiVersion: "2026-09-23-line-webhook-v5",
+        apiVersion: "2026-09-30-line-notify-v1",
         enabled: !!lineDiag.enabled,
         hasChannelAccessToken: !!lineDiag.channelAccessToken,
         hasWebhookToken: !!lineDiag.webhookToken,
@@ -181,6 +181,9 @@ function doPost(e) {
         rawText: testText
       });
       return jsonOutput(testCreated);
+    }
+    if (action === "order_line_notify") {
+      return jsonOutput(sendOrderLineNotify_(ss, body));
     }
 
     // 紅利紀錄：list / sync / repair
@@ -767,8 +770,93 @@ var LINE_PROP_CHANNEL_TOKEN = "line_channel_access_token";
 var LINE_PROP_CHANNEL_SECRET = "line_channel_secret";
 var LINE_PROP_WEBHOOK_TOKEN = "line_webhook_token";
 var LINE_PROP_REPLY_TEMPLATE = "line_order_created_template";
+var LINE_PROP_NOTIFY_TEMPLATES = "line_order_notify_templates_json";
 /** 同一 LINE 用戶、狀態仍為「待處理」、且在此時間內再 +1 → 併入同一張訂單（毫秒） */
 var LINE_MERGE_WINDOW_MS_ = 2 * 60 * 60 * 1000;
+
+var LINE_NOTIFY_TYPES_ = ["confirm_pay", "paid", "shipping", "arrived", "completed"];
+
+function isLineMessagingUserId_(s) {
+  var v = String(s || "").trim();
+  return /^U[0-9a-fA-F]{20,}$/.test(v);
+}
+
+function defaultLineNotifyTemplates_() {
+  return {
+    confirm_pay: [
+      "【MAARU 訂單確認】",
+      "",
+      "{{customerName}} 您好，訂單已確認，請依下方資訊匯款。",
+      "",
+      "訂單編號：{{orderId}}",
+      "會員卡號：{{memberCardNo}}",
+      "應付金額：NT${{amountDue}}",
+      "",
+      "品項：",
+      "{{itemsSummary}}",
+      "",
+      "匯款完成後請回覆本對話告知，謝謝！"
+    ].join("\n"),
+    paid: [
+      "【MAARU 匯款確認】",
+      "",
+      "{{customerName}} 您好，已確認收到訂單 {{orderId}} 的匯款。",
+      "",
+      "金額：NT${{amountDue}}",
+      "我們會盡快為您安排出貨，謝謝！"
+    ].join("\n"),
+    shipping: [
+      "【MAARU 出貨通知】",
+      "",
+      "{{customerName}} 您好，訂單 {{orderId}} 已出貨／備貨中。",
+      "",
+      "運送方式：{{shippingMethod}}",
+      "{{storeName}}",
+      "",
+      "品項：",
+      "{{itemsSummary}}",
+      "",
+      "到貨後我們會再通知您。"
+    ].join("\n"),
+    arrived: [
+      "【MAARU 到店／可取貨】",
+      "",
+      "{{customerName}} 您好，訂單 {{orderId}} 已可取貨。",
+      "",
+      "取貨方式：{{shippingMethod}}",
+      "{{storeName}}",
+      "",
+      "請於期限內取件，謝謝！"
+    ].join("\n"),
+    completed: [
+      "【MAARU 取貨完成】",
+      "",
+      "{{customerName}} 您好，訂單 {{orderId}} 已完成。",
+      "",
+      "感謝您的支持！之後可用會員卡號查詢紀錄：",
+      "{{memberCardNo}}"
+    ].join("\n")
+  };
+}
+
+function getLineNotifyTemplates_() {
+  var props = PropertiesService.getScriptProperties();
+  var raw = String(props.getProperty(LINE_PROP_NOTIFY_TEMPLATES) || "").trim();
+  var defaults = defaultLineNotifyTemplates_();
+  if (!raw) return defaults;
+  try {
+    var parsed = JSON.parse(raw);
+    var out = {};
+    for (var i = 0; i < LINE_NOTIFY_TYPES_.length; i++) {
+      var k = LINE_NOTIFY_TYPES_[i];
+      var t = parsed && parsed[k] != null ? String(parsed[k]).trim() : "";
+      out[k] = t || defaults[k];
+    }
+    return out;
+  } catch (e) {
+    return defaults;
+  }
+}
 
 function defaultLineOrderCreatedTemplate_() {
   return [
@@ -844,7 +932,8 @@ function getLineAutomationSettings_() {
     channelAccessToken: String(props.getProperty(LINE_PROP_CHANNEL_TOKEN) || ""),
     channelSecret: String(props.getProperty(LINE_PROP_CHANNEL_SECRET) || ""),
     webhookToken: String(props.getProperty(LINE_PROP_WEBHOOK_TOKEN) || ""),
-    orderCreatedTemplate: String(props.getProperty(LINE_PROP_REPLY_TEMPLATE) || "") || defaultLineOrderCreatedTemplate_()
+    orderCreatedTemplate: String(props.getProperty(LINE_PROP_REPLY_TEMPLATE) || "") || defaultLineOrderCreatedTemplate_(),
+    notifyTemplates: getLineNotifyTemplates_()
   };
 }
 
@@ -862,9 +951,11 @@ function getLineAutomationSettingsPublic_(includeSecrets) {
     channelAccessTokenMasked: token ? (token.slice(0, 6) + "…" + token.slice(-4)) : "",
     channelSecretMasked: secret ? (secret.slice(0, 4) + "…" + secret.slice(-2)) : "",
     webhookTokenMasked: wh ? (wh.slice(0, 4) + "…" + wh.slice(-2)) : "",
-    // Webhook token 需給後台組 URL；Channel token／secret 不回傳明文
     webhookToken: wh,
     orderCreatedTemplate: s.orderCreatedTemplate,
+    notifyTemplates: s.notifyTemplates,
+    notifyTypes: LINE_NOTIFY_TYPES_.slice(),
+    bindHint: "顧客請先加官方帳號為好友，傳：綁定 13碼會員卡號",
     message: "OK"
   };
 }
@@ -886,13 +977,11 @@ function saveLineAutomationSettings_(body) {
   if (body.clearChannelSecret) props.deleteProperty(LINE_PROP_CHANNEL_SECRET);
   if (body.clearWebhookToken) props.deleteProperty(LINE_PROP_WEBHOOK_TOKEN);
   if (body.webhookToken != null && String(body.webhookToken).trim() !== "") {
-    // 前端已產生的 token 優先寫入（勿再被下方 generate 覆寫成另一組）
     props.setProperty(LINE_PROP_WEBHOOK_TOKEN, String(body.webhookToken).trim());
   } else if (body.generateWebhookToken) {
     var gen = Utilities.getUuid().replace(/-/g, "").slice(0, 24);
     props.setProperty(LINE_PROP_WEBHOOK_TOKEN, gen);
   } else if (!String(props.getProperty(LINE_PROP_WEBHOOK_TOKEN) || "").trim()) {
-    // 首次儲存若尚未有 token，自動產生一組
     props.setProperty(LINE_PROP_WEBHOOK_TOKEN, Utilities.getUuid().replace(/-/g, "").slice(0, 24));
   }
   if (body.orderCreatedTemplate != null) {
@@ -900,6 +989,18 @@ function saveLineAutomationSettings_(body) {
     if (!tpl) tpl = defaultLineOrderCreatedTemplate_();
     if (tpl.length > 1800) tpl = tpl.slice(0, 1800);
     props.setProperty(LINE_PROP_REPLY_TEMPLATE, tpl);
+  }
+  if (body.notifyTemplates != null && typeof body.notifyTemplates === "object") {
+    var defaults = defaultLineNotifyTemplates_();
+    var toSave = {};
+    for (var i = 0; i < LINE_NOTIFY_TYPES_.length; i++) {
+      var k = LINE_NOTIFY_TYPES_[i];
+      var t = body.notifyTemplates[k] != null ? String(body.notifyTemplates[k]).trim() : "";
+      if (!t) t = defaults[k];
+      if (t.length > 1800) t = t.slice(0, 1800);
+      toSave[k] = t;
+    }
+    props.setProperty(LINE_PROP_NOTIFY_TEMPLATES, JSON.stringify(toSave));
   }
   return getLineAutomationSettingsPublic_(true);
 }
@@ -1005,13 +1106,42 @@ function claimLineEventOnce_(event) {
 function processLineEvent_(event, settings) {
   event = event || {};
   if (event.type === "follow") {
-    return { ok: true, type: "follow" };
+    var followToken = event.replyToken || "";
+    var followUser = String((event.source && event.source.userId) || "").trim();
+    var followAccess = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
+    if (followToken && followAccess) {
+      replyLineText_(followToken, followAccess,
+        "歡迎加入 MAARU！\n\n若要接收訂單進度通知，請傳送：\n綁定 您的13碼會員卡號\n\n若要登記商品，請傳送例如：\n商品名稱 +1");
+    }
+    return { ok: true, type: "follow", userId: followUser };
   }
   if (event.type !== "message" || !event.message || event.message.type !== "text") {
     return { ok: true, skipped: "not_text" };
   }
   var text = String(event.message.text || "").trim();
   if (!text) return { ok: true, skipped: "empty" };
+
+  var replyToken = event.replyToken || "";
+  var source = event.source || {};
+  var userId = String(source.userId || "").trim();
+  var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
+
+  // P0：綁定會員卡號 → 之後可 Push 訂單通知
+  var bindMatch = text.match(/^(?:綁定|bind)\s*[:：]?\s*(\d{13})\s*$/i);
+  if (bindMatch) {
+    var bindCard = normalizeMemberCardNo_(bindMatch[1]);
+    var bindRes = bindLineUserIdToMemberCard_(SpreadsheetApp.getActiveSpreadsheet(), userId, bindCard);
+    var bindMsg = bindRes.error
+      ? ("綁定失敗：" + (bindRes.message || "請確認卡號"))
+      : ("綁定成功！\n會員卡號：" + bindCard + "\n之後店家更新訂單進度時，會透過官方 LINE 通知您。");
+    if (accessToken) sendLineUserText_(userId, replyToken, accessToken, bindMsg);
+    return { ok: !bindRes.error, type: "bind", memberCardNo: bindCard, message: bindRes.message || "OK" };
+  }
+  if (/^(?:綁定|bind)\s*$/i.test(text) || text === "綁定說明") {
+    var help = "請傳送：\n綁定 13碼會員卡號\n\n例：綁定 2026092312345\n\n卡號請向店家索取，或見訂單成立訊息。";
+    if (accessToken) sendLineUserText_(userId, replyToken, accessToken, help);
+    return { ok: true, type: "bind_help" };
+  }
 
   // 僅處理像喊單／登記清單的訊息，一般閒聊不回
   if (!looksLikeLineOrderMessage_(text)) {
@@ -1024,10 +1154,6 @@ function processLineEvent_(event, settings) {
     return { ok: true, skipped: "duplicate_event" };
   }
 
-  var replyToken = event.replyToken || "";
-  var source = event.source || {};
-  var userId = String(source.userId || "").trim();
-  var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
   var displayName = "";
   if (userId && accessToken) {
     displayName = fetchLineDisplayName_(userId, accessToken) || "";
@@ -1054,9 +1180,19 @@ function processLineEvent_(event, settings) {
     return created;
   }
 
+  // 建單成功後一併把 userId 綁到該會員卡（若有卡號）
+  try {
+    if (userId && isValidMemberCardNo_(created.memberCardNo)) {
+      bindLineUserIdToMemberCard_(SpreadsheetApp.getActiveSpreadsheet(), userId, created.memberCardNo);
+    }
+  } catch (eBind) { /* ignore */ }
+
   var replyText = created.merged
     ? renderLineOrderCreatedTemplate_(defaultLineOrderMergedTemplate_(), created)
     : renderLineOrderCreatedTemplate_(settings.orderCreatedTemplate, created);
+  if (!created.merged && created.memberCardNo) {
+    replyText += "\n\n——\n接收訂單進度通知請傳送：\n綁定 " + created.memberCardNo;
+  }
   var sendRes = { replied: false, replyMode: "", detail: null };
   if (accessToken) {
     sendRes = sendLineUserText_(userId, replyToken, accessToken, replyText);
@@ -1471,6 +1607,238 @@ function pushLineText_(userId, accessToken, text) {
   } catch (e) {
     return { ok: false, message: String(e && e.message ? e.message : e) };
   }
+}
+
+/** 會員卡號 ↔ Messaging API userId（U…）綁定，供後台一鍵推播 */
+function bindLineUserIdToMemberCard_(ss, userId, card) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  userId = String(userId || "").trim();
+  card = normalizeMemberCardNo_(card);
+  if (!isLineMessagingUserId_(userId)) {
+    return { error: true, message: "無法取得 LINE 用戶識別（請從官方帳號對話傳送）" };
+  }
+  if (!isValidMemberCardNo_(card)) {
+    return { error: true, message: "會員卡號須為 13 碼數字" };
+  }
+  var sheet = getMemberSheet(ss);
+  ensureMemberHeaderRow_(sheet);
+  var existing = getMemberRecordByCard_(ss, card);
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
+  var member;
+  if (existing) {
+    member = normalizeMemberRecord_(existing);
+    member.lineUserId = userId;
+    if (!member.lineId || isLineMessagingUserId_(member.lineId)) {
+      member.lineId = userId;
+    }
+    member.updatedAt = now;
+    if (!member.status) member.status = "有效";
+  } else {
+    member = normalizeMemberRecord_({
+      memberCardNo: card,
+      customerName: "",
+      lineId: userId,
+      lineUserId: userId,
+      status: "有效",
+      note: "LINE 綁定",
+      createdAt: now.slice(0, 10),
+      updatedAt: now
+    });
+  }
+  // 直接寫入，避免 pickRicher 覆寫掉剛綁的 lineUserId
+  var rowNum = findMemberRowByCard_(sheet, card);
+  var row = buildRowFromMemberRecord_(member);
+  if (rowNum <= 0) {
+    sheet.appendRow(row);
+  } else {
+    var width = Math.max(row.length, getStandardMemberHeaders_().length, sheet.getLastColumn());
+    while (row.length < width) row.push("");
+    sheet.getRange(rowNum, 1, 1, width).setValues([row.slice(0, width)]);
+  }
+  try {
+    patchOrdersLineUserIdByCard_(ss, card, userId);
+  } catch (ePatch) {
+    Logger.log("patchOrdersLineUserIdByCard_: " + ePatch);
+  }
+  return { error: false, message: "OK", memberCardNo: card, lineUserId: userId };
+}
+
+/** 綁定後：同卡訂單若 lineId 空白或已是 userId，寫入推播用 userId */
+function patchOrdersLineUserIdByCard_(ss, card, userId) {
+  card = normalizeMemberCardNo_(card);
+  userId = String(userId || "").trim();
+  if (!isValidMemberCardNo_(card) || !isLineMessagingUserId_(userId)) return 0;
+  var orderSheet = getOrderSheet(ss);
+  if (!orderSheet) return 0;
+  var list = getAllOrdersMerged_(ss);
+  var patched = 0;
+  for (var i = 0; i < list.length; i++) {
+    var ord = list[i];
+    if (!ord || normalizeMemberCardNo_(ord.memberCardNo) !== card) continue;
+    var cur = String(ord.lineId || "").trim();
+    if (cur && !isLineMessagingUserId_(cur) && cur !== userId) continue;
+    if (cur === userId) continue;
+    ord.lineId = userId;
+    try {
+      upsertOrder(orderSheet, ord);
+      patched++;
+    } catch (e) {
+      Logger.log("patch order lineId failed: " + (ord.id || "") + " " + e);
+    }
+  }
+  if (patched) clearOrderListCache_(orderSheet);
+  return patched;
+}
+
+function buildLineUserIdByCardMap_(ss) {
+  var map = {};
+  try {
+    var members = getMembers(getMemberSheet(ss));
+    for (var i = 0; i < members.length; i++) {
+      var m = members[i];
+      var c = normalizeMemberCardNo_(m.memberCardNo);
+      if (!isValidMemberCardNo_(c)) continue;
+      var uid = "";
+      if (isLineMessagingUserId_(m.lineUserId)) uid = String(m.lineUserId).trim();
+      else if (isLineMessagingUserId_(m.lineId)) uid = String(m.lineId).trim();
+      if (uid) map[c] = uid;
+    }
+  } catch (e) { /* ignore */ }
+  return map;
+}
+
+function resolveLinePushUserIdForOrder_(ss, order) {
+  if (!order) return "";
+  if (isLineMessagingUserId_(order.lineId)) return String(order.lineId).trim();
+  var card = normalizeMemberCardNo_(order.memberCardNo);
+  if (!isValidMemberCardNo_(card)) return "";
+  var member = getMemberRecordByCard_(ss, card);
+  if (!member) return "";
+  if (isLineMessagingUserId_(member.lineUserId)) return String(member.lineUserId).trim();
+  if (isLineMessagingUserId_(member.lineId)) return String(member.lineId).trim();
+  return "";
+}
+
+function orderCanLineNotify_(order, userByCard) {
+  if (!order) return false;
+  if (isLineMessagingUserId_(order.lineId)) return true;
+  var card = normalizeMemberCardNo_(order.memberCardNo);
+  return !!(card && userByCard && userByCard[card]);
+}
+
+function enrichOrdersLineNotifyFlags_(ss, orders) {
+  var map = buildLineUserIdByCardMap_(ss);
+  for (var i = 0; i < (orders || []).length; i++) {
+    if (!orders[i]) continue;
+    orders[i].canLineNotify = orderCanLineNotify_(orders[i], map);
+  }
+  return orders;
+}
+
+function buildLineNotifyTemplateVars_(order) {
+  order = order || {};
+  var items = Array.isArray(order.items) ? order.items : [];
+  var summaryLines = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i] || {};
+    var name = String(it.lineName || it.name || it.product || "").trim() || "商品";
+    var qty = Number(it.qty != null ? it.qty : it.quantity) || 0;
+    var price = Number(it.price) || 0;
+    var lineTotal = Math.round(price * qty);
+    var pricePart = price > 0 ? ("  NT$" + lineTotal) : "";
+    summaryLines.push("・" + name + " × " + qty + pricePart);
+  }
+  var storeName = String(order.storeName || "").trim();
+  var storeLine = storeName ? ("門市／取貨處：" + storeName) : "";
+  return {
+    orderId: String(order.id || "").trim(),
+    memberCardNo: normalizeMemberCardNo_(order.memberCardNo) || "",
+    customerName: String(order.customerName || "").trim() || "顧客",
+    itemsSummary: summaryLines.length ? summaryLines.join("\n") : "（詳見訂單）",
+    subtotal: String(Math.round(Number(order.subtotal) || 0)),
+    amountDue: String(Math.round(orderAmountDuePublic_(order) || 0)),
+    shippingMethod: String(order.shippingMethod || "").trim() || "—",
+    storeName: storeLine,
+    status: String(order.status || "").trim()
+  };
+}
+
+function renderLineNotifyTemplate_(template, order) {
+  var tpl = String(template || "");
+  var v = buildLineNotifyTemplateVars_(order);
+  return tpl
+    .replace(/\{\{orderId\}\}/g, v.orderId)
+    .replace(/\{\{memberCardNo\}\}/g, v.memberCardNo)
+    .replace(/\{\{customerName\}\}/g, v.customerName)
+    .replace(/\{\{itemsSummary\}\}/g, v.itemsSummary)
+    .replace(/\{\{subtotal\}\}/g, v.subtotal)
+    .replace(/\{\{amountDue\}\}/g, v.amountDue)
+    .replace(/\{\{shippingMethod\}\}/g, v.shippingMethod)
+    .replace(/\{\{storeName\}\}/g, v.storeName)
+    .replace(/\{\{status\}\}/g, v.status);
+}
+
+/**
+ * 後台一鍵推播：body = { orderId, notifyType: confirm_pay|paid|shipping|arrived|completed }
+ */
+function sendOrderLineNotify_(ss, body) {
+  body = body || {};
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var notifyType = String(body.notifyType || body.type || "").trim();
+  var orderId = String(body.orderId || body.id || "").trim();
+  if (LINE_NOTIFY_TYPES_.indexOf(notifyType) < 0) {
+    return { error: true, message: "未知通知類型（可用：" + LINE_NOTIFY_TYPES_.join("、") + "）" };
+  }
+  if (!orderId) return { error: true, message: "缺少訂單編號" };
+
+  var settings = getLineAutomationSettings_();
+  var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
+  if (!accessToken) {
+    return { error: true, message: "尚未設定 Channel access token（請到網站設定 → LINE）" };
+  }
+
+  var orderSheet = getOrderSheet(ss);
+  if (!orderSheet) return { error: true, message: "找不到訂單工作表" };
+  var order = getOrderById_(orderSheet, orderId, ss);
+  if (!order) return { error: true, message: "找不到訂單 " + orderId };
+
+  var userId = resolveLinePushUserIdForOrder_(ss, order);
+  var cardHint = normalizeMemberCardNo_(order.memberCardNo) || "您的13碼會員卡號";
+  if (!userId) {
+    return {
+      error: true,
+      canNotify: false,
+      orderId: orderId,
+      notifyType: notifyType,
+      message: "此訂單尚未綁定 LINE 推播。請請顧客加官方帳號後傳送：綁定 " + cardHint
+    };
+  }
+
+  var templates = getLineNotifyTemplates_();
+  var text = renderLineNotifyTemplate_(templates[notifyType] || "", order);
+  if (!String(text || "").trim()) {
+    return { error: true, message: "通知模板為空，請到 LINE 設定補上" };
+  }
+  var pushRes = pushLineText_(userId, accessToken, text);
+  if (!pushRes || !pushRes.ok) {
+    var detail = (pushRes && (pushRes.message || pushRes.body)) || "unknown";
+    return {
+      error: true,
+      canNotify: true,
+      orderId: orderId,
+      notifyType: notifyType,
+      message: "Push 失敗：" + String(detail).slice(0, 200),
+      pushCode: pushRes && pushRes.code
+    };
+  }
+  return {
+    error: false,
+    message: "已推播 LINE 通知",
+    orderId: orderId,
+    notifyType: notifyType,
+    canNotify: true,
+    pushed: true
+  };
 }
 
 function isPointsLedgerSheetName_(name) {
@@ -2566,6 +2934,9 @@ function getOrdersPaged_(sheet, opts, ss) {
     page = filtered.slice(offset, offset + limit);
   }
   if (summary) page = page.map(toOrderSummary_);
+  try {
+    enrichOrdersLineNotifyFlags_(ss || SpreadsheetApp.getActiveSpreadsheet(), page);
+  } catch (eNotify) { /* ignore */ }
   return {
     orders: page,
     total: total,
@@ -2589,7 +2960,11 @@ function getOrderById_(sheet, id, ss) {
     for (var i = 0; i < cachedFull.length; i++) {
       var oid = normalizeOrderId_(String(cachedFull[i].id || "").trim());
       if (oid === want || String(cachedFull[i].id || "").trim().toUpperCase() === wantU) {
-        return cachedFull[i];
+        var hit = cachedFull[i];
+        try {
+          enrichOrdersLineNotifyFlags_(ss || SpreadsheetApp.getActiveSpreadsheet(), [hit]);
+        } catch (eHit) { /* ignore */ }
+        return hit;
       }
     }
   }
@@ -2607,7 +2982,11 @@ function getOrderById_(sheet, id, ss) {
   var obj = parseOrderObjectFromRowCells_(headers, keyMap, cardCol, values, display, false);
   if (!obj) return null;
   var enriched = enrichOrdersMemberCardFromLedger_([obj], ss || SpreadsheetApp.getActiveSpreadsheet());
-  return enriched && enriched[0] ? enriched[0] : obj;
+  var found = enriched && enriched[0] ? enriched[0] : obj;
+  try {
+    enrichOrdersLineNotifyFlags_(ss || SpreadsheetApp.getActiveSpreadsheet(), [found]);
+  } catch (e2) { /* ignore */ }
+  return found;
 }
 
 function jsonOutput(obj) {
@@ -5606,6 +5985,7 @@ function getStandardMemberHeaders_() {
     "姓名",
     "電話",
     "Line ID",
+    "LINE推播ID",
     "Email",
     "狀態",
     "備註",
@@ -5620,10 +6000,32 @@ function ensureMemberHeaderRow_(sheet) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     return;
   }
-  var row1 = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length)).getValues()[0];
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var row1 = sheet.getRange(1, 1, 1, Math.max(lastCol, headers.length)).getValues()[0];
   var hasHeader = row1.some(function(h) { return (h || "").toString().trim() !== ""; });
   if (!hasHeader) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return;
+  }
+  // 既有表補上「LINE推播ID」欄（不覆寫其他欄位）
+  var existing = row1.map(function(h) { return (h || "").toString().trim(); });
+  var needPushCol = true;
+  for (var i = 0; i < existing.length; i++) {
+    if (existing[i] === "LINE推播ID" || existing[i] === "lineUserId" || existing[i] === "LINE User ID") {
+      needPushCol = false;
+      break;
+    }
+  }
+  if (needPushCol) {
+    var insertAt = existing.length + 1;
+    for (var j = 0; j < existing.length; j++) {
+      if (existing[j] === "Line ID" || existing[j] === "lineId") {
+        insertAt = j + 2;
+        break;
+      }
+    }
+    sheet.insertColumnAfter(Math.max(insertAt - 1, 1));
+    sheet.getRange(1, insertAt).setValue("LINE推播ID");
   }
 }
 
@@ -5634,6 +6036,7 @@ function memberKeyMap_(headers) {
     ["姓名", "customerName", "name"],
     ["電話", "phone"],
     ["Line ID", "lineId"],
+    ["LINE推播ID", "lineUserId", "LINE User ID", "line user id"],
     ["Email", "email"],
     ["狀態", "status"],
     ["備註", "note", "remark"],
@@ -5646,7 +6049,7 @@ function memberKeyMap_(headers) {
     for (var a = 0; a < aliases.length; a++) {
       var group = aliases[a];
       for (var g = 0; g < group.length; g++) {
-        if (h === group[g]) {
+        if (h === group[g] || h.toLowerCase() === String(group[g]).toLowerCase()) {
           map[c] = group.length > 1 ? group[1] : group[0];
           break;
         }
@@ -5664,6 +6067,7 @@ function normalizeMemberRecord_(rec) {
     customerName: String(r.customerName != null ? r.customerName : (r.name || "")).trim(),
     phone: String(r.phone != null ? r.phone : "").trim(),
     lineId: String(r.lineId != null ? r.lineId : "").trim(),
+    lineUserId: String(r.lineUserId != null ? r.lineUserId : "").trim(),
     email: String(r.email != null ? r.email : "").trim(),
     status: String(r.status != null ? r.status : "有效").trim() || "有效",
     note: String(r.note != null ? r.note : (r.remark || "")).trim(),
@@ -5828,6 +6232,7 @@ function scoreMemberRecordCompleteness_(rec) {
   if (rec.customerName) s += 3;
   if (rec.phone) s += 2;
   if (rec.lineId) s += 1;
+  if (rec.lineUserId) s += 2;
   if (rec.email) s += 1;
   if (rec.note) s += 1;
   return s;
@@ -5881,15 +6286,18 @@ function upsertMemberFromOrder_(ss, order) {
   var card = normalizeMemberCardNo_(order.memberCardNo);
   if (!isValidMemberCardNo_(card)) return null;
   var sheet = getMemberSheet(ss);
-  return upsertMemberRecord_(sheet, {
+  var lineId = String(order.lineId || "").trim();
+  var payload = {
     memberCardNo: card,
     customerName: order.customerName || "",
     phone: order.phone || "",
-    lineId: order.lineId || "",
+    lineId: lineId,
     email: order.email || "",
     status: "有效",
     note: "由訂單 " + normalizeOrderId_(order.id) + " 自動更新"
-  }, ss);
+  };
+  if (isLineMessagingUserId_(lineId)) payload.lineUserId = lineId;
+  return upsertMemberRecord_(sheet, payload, ss);
 }
 
 function checkMemberUpsertConflict_(existingMembers, member, card) {
@@ -5935,8 +6343,11 @@ function upsertMemberRecord_(sheet, member, ss) {
       }
     }
     if (prev) {
+      var incomingLineUserId = String(member.lineUserId || "").trim();
       member = normalizeMemberRecord_(pickRicherMemberRecord_(prev, member));
       member.memberCardNo = card;
+      if (isLineMessagingUserId_(incomingLineUserId)) member.lineUserId = incomingLineUserId;
+      else if (isLineMessagingUserId_(prev.lineUserId) && !member.lineUserId) member.lineUserId = prev.lineUserId;
       if (!member.createdAt) member.createdAt = prev.createdAt || now.slice(0, 10);
     }
   }

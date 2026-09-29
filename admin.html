@@ -5235,6 +5235,10 @@
           return ord;
         }
 
+        function isLineMessagingUserIdClient_(s) {
+          return /^U[0-9a-fA-F]{20,}$/.test(String(s || "").trim());
+        }
+
         function mergeOrderRecordPreferComplete_(sheetOrd, localOrd) {
           if (!localOrd) return normalizeOrderFieldsForAdmin_(sheetOrd);
           if (!sheetOrd) return normalizeOrderFieldsForAdmin_(localOrd);
@@ -5247,8 +5251,14 @@
               if (Array.isArray(lv) && lv.length) out.items = lv;
               return;
             }
+            // 推播旗標／Messaging userId 以伺服器為準，避免本機舊快取把「可推播」蓋回灰底
+            if (key === "canLineNotify") return;
+            if (key === "lineId" && isLineMessagingUserIdClient_(sheetOrd.lineId)) return;
+            if (key === "lineId" && !isLineMessagingUserIdClient_(lv) && isLineMessagingUserIdClient_(out.lineId)) return;
             out[key] = lv;
           });
+          if (typeof sheetOrd.canLineNotify === "boolean") out.canLineNotify = sheetOrd.canLineNotify;
+          else if (isLineMessagingUserIdClient_(out.lineId)) out.canLineNotify = true;
           return normalizeOrderFieldsForAdmin_(out);
         }
 
@@ -7593,10 +7603,10 @@
 
         function orderLooksLineNotifyBound_(ord) {
           if (!ord) return false;
+          // Messaging userId（U…）優先：有就能推，不受本機舊 canLineNotify=false 影響
+          if (isLineMessagingUserIdClient_(ord.lineId)) return true;
           if (ord.canLineNotify === true) return true;
-          if (ord.canLineNotify === false) return false;
-          var lid = String(ord.lineId || "").trim();
-          return /^U[0-9a-fA-F]{20,}$/.test(lid);
+          return false;
         }
 
         function renderOrderLineNotifyControls_(ord) {
