@@ -1127,20 +1127,43 @@ function processLineEvent_(event, settings) {
   var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
 
   // P0：綁定會員卡號 → 之後可 Push 訂單通知
-  var bindMatch = text.match(/^(?:綁定|bind)\s*[:：]?\s*(\d{13})\s*$/i);
-  if (bindMatch) {
-    var bindCard = normalizeMemberCardNo_(bindMatch[1]);
+  // 支援：綁定 2026…／綁定：2026…／全形數字／訊息內含剛好 13 碼
+  var bindIntent = /^(?:綁定|bind)\b/i.test(text) || /^綁定/.test(text);
+  if (bindIntent) {
+    var digitsOnly = String(text || "")
+      .replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .replace(/\D/g, "");
+    var bindCard = "";
+    var m13 = text.match(/(?:綁定|bind)\s*[:：]?\s*(\d{13})\b/i);
+    if (m13) bindCard = normalizeMemberCardNo_(m13[1]);
+    else if (/^\d{13}$/.test(digitsOnly)) bindCard = digitsOnly;
+    else {
+      var any13 = digitsOnly.match(/\d{13}/);
+      if (any13) bindCard = any13[0];
+    }
+
+    if (!isValidMemberCardNo_(bindCard)) {
+      var help = [
+        "綁定格式不正確。",
+        "",
+        "請傳送（中間一個空格＋完整 13 碼數字）：",
+        "綁定 2026092312345",
+        "",
+        "⚠ 不要傳「綁定 卡號」這幾個字，",
+        "要把「卡號」換成訂單上的 13 碼會員卡號。",
+        "",
+        "卡號可在：訂單成立訊息、後台訂單「會員卡號」欄看到。"
+      ].join("\n");
+      if (accessToken) sendLineUserText_(userId, replyToken, accessToken, help);
+      return { ok: false, type: "bind_help", message: "invalid_card_format", text: text };
+    }
+
     var bindRes = bindLineUserIdToMemberCard_(SpreadsheetApp.getActiveSpreadsheet(), userId, bindCard);
     var bindMsg = bindRes.error
-      ? ("綁定失敗：" + (bindRes.message || "請確認卡號"))
+      ? ("綁定失敗：" + (bindRes.message || "請確認卡號或稍後再試"))
       : ("綁定成功！\n會員卡號：" + bindCard + "\n之後店家更新訂單進度時，會透過官方 LINE 通知您。");
     if (accessToken) sendLineUserText_(userId, replyToken, accessToken, bindMsg);
     return { ok: !bindRes.error, type: "bind", memberCardNo: bindCard, message: bindRes.message || "OK" };
-  }
-  if (/^(?:綁定|bind)\s*$/i.test(text) || text === "綁定說明") {
-    var help = "請傳送：\n綁定 13碼會員卡號\n\n例：綁定 2026092312345\n\n卡號請向店家索取，或見訂單成立訊息。";
-    if (accessToken) sendLineUserText_(userId, replyToken, accessToken, help);
-    return { ok: true, type: "bind_help" };
   }
 
   // 僅處理像喊單／登記清單的訊息，一般閒聊不回
