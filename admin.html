@@ -1119,6 +1119,15 @@
             <label class="block text-xs font-medium text-slate-500 mb-1">商品名稱 *</label>
             <input type="text" name="name" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">開團地區 <span class="text-rose-500">*</span></label>
+            <select name="region" id="productRegionSelect" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
+              <option value="">-- 請選擇日本或韓國 --</option>
+              <option value="日本">日本開團</option>
+              <option value="韓國">韓國開團</option>
+            </select>
+            <p class="text-[11px] text-slate-400 mt-1">顧客官網會先依「日本／韓國」分流瀏覽，請務必標示正確地區。</p>
+          </div>
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-medium text-slate-500 mb-1">分類</label>
@@ -3226,6 +3235,7 @@
         if (!p) return {};
         return {
           name: p.name || p.商品名稱 || "",
+          region: p.region || p.地區 || p.開團地區 || "",
           category: p.category || p.分類 || "",
           subcategory: p.subcategory || p.子分類 || "",
           variant: p.variant || p.規格 || "",
@@ -3259,6 +3269,7 @@
         var r = parseInt(rowIndex, 10);
         var patch = Object.assign({}, product, { _rowIndex: r });
         if (patch.name) patch.商品名稱 = patch.name;
+        if (patch.region) patch.地區 = patch.region;
         if (patch.category) patch.分類 = patch.category;
         if (patch.subcategory) patch.子分類 = patch.subcategory;
         if (patch.variant) patch.規格 = patch.variant;
@@ -3290,6 +3301,7 @@
         if (product.variantImages != null) product.規格圖片 = product.variantImages;
         if (product.stockType) { product.貨況 = product.stockType; product.現貨預購 = product.stockType; }
         if (product.status) product.狀態 = product.status;
+        if (product.region) product.地區 = product.region;
         if (product.category) product.分類 = product.category;
         if (product.subcategory) product.子分類 = product.subcategory;
         if (product.publishedAt) product.上架日期 = product.publishedAt;
@@ -3436,6 +3448,7 @@
             document.getElementById("modalTitle").textContent = "編輯商品";
             setFormValues({
               name: p.name || p.商品名稱,
+              region: p.region || p.地區 || p.開團地區 || "",
               category: p.category || p.分類,
               subcategory: p.subcategory || p.子分類,
               variant: p.variant || p.規格,
@@ -4301,10 +4314,11 @@
         syncVariantDimsToHidden_();
         var form = document.getElementById("productForm");
         var o = {};
-        ["name", "category", "subcategory", "variant", "price", "sellingPrice", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "variantDim1Label", "variantDim1Options", "variantDim2Label", "variantDim2Options", "description", "introduction", "publishedAt", "customerDisplayPrice"].forEach(function(key) {
+        ["name", "region", "category", "subcategory", "variant", "price", "sellingPrice", "profit", "cost", "stock", "status", "stockType", "image", "variantImages", "variantStock", "variantDim1Label", "variantDim1Options", "variantDim2Label", "variantDim2Options", "description", "introduction", "publishedAt", "customerDisplayPrice"].forEach(function(key) {
           var el = form.querySelector("[name=" + key + "]");
           o[key] = el ? el.value : "";
         });
+        if (o.region) o["地區"] = o.region;
         var rateInp = document.getElementById("productFormRateInput");
         if (rateInp && (rateInp.value || "").trim() !== "") {
           o.rate = Number(rateInp.value);
@@ -4605,11 +4619,12 @@
 
       document.getElementById("btnExport").addEventListener("click", function() {
         if (products.length === 0) { showMessage("尚無商品可匯出", true); return; }
-        var headers = ["商品名稱", "分類", "子分類", "規格", "日幣價格", "售價", "利潤", "成本", "庫存", "貨況", "圖片", "描述"];
+        var headers = ["商品名稱", "地區", "分類", "子分類", "規格", "日幣價格", "售價", "利潤", "成本", "庫存", "貨況", "圖片", "描述"];
         var rows = [headers.join(",")];
         products.forEach(function(p) {
           var row = [
             (p.name || p.商品名稱 || ""),
+            (p.region || p.地區 || p.開團地區 || ""),
             (p.category || p.分類 || ""),
             (p.subcategory || p.子分類 || ""),
             (p.variant || p.規格 || ""),

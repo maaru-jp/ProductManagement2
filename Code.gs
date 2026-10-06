@@ -3221,6 +3221,7 @@ function isBlankProductValue_(val) {
 }
 
 function mergeRowFromProduct_(sheet, rowNum, product) {
+  ensureProductRegionColumn_(sheet);
   var meta = getSheetHeaderMeta_(sheet);
   var headers = meta.headers;
   var colCount = meta.colCount;
@@ -3315,7 +3316,22 @@ function applyVariantDimHeadersToRow_(headers, row, product, forceWrite) {
 /**
  * 依工作表第一列標題，將 product 物件轉成與欄位對應的一列陣列；並補上庫存、規格庫存。
  */
+/** 商品表若尚無「地區」欄，自動加在表頭最後一欄（日本／韓國開團） */
+function ensureProductRegionColumn_(sheet) {
+  if (!sheet) return;
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) {
+    return normalizeHeaderName_(h);
+  });
+  for (var i = 0; i < headers.length; i++) {
+    var h = headers[i];
+    if (h === "地區" || h === "開團地區" || h === "region" || h === "Region") return;
+  }
+  sheet.getRange(1, lastCol + 1).setValue("地區");
+}
+
 function buildRowFromProduct(sheet, product) {
+  ensureProductRegionColumn_(sheet);
   var meta = getSheetHeaderMeta_(sheet);
   var headers = meta.headers;
   var keyMap = buildKeyMap(headers);
@@ -3497,6 +3513,7 @@ function buildKeyMap(headers) {
     ["規格", "顏色", "option", "variant"],
     ["分類", "category"],
     ["子分類", "subcategory"],
+    ["地區", "開團地區", "region", "Region"],
     ["角色", "character"],
     ["售價", "售價(TW)", "sellingPrice"],
     ["顧客顯示售價", "customerDisplayPrice"],
