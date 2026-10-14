@@ -874,8 +874,17 @@ function defaultLineNotifyTemplates_() {
     confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping: [
-      "實際到貨時間依物流安排為主",
-      "如有任何問題，歡迎隨時與小幫手聯繫，謝謝您的支持與耐心等候"
+      "您的訂單已出貨",
+      "",
+      "您好：",
+      "",
+      "您的訂單已安排出貨，本次附上訂單明細，方便您收到商品後核對品項與數量，請留意查收。",
+      "",
+      "📌 到貨時間依物流配送安排為主",
+      "",
+      "如有任何問題，歡迎隨時與小幫手聯繫",
+      "",
+      "感謝您的支持與耐心等候，期待您收到商品後會喜歡"
     ].join("\n"),
     arrived: [
       "【MAARU 到店／可取貨】",
@@ -927,8 +936,14 @@ function getLineNotifyTemplates_() {
         out.confirm_pay = defaults.confirm_pay;
       }
     }
-    // 出貨通知：內文不重複運送方式／門市
-    if (out.shipping && /運送方式|shippingMethod|storeName|品項|itemsSummary/.test(out.shipping)) {
+    // 出貨通知：內文不重複運送方式／門市；舊短結語一併升級
+    if (
+      out.shipping &&
+      (
+        /運送方式|shippingMethod|storeName|品項|itemsSummary/.test(out.shipping) ||
+        /實際到貨時間依物流安排為主/.test(out.shipping)
+      )
+    ) {
       out.shipping = defaults.shipping;
     }
     return out;
@@ -2580,6 +2595,19 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
 
   if (notifyType === "shipping") {
     // 出貨通知內文：不重複運送方式／門市（門市已在上方區塊）
+    var shippingBody = [
+      "您的訂單已出貨",
+      "",
+      "您好：",
+      "",
+      "您的訂單已安排出貨，本次附上訂單明細，方便您收到商品後核對品項與數量，請留意查收。",
+      "",
+      "📌 到貨時間依物流配送安排為主",
+      "",
+      "如有任何問題，歡迎隨時與小幫手聯繫",
+      "",
+      "感謝您的支持與耐心等候，期待您收到商品後會喜歡"
+    ].join("\n");
     bodyContents.push({
       type: "separator",
       margin: "md",
@@ -2591,10 +2619,10 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       spacing: "sm",
       margin: "md",
       contents: [
-        { type: "text", text: meta.sectionEmoji || "📦", size: "md", flex: 0 },
+        { type: "text", text: "📦", size: "md", flex: 0 },
         {
           type: "text",
-          text: meta.sectionLabel || "出貨通知",
+          text: "出貨通知",
           size: "md",
           weight: "bold",
           color: theme.text,
@@ -2604,7 +2632,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "實際到貨時間依物流安排為主\n如有任何問題，歡迎隨時與小幫手聯繫，謝謝您的支持與耐心等候",
+      text: shippingBody,
       size: "md",
       weight: "bold",
       color: theme.textSoft,
