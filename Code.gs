@@ -1202,10 +1202,21 @@ function processLineEvent_(event, settings) {
     var followUser = String((event.source && event.source.userId) || "").trim();
     var followAccess = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
     if (followToken && followAccess) {
-      replyLineText_(followToken, followAccess,
-        "歡迎加入 MAARU！\n\n若要接收訂單進度通知，請傳送：\n綁定 您的13碼會員卡號\n\n若要登記商品，請傳送例如：\n商品名稱 +1");
+      sendLineUserMessages_(followUser, followToken, followAccess, buildLineBindGuideMessages_({ welcome: true }));
     }
     return { ok: true, type: "follow", userId: followUser };
+  }
+  // 點 Flex「前往綁定」等 postback
+  if (event.type === "postback") {
+    var pbData = String((event.postback && event.postback.data) || "").trim();
+    var pbToken = event.replyToken || "";
+    var pbUser = String((event.source && event.source.userId) || "").trim();
+    var pbAccess = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
+    if (/^(action=)?bind_guide$/i.test(pbData) || /bind_guide/i.test(pbData)) {
+      if (pbAccess) sendLineUserMessages_(pbUser, pbToken, pbAccess, buildLineBindGuideMessages_({ welcome: false }));
+      return { ok: true, type: "bind_guide_postback" };
+    }
+    return { ok: true, skipped: "postback_other" };
   }
   if (event.type !== "message" || !event.message || event.message.type !== "text") {
     return { ok: true, skipped: "not_text" };
@@ -1217,6 +1228,12 @@ function processLineEvent_(event, settings) {
   var source = event.source || {};
   var userId = String(source.userId || "").trim();
   var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
+
+  // 關鍵字：打開綁定引導卡片
+  if (/^(會員綁定|綁定會員|我要綁定|前往綁定|如何綁定)$/i.test(text)) {
+    if (accessToken) sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideMessages_({ welcome: false }));
+    return { ok: true, type: "bind_guide" };
+  }
 
   // P0：綁定會員卡號 → 之後可 Push 訂單通知
   // 支援：綁定 2026…／綁定：2026…／全形數字／訊息內含剛好 13 碼
@@ -1235,18 +1252,12 @@ function processLineEvent_(event, settings) {
     }
 
     if (!isValidMemberCardNo_(bindCard)) {
-      var help = [
-        "綁定格式不正確。",
-        "",
-        "請傳送（中間一個空格＋完整 13 碼數字）：",
-        "綁定 2026092312345",
-        "",
-        "⚠ 不要傳「綁定 卡號」這幾個字，",
-        "要把「卡號」換成訂單上的 13 碼會員卡號。",
-        "",
-        "卡號可在：訂單成立訊息、後台訂單「會員卡號」欄看到。"
-      ].join("\n");
-      if (accessToken) sendLineUserText_(userId, replyToken, accessToken, help);
+      if (accessToken) {
+        sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideMessages_({
+          welcome: false,
+          hint: "請在「綁定」後面加上您的 13 碼會員卡號後再傳送。"
+        }));
+      }
       return { ok: false, type: "bind_help", message: "invalid_card_format", text: text };
     }
 
@@ -1332,6 +1343,70 @@ function processLineEvent_(event, settings) {
  */
 function sendLineUserText_(userId, replyToken, accessToken, text) {
   return sendLineUserMessages_(userId, replyToken, accessToken, [{ type: "text", text: String(text || "") }]);
+}
+
+/**
+ * 引導顧客綁定會員的 Flex 按鈕卡片（簡潔版，對齊範例圖）
+ * opts.welcome：加好友歡迎；opts.hint：額外提示（覆寫說明文字）
+ */
+function buildLineBindGuideMessages_(opts) {
+  opts = opts || {};
+  var btnColor = "#06C755";
+  var title = "尚未綁定會員資料";
+  var desc = String(opts.hint || "").trim() ||
+    "請先完成會員綁定才能使用 +1 快速下單";
+  if (opts.welcome && !opts.hint) {
+    desc = "請先完成會員綁定，才能接收訂單通知與使用 +1 快速下單";
+  }
+
+  var flex = {
+    type: "flex",
+    altText: "尚未綁定會員資料｜前往綁定會員",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        paddingAll: "16px",
+        cornerRadius: "20px",
+        backgroundColor: "#FFFFFF",
+        contents: [
+          {
+            type: "text",
+            text: title,
+            weight: "bold",
+            size: "lg",
+            color: "#111111",
+            wrap: true
+          },
+          {
+            type: "text",
+            text: desc,
+            size: "sm",
+            color: "#8C8C8C",
+            wrap: true,
+            margin: "sm"
+          },
+          {
+            type: "button",
+            style: "primary",
+            color: btnColor,
+            height: "md",
+            margin: "lg",
+            action: {
+              type: "message",
+              label: "前往綁定會員",
+              text: "綁定 "
+            }
+          }
+        ]
+      }
+    }
+  };
+
+  return [flex];
 }
 
 /** 綁定結果：文字 + Flex 卡片（較容易在聊天室看到） */
