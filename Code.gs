@@ -40,7 +40,7 @@ var CONFIG = {
   memberSpreadsheetId: "1CJiK7WjzbKtQnumL14H4dW0KkhdOd6RsyEN7-EU3qzw",
   memberSheetName: "會員名單",
   // LINE Flex 推播外觀
-  // lineFlexStyle: "kr"（日系柔和）｜"kr"（韓系清透）｜"classic"（圖例紫系）
+  // lineFlexStyle: "jp"（日系柔和）｜"kr"（韓系清透）｜"classic"（圖例紫系）
   lineFlexStyle: "jp",
   lineBrandName: "MAARU 日韓萌GO",
   // 非空時覆寫該風格的主色（例：#7A9E7E）
@@ -2065,7 +2065,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
   var jp = {
     confirm_pay: {
       title: "請確認訂單並匯款",
-      sectionLabel: "匯款案内",
+      sectionLabel: "匯款資訊",
       sectionEmoji: "✉️",
       alt: "訂單確認／請匯款",
       steps: [
@@ -2122,7 +2122,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
   var kr = {
     confirm_pay: {
       title: "請確認並完成匯款",
-      sectionLabel: "付款안내",
+      sectionLabel: "匯款資訊",
       sectionEmoji: "💳",
       alt: "訂單確認／請匯款",
       steps: [
@@ -2179,7 +2179,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
   var classic = {
     confirm_pay: {
       title: "請確認並匯款",
-      sectionLabel: "匯款通知",
+      sectionLabel: "匯款資訊",
       sectionEmoji: "💳",
       alt: "訂單確認／請匯款",
       steps: [
@@ -2430,8 +2430,9 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     buildLineNotifyProgressBox_(meta.steps, color, theme.progressMuted)
   ];
 
-  // 「已確認匯款」不顯示商品品項、不顯示超商／取貨門市
-  if (notifyType !== "paid") {
+  // 「請匯款／已確認匯款」不顯示商品品項、不顯示超商／取貨門市
+  var hideProductAndShip = (notifyType === "paid" || notifyType === "confirm_pay");
+  if (!hideProductAndShip) {
     bodyContents.push({
       type: "box",
       layout: "horizontal",
@@ -2517,7 +2518,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         }
       ]
     });
-  } else {
+  } else if (!hideProductAndShip) {
     bodyContents.push({
       type: "box",
       layout: "vertical",
@@ -2567,7 +2568,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       {
         type: "text",
         text: detail,
-        size: "sm",
+        size: "lg",
         weight: "bold",
         color: theme.textSoft,
         wrap: true,
