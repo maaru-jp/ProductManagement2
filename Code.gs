@@ -874,17 +874,8 @@ function defaultLineNotifyTemplates_() {
     confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping: [
-      "【MAARU 出貨通知】",
-      "",
-      "{{customerName}} 您好，訂單 {{orderId}} 已出貨／備貨中。",
-      "",
-      "運送方式：{{shippingMethod}}",
-      "{{storeName}}",
-      "",
-      "品項：",
-      "{{itemsSummary}}",
-      "",
-      "到貨後我們會再通知您。"
+      "實際到貨時間依物流安排為主",
+      "如有任何問題，歡迎隨時與小幫手聯繫，謝謝您的支持與耐心等候"
     ].join("\n"),
     arrived: [
       "【MAARU 到店／可取貨】",
@@ -935,6 +926,10 @@ function getLineNotifyTemplates_() {
       if (/訂金|depositAmount|amountDue|訂單編號|會員卡號|請依下方|品項/.test(out.confirm_pay)) {
         out.confirm_pay = defaults.confirm_pay;
       }
+    }
+    // 出貨通知：內文不重複運送方式／門市
+    if (out.shipping && /運送方式|shippingMethod|storeName|品項|itemsSummary/.test(out.shipping)) {
+      out.shipping = defaults.shipping;
     }
     return out;
   } catch (e) {
@@ -1085,6 +1080,9 @@ function saveLineAutomationSettings_(body) {
       // 請匯款：訂金已在卡片正中顯示，儲存時若內文含訂金等則改回結語
       if (k === "confirm_pay" && /訂金|depositAmount|amountDue|訂單編號|會員卡號/.test(t)) {
         t = defaults.confirm_pay;
+      }
+      if (k === "shipping" && /運送方式|shippingMethod|storeName|品項|itemsSummary/.test(t)) {
+        t = defaults.shipping;
       }
       toSave[k] = t;
     }
@@ -2580,7 +2578,40 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     }
   }
 
-  if (notifyType !== "paid" && notifyType !== "confirm_pay") {
+  if (notifyType === "shipping") {
+    // 出貨通知內文：不重複運送方式／門市（門市已在上方區塊）
+    bodyContents.push({
+      type: "separator",
+      margin: "md",
+      color: theme.separator
+    });
+    bodyContents.push({
+      type: "box",
+      layout: "horizontal",
+      spacing: "sm",
+      margin: "md",
+      contents: [
+        { type: "text", text: meta.sectionEmoji || "📦", size: "md", flex: 0 },
+        {
+          type: "text",
+          text: meta.sectionLabel || "出貨通知",
+          size: "md",
+          weight: "bold",
+          color: theme.text,
+          flex: 1
+        }
+      ]
+    });
+    bodyContents.push({
+      type: "text",
+      text: "實際到貨時間依物流安排為主\n如有任何問題，歡迎隨時與小幫手聯繫，謝謝您的支持與耐心等候",
+      size: "md",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "xs"
+    });
+  } else if (notifyType !== "paid" && notifyType !== "confirm_pay") {
     bodyContents.push({
       type: "separator",
       margin: "md",
