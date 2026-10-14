@@ -2568,7 +2568,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       wrap: true,
       margin: "sm"
     }
-  ];
+  );
 
   var footerContents = [];
   var trackUrl = guessLogisticsTrackUrl_(order.shippingMethod);
