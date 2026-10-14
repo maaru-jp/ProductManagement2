@@ -874,6 +874,7 @@ function defaultLineNotifyTemplates_() {
     confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
+      "您好：\n\n" +
       "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量，請留意查收\n\n" +
       "到貨時間依物流配送安排為主\n\n" +
       "如有任何問題，歡迎隨時與小幫手聯繫",
@@ -927,7 +928,8 @@ function getLineNotifyTemplates_() {
         /運送方式|shippingMethod|storeName|品項|itemsSummary/.test(out.shipping) ||
         /實際到貨時間依物流安排為主/.test(out.shipping) ||
         /本次附上訂單明細/.test(out.shipping) ||
-        /感謝您的支持與耐心等候/.test(out.shipping)
+        /感謝您的支持與耐心等候/.test(out.shipping) ||
+        /出貨通知\s*您的訂單已出貨/.test(out.shipping)
       )
     ) {
       out.shipping = defaults.shipping;
@@ -2086,7 +2088,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
       ]
     },
     shipping: {
-      title: "包裹已寄出囉",
+      title: "包裹已寄出",
       sectionLabel: "出貨通知",
       sectionEmoji: "📦",
       alt: "出貨通知",
@@ -2143,7 +2145,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
       ]
     },
     shipping: {
-      title: "商品已出貨！",
+      title: "包裹已寄出",
       sectionLabel: "出貨通知",
       sectionEmoji: "🚚",
       alt: "出貨通知",
@@ -2200,7 +2202,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
       ]
     },
     shipping: {
-      title: "你的包裹寄出了",
+      title: "包裹已寄出",
       sectionLabel: "出貨通知",
       sectionEmoji: "📦",
       alt: "出貨通知",
@@ -2598,21 +2600,12 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "出貨通知  您的訂單已出貨！",
-      size: "lg",
-      weight: "bold",
-      color: theme.text,
-      wrap: true,
-      margin: "md"
-    });
-    bodyContents.push({
-      type: "text",
       text: shippingBody,
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
       wrap: true,
-      margin: "xs"
+      margin: "md"
     });
   } else {
     pushInfoRow_(theme.orderLabel, orderDisp);
