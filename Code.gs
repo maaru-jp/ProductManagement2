@@ -44,7 +44,7 @@ var CONFIG = {
   lineBrandColor: "#6D28D9",
   lineBrandLogoUrl: "",
   // 顧客官網網址（Flex「查看我的訂單」按鈕；例：https://你的網域）
-  publicSiteUrl: ""
+  publicSiteUrl: "https://maaru-jp.github.io/Order-status/?mode=card"
 };
 
 /**
