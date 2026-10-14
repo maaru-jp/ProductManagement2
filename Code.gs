@@ -2427,8 +2427,12 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
   }
 
   var bodyContents = [
-    buildLineNotifyProgressBox_(meta.steps, color, theme.progressMuted),
-    {
+    buildLineNotifyProgressBox_(meta.steps, color, theme.progressMuted)
+  ];
+
+  // 「已確認匯款」不顯示商品品項、不顯示超商／取貨門市
+  if (notifyType !== "paid") {
+    bodyContents.push({
       type: "box",
       layout: "horizontal",
       spacing: "sm",
@@ -2460,26 +2464,27 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
           )
         }
       ]
-    },
-    {
-      type: "box",
-      layout: "horizontal",
-      margin: "md",
-      contents: [
-        { type: "text", text: theme.orderLabel, size: "md", weight: "bold", color: theme.textSoft, flex: 0 },
-        {
-          type: "text",
-          text: orderDisp,
-          size: "md",
-          weight: "bold",
-          color: theme.text,
-          align: "end",
-          flex: 1,
-          wrap: true
-        }
-      ]
-    }
-  ];
+    });
+  }
+
+  bodyContents.push({
+    type: "box",
+    layout: "horizontal",
+    margin: "md",
+    contents: [
+      { type: "text", text: theme.orderLabel, size: "md", weight: "bold", color: theme.textSoft, flex: 0 },
+      {
+        type: "text",
+        text: orderDisp,
+        size: "md",
+        weight: "bold",
+        color: theme.text,
+        align: "end",
+        flex: 1,
+        wrap: true
+      }
+    ]
+  });
 
   // 已確認匯款：優先顯示訂單管理的「預購訂金」
   var depositNum = Math.round(Number(order.depositAmount) || 0);
@@ -2512,27 +2517,27 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         }
       ]
     });
+  } else {
+    bodyContents.push({
+      type: "box",
+      layout: "vertical",
+      margin: "md",
+      paddingAll: theme.key === "kr" ? "14px" : "12px",
+      cornerRadius: theme.key === "kr" ? "12px" : "8px",
+      backgroundColor: theme.chipBg,
+      contents: [
+        {
+          type: "text",
+          text: lineFlexSafeText_(shipLabel, 60),
+          size: "md",
+          weight: "bold",
+          color: theme.chipText,
+          align: "center",
+          wrap: true
+        }
+      ]
+    });
   }
-
-  bodyContents.push({
-    type: "box",
-    layout: "vertical",
-    margin: "md",
-    paddingAll: theme.key === "kr" ? "14px" : "12px",
-    cornerRadius: theme.key === "kr" ? "12px" : "8px",
-    backgroundColor: theme.chipBg,
-    contents: [
-      {
-        type: "text",
-        text: lineFlexSafeText_(shipLabel, 60),
-        size: "md",
-        weight: "bold",
-        color: theme.chipText,
-        align: "center",
-        wrap: true
-      }
-    ]
-  });
 
   // 「已確認匯款」不顯示底部入金確認／模板說明區
   if (notifyType !== "paid") {
