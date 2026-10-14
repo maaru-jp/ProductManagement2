@@ -41,7 +41,7 @@ var CONFIG = {
   memberSheetName: "會員名單",
   // LINE Flex 推播外觀
   // lineFlexStyle: "jp"（日系柔和）｜"kr"（韓系清透）｜"classic"（圖例紫系）
-  lineFlexStyle: "jp",
+  lineFlexStyle: "kr",
   lineBrandName: "MAARU 日韓萌GO",
   // 非空時覆寫該風格的主色（例：#7A9E7E）
   lineBrandColor: "",
