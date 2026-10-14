@@ -41,7 +41,7 @@ var CONFIG = {
   memberSheetName: "會員名單",
   // LINE Flex 推播外觀
   // lineFlexStyle: "jp"（日系柔和）｜"kr"（韓系清透）｜"classic"（圖例紫系）
-  lineFlexStyle: "kr",
+  lineFlexStyle: "jp",
   lineBrandName: "MAARU 日韓萌GO",
   // 非空時覆寫該風格的主色（例：#7A9E7E）
   lineBrandColor: "",
@@ -878,7 +878,7 @@ function defaultLineNotifyTemplates_() {
       "",
       "訂單編號：{{orderId}}",
       "會員卡號：{{memberCardNo}}",
-      "應付金額：NT${{amountDue}}",
+      "訂金金額：NT${{amountDue}}",
       "",
       "品項：",
       "{{itemsSummary}}",
