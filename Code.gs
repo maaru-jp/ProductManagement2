@@ -42,7 +42,7 @@ var CONFIG = {
   // LINE Flex 推播外觀
   // lineFlexStyle: "jp"（日系柔和）｜"kr"（韓系清透）｜"classic"（圖例紫系）
   lineFlexStyle: "jp",
-  lineBrandName: "MAARU",
+  lineBrandName: "MAARU 日韓萌GO",
   // 非空時覆寫該風格的主色（例：#7A9E7E）
   lineBrandColor: "",
   lineBrandLogoUrl: "",
@@ -2514,61 +2514,62 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   }
 
-  bodyContents.push(
-    {
-      type: "box",
-      layout: "vertical",
-      margin: "md",
-      paddingAll: theme.key === "kr" ? "14px" : "12px",
-      cornerRadius: theme.key === "kr" ? "12px" : "8px",
-      backgroundColor: theme.chipBg,
-      contents: [
-        {
-          type: "text",
-          text: lineFlexSafeText_(shipLabel, 60),
-          size: "md",
-          weight: "bold",
-          color: theme.chipText,
-          align: "center",
-          wrap: true
-        }
-      ]
-    },
-    {
+  bodyContents.push({
+    type: "box",
+    layout: "vertical",
+    margin: "md",
+    paddingAll: theme.key === "kr" ? "14px" : "12px",
+    cornerRadius: theme.key === "kr" ? "12px" : "8px",
+    backgroundColor: theme.chipBg,
+    contents: [
+      {
+        type: "text",
+        text: lineFlexSafeText_(shipLabel, 60),
+        size: "md",
+        weight: "bold",
+        color: theme.chipText,
+        align: "center",
+        wrap: true
+      }
+    ]
+  });
+
+  // 「已確認匯款」不顯示底部入金確認／模板說明區
+  if (notifyType !== "paid") {
+    bodyContents.push({
       type: "separator",
       margin: "lg",
       color: theme.separator
-    }
-  );
-
-  bodyContents.push(
-    {
-      type: "box",
-      layout: "horizontal",
-      spacing: "sm",
-      margin: "lg",
-      contents: [
-        { type: "text", text: meta.sectionEmoji || "📦", size: "lg", flex: 0 },
-        {
-          type: "text",
-          text: meta.sectionLabel || "通知",
-          size: "lg",
-          weight: "bold",
-          color: theme.text,
-          flex: 1
-        }
-      ]
-    },
-    {
-      type: "text",
-      text: detail,
-      size: "sm",
-      weight: "bold",
-      color: theme.textSoft,
-      wrap: true,
-      margin: "sm"
-    }
-  );
+    });
+    bodyContents.push(
+      {
+        type: "box",
+        layout: "horizontal",
+        spacing: "sm",
+        margin: "lg",
+        contents: [
+          { type: "text", text: meta.sectionEmoji || "📦", size: "lg", flex: 0 },
+          {
+            type: "text",
+            text: meta.sectionLabel || "通知",
+            size: "lg",
+            weight: "bold",
+            color: theme.text,
+            flex: 1
+          }
+        ]
+      },
+      {
+        type: "text",
+        text: detail,
+        size: "sm",
+        weight: "bold",
+        color: theme.textSoft,
+        wrap: true,
+        margin: "sm"
+      }
+    );
+  }
 
   var footerContents = [];
   var trackUrl = guessLogisticsTrackUrl_(order.shippingMethod);
