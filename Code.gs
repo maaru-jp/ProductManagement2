@@ -39,9 +39,12 @@ var CONFIG = {
   // 會員主檔：獨立試算表「Memberist」分頁「會員名單」（姓名 ↔ 13 碼卡號）
   memberSpreadsheetId: "1CJiK7WjzbKtQnumL14H4dW0KkhdOd6RsyEN7-EU3qzw",
   memberSheetName: "會員名單",
-  // LINE Flex 推播外觀（留空則用預設）
+  // LINE Flex 推播外觀
+  // lineFlexStyle: "jp"（日系柔和）｜"kr"（韓系清透）｜"classic"（圖例紫系）
+  lineFlexStyle: "jp",
   lineBrandName: "MAARU",
-  lineBrandColor: "#6D28D9",
+  // 非空時覆寫該風格的主色（例：#7A9E7E）
+  lineBrandColor: "",
   lineBrandLogoUrl: "",
   // 顧客官網網址（Flex「查看我的訂單」按鈕；例：https://你的網域）
   publicSiteUrl: ""
@@ -1960,9 +1963,210 @@ function renderLineNotifyTemplate_(template, order) {
     .replace(/\{\{status\}\}/g, v.status);
 }
 
-/** 各通知類型：標題、區塊標籤、進度條、altText */
-function lineNotifyFlexMeta_(notifyType) {
-  var map = {
+/** Flex 視覺風格：jp｜kr｜classic */
+function resolveLineFlexStyleKey_() {
+  var s = String(CONFIG.lineFlexStyle || "jp").trim().toLowerCase();
+  if (s === "kr" || s === "korea" || s === "korean" || s === "韓" || s === "韓系") return "kr";
+  if (s === "classic" || s === "default" || s === "紫" || s === "圖例") return "classic";
+  return "jp";
+}
+
+/** 日系／韓系／經典 色票與文案語氣 */
+function getLineFlexTheme_() {
+  var key = resolveLineFlexStyleKey_();
+  var themes = {
+    jp: {
+      key: "jp",
+      // 抹茶＋生成り：柔和、留白、低對比
+      headerBg: "#8FAE8B",
+      headerBrand: "#EEF4EC",
+      headerTitle: "#FFFFFF",
+      bodyBg: "#FBF8F3",
+      footerBg: "#FBF8F3",
+      text: "#4A4543",
+      textMuted: "#9A928A",
+      textSoft: "#6B6560",
+      chipBg: "#F0EBE3",
+      chipText: "#5C574F",
+      progressMuted: "#D9D2C8",
+      separator: "#E8E2D8",
+      productIcon: "🎐",
+      btnTrackLabel: "查詢配送",
+      btnOrdersLabel: "查看訂單",
+      btnReplyLabel: "收到了",
+      shipFallback: "配送方式稍後更新",
+      orderLabel: "訂單編號"
+    },
+    kr: {
+      key: "kr",
+      // 柔粉＋淡紫：清透、圓潤、偏美妝購物感
+      headerBg: "#E8B4C8",
+      headerBrand: "#FFF5F8",
+      headerTitle: "#5C3D4A",
+      bodyBg: "#FFFBFD",
+      footerBg: "#FFFBFD",
+      text: "#3D2C33",
+      textMuted: "#B09AA3",
+      textSoft: "#7A6570",
+      chipBg: "#F7E8EF",
+      chipText: "#6B4A58",
+      progressMuted: "#EBD6DF",
+      separator: "#F0E0E8",
+      productIcon: "✨",
+      btnTrackLabel: "追蹤物流",
+      btnOrdersLabel: "我的訂單",
+      btnReplyLabel: "收到 ♡",
+      shipFallback: "配送資訊即將更新",
+      orderLabel: "Order"
+    },
+    classic: {
+      key: "classic",
+      headerBg: "#6D28D9",
+      headerBrand: "#E9D5FF",
+      headerTitle: "#FFFFFF",
+      bodyBg: "#FFFFFF",
+      footerBg: "#FFFFFF",
+      text: "#0F172A",
+      textMuted: "#94A3B8",
+      textSoft: "#475569",
+      chipBg: "#F1F5F9",
+      chipText: "#334155",
+      progressMuted: "#CBD5E1",
+      separator: "#E2E8F0",
+      productIcon: "🎀",
+      btnTrackLabel: "查詢物流",
+      btnOrdersLabel: "查看我的訂單",
+      btnReplyLabel: "回覆官方帳號",
+      shipFallback: "運送方式稍後更新",
+      orderLabel: "訂單編號"
+    }
+  };
+  var theme = themes[key] || themes.jp;
+  var override = String(CONFIG.lineBrandColor || "").trim();
+  if (override && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(override)) {
+    theme = Object.assign({}, theme, { headerBg: override });
+  }
+  return theme;
+}
+
+/** 各通知類型：標題、區塊標籤、進度條、altText（依風格微調語氣） */
+function lineNotifyFlexMeta_(notifyType, styleKey) {
+  styleKey = styleKey || resolveLineFlexStyleKey_();
+  var jp = {
+    confirm_pay: {
+      title: "請確認訂單並匯款",
+      sectionLabel: "匯款案内",
+      sectionEmoji: "✉️",
+      alt: "訂單確認／請匯款",
+      steps: [
+        { label: "下單", active: true },
+        { label: "匯款", active: true },
+        { label: "出貨", active: false }
+      ]
+    },
+    paid: {
+      title: "已確認收到匯款",
+      sectionLabel: "入金確認",
+      sectionEmoji: "💮",
+      alt: "已確認匯款",
+      steps: [
+        { label: "下單", active: true },
+        { label: "匯款", active: true },
+        { label: "出貨", active: false }
+      ]
+    },
+    shipping: {
+      title: "包裹已寄出囉",
+      sectionLabel: "出貨通知",
+      sectionEmoji: "📦",
+      alt: "出貨通知",
+      steps: [
+        { label: "下單", active: true },
+        { label: "到貨", active: true },
+        { label: "寄出", active: true }
+      ]
+    },
+    arrived: {
+      title: "可以取貨了",
+      sectionLabel: "取貨通知",
+      sectionEmoji: "🏪",
+      alt: "到店／可取貨",
+      steps: [
+        { label: "下單", active: true },
+        { label: "寄出", active: true },
+        { label: "可取", active: true }
+      ]
+    },
+    completed: {
+      title: "謝謝您的選購",
+      sectionLabel: "完成通知",
+      sectionEmoji: "🌸",
+      alt: "取貨完成",
+      steps: [
+        { label: "下單", active: true },
+        { label: "出貨", active: true },
+        { label: "完成", active: true }
+      ]
+    }
+  };
+  var kr = {
+    confirm_pay: {
+      title: "請確認並完成匯款",
+      sectionLabel: "付款안내",
+      sectionEmoji: "💳",
+      alt: "訂單確認／請匯款",
+      steps: [
+        { label: "下單", active: true },
+        { label: "匯款", active: true },
+        { label: "出貨", active: false }
+      ]
+    },
+    paid: {
+      title: "匯款已確認！",
+      sectionLabel: "付款確認",
+      sectionEmoji: "✅",
+      alt: "已確認匯款",
+      steps: [
+        { label: "下單", active: true },
+        { label: "匯款", active: true },
+        { label: "出貨", active: false }
+      ]
+    },
+    shipping: {
+      title: "商品已出貨！",
+      sectionLabel: "出貨通知",
+      sectionEmoji: "🚚",
+      alt: "出貨通知",
+      steps: [
+        { label: "下單", active: true },
+        { label: "到貨", active: true },
+        { label: "寄出", active: true }
+      ]
+    },
+    arrived: {
+      title: "可以取貨囉",
+      sectionLabel: "取貨通知",
+      sectionEmoji: "💗",
+      alt: "到店／可取貨",
+      steps: [
+        { label: "下單", active: true },
+        { label: "寄出", active: true },
+        { label: "可取", active: true }
+      ]
+    },
+    completed: {
+      title: "感謝您的購買 ♡",
+      sectionLabel: "完成通知",
+      sectionEmoji: "💞",
+      alt: "取貨完成",
+      steps: [
+        { label: "下單", active: true },
+        { label: "出貨", active: true },
+        { label: "完成", active: true }
+      ]
+    }
+  };
+  var classic = {
     confirm_pay: {
       title: "請確認並匯款",
       sectionLabel: "匯款通知",
@@ -2019,6 +2223,7 @@ function lineNotifyFlexMeta_(notifyType) {
       ]
     }
   };
+  var map = styleKey === "kr" ? kr : styleKey === "classic" ? classic : jp;
   return map[notifyType] || map.shipping;
 }
 
@@ -2065,9 +2270,9 @@ function buildLineNotifyProductLine_(order) {
   return { title: title, sub: sku || extra };
 }
 
-function buildLineNotifyProgressBox_(steps, brandColor) {
-  var activeColor = brandColor || "#6D28D9";
-  var muted = "#CBD5E1";
+function buildLineNotifyProgressBox_(steps, brandColor, mutedColor) {
+  var activeColor = brandColor || "#8FAE8B";
+  var muted = mutedColor || "#D9D2C8";
   var dots = [];
   var labels = [];
   for (var i = 0; i < steps.length; i++) {
@@ -2110,7 +2315,7 @@ function buildLineNotifyProgressBox_(steps, brandColor) {
       type: "text",
       text: String(steps[i].label || ""),
       size: "xxs",
-      color: on ? activeColor : "#94A3B8",
+      color: on ? activeColor : muted,
       align: "center",
       flex: 1,
       weight: on ? "bold" : "regular"
@@ -2129,14 +2334,15 @@ function buildLineNotifyProgressBox_(steps, brandColor) {
 }
 
 /**
- * 類似圖例的 Flex 出貨／進度通知卡片
+ * Flex 出貨／進度通知卡片（jp 日系｜kr 韓系｜classic）
  * bodyText：後台模板渲染後的文字，顯示在卡片說明區
  */
 function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
   order = order || {};
-  var meta = lineNotifyFlexMeta_(notifyType);
+  var theme = getLineFlexTheme_();
+  var meta = lineNotifyFlexMeta_(notifyType, theme.key);
   var brand = String(CONFIG.lineBrandName || "MAARU").trim() || "MAARU";
-  var color = String(CONFIG.lineBrandColor || "#6D28D9").trim() || "#6D28D9";
+  var color = theme.headerBg;
   var logo = String(CONFIG.lineBrandLogoUrl || "").trim();
   var v = buildLineNotifyTemplateVars_(order);
   var product = buildLineNotifyProductLine_(order);
@@ -2146,10 +2352,12 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
   } else if (!shipLabel && String(order.storeName || "").trim()) {
     shipLabel = String(order.storeName).trim();
   }
-  if (!shipLabel) shipLabel = "運送方式稍後更新";
+  if (!shipLabel) shipLabel = theme.shipFallback;
 
   var orderDisp = v.orderId ? ("#" + v.orderId.replace(/^#/, "")) : "—";
   var detail = lineFlexSafeText_(bodyText, 900);
+  var titleSize = theme.key === "jp" ? "lg" : "xl";
+  var titleWeight = theme.key === "kr" ? "bold" : "bold";
 
   var headerContents = [];
   if (logo && /^https:\/\//i.test(logo)) {
@@ -2180,13 +2388,13 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
           flex: 1,
           justifyContent: "center",
           contents: [
-            { type: "text", text: brand, size: "xs", color: "#E9D5FF" },
+            { type: "text", text: brand, size: "xs", color: theme.headerBrand },
             {
               type: "text",
               text: lineFlexSafeText_(meta.title, 40),
-              size: "lg",
-              weight: "bold",
-              color: "#FFFFFF",
+              size: titleSize,
+              weight: titleWeight,
+              color: theme.headerTitle,
               wrap: true
             }
           ]
@@ -2195,13 +2403,13 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   } else {
     headerContents.push(
-      { type: "text", text: brand, size: "xs", color: "#E9D5FF" },
+      { type: "text", text: brand, size: "xs", color: theme.headerBrand },
       {
         type: "text",
         text: lineFlexSafeText_(meta.title, 40),
-        size: "xl",
-        weight: "bold",
-        color: "#FFFFFF",
+        size: titleSize,
+        weight: titleWeight,
+        color: theme.headerTitle,
         wrap: true,
         margin: "xs"
       }
@@ -2209,7 +2417,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
   }
 
   var bodyContents = [
-    buildLineNotifyProgressBox_(meta.steps, color),
+    buildLineNotifyProgressBox_(meta.steps, color, theme.progressMuted),
     {
       type: "box",
       layout: "horizontal",
@@ -2218,7 +2426,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       contents: [
         {
           type: "text",
-          text: "🎀",
+          text: theme.productIcon || "🎀",
           size: "md",
           flex: 0
         },
@@ -2232,12 +2440,12 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
               text: lineFlexSafeText_(product.title, 80),
               size: "sm",
               weight: "bold",
-              color: "#0F172A",
+              color: theme.text,
               wrap: true
             }
           ].concat(
             product.sub
-              ? [{ type: "text", text: lineFlexSafeText_(product.sub, 40), size: "xs", color: "#94A3B8" }]
+              ? [{ type: "text", text: lineFlexSafeText_(product.sub, 40), size: "xs", color: theme.textMuted }]
               : []
           )
         }
@@ -2248,12 +2456,12 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       layout: "horizontal",
       margin: "md",
       contents: [
-        { type: "text", text: "訂單編號", size: "sm", color: "#64748B", flex: 0 },
+        { type: "text", text: theme.orderLabel, size: "sm", color: theme.textSoft, flex: 0 },
         {
           type: "text",
           text: orderDisp,
           size: "sm",
-          color: "#94A3B8",
+          color: theme.textMuted,
           align: "end",
           flex: 1,
           wrap: true
@@ -2264,21 +2472,25 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       type: "box",
       layout: "vertical",
       margin: "md",
-      paddingAll: "10px",
-      cornerRadius: "8px",
-      backgroundColor: "#F1F5F9",
+      paddingAll: theme.key === "kr" ? "12px" : "10px",
+      cornerRadius: theme.key === "kr" ? "12px" : "8px",
+      backgroundColor: theme.chipBg,
       contents: [
         {
           type: "text",
           text: lineFlexSafeText_(shipLabel, 60),
           size: "sm",
-          color: "#334155",
+          color: theme.chipText,
           align: "center",
           wrap: true
         }
       ]
     },
-    { type: "separator", margin: "lg" },
+    {
+      type: "separator",
+      margin: "lg",
+      color: theme.separator
+    },
     {
       type: "box",
       layout: "horizontal",
@@ -2291,7 +2503,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
           text: meta.sectionLabel || "通知",
           size: "md",
           weight: "bold",
-          color: "#0F172A",
+          color: theme.text,
           flex: 1
         }
       ]
@@ -2300,7 +2512,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       type: "text",
       text: detail,
       size: "xs",
-      color: "#475569",
+      color: theme.textSoft,
       wrap: true,
       margin: "sm"
     }
@@ -2313,7 +2525,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       type: "button",
       style: "secondary",
       height: "sm",
-      action: { type: "uri", label: "查詢物流", uri: trackUrl }
+      action: { type: "uri", label: theme.btnTrackLabel, uri: trackUrl }
     });
   }
   var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
@@ -2327,7 +2539,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       style: "primary",
       color: color,
       height: "sm",
-      action: { type: "uri", label: "查看我的訂單", uri: ordersUrl }
+      action: { type: "uri", label: theme.btnOrdersLabel, uri: ordersUrl }
     });
   }
   if (!footerContents.length) {
@@ -2338,8 +2550,8 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       height: "sm",
       action: {
         type: "message",
-        label: "回覆官方帳號",
-        text: "收到，謝謝！"
+        label: theme.btnReplyLabel,
+        text: theme.key === "kr" ? "收到了 ♡" : "收到，謝謝！"
       }
     });
   }
@@ -2353,7 +2565,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       header: {
         type: "box",
         layout: "vertical",
-        paddingAll: "16px",
+        paddingAll: theme.key === "jp" ? "18px" : "16px",
         backgroundColor: color,
         contents: headerContents
       },
@@ -2361,7 +2573,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         type: "box",
         layout: "vertical",
         paddingAll: "16px",
-        backgroundColor: "#FFFFFF",
+        backgroundColor: theme.bodyBg,
         contents: bodyContents
       },
       footer: {
@@ -2369,7 +2581,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         layout: "vertical",
         spacing: "sm",
         paddingAll: "12px",
-        backgroundColor: "#FFFFFF",
+        backgroundColor: theme.footerBg,
         contents: footerContents
       }
     }
