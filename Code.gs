@@ -2577,7 +2577,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     bodyContents.push({
       type: "text",
       text: "出貨通知  您的訂單已出貨！",
-      size: "md",
+      size: "lg",
       weight: "bold",
       color: theme.text,
       wrap: true,
@@ -2586,7 +2586,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     bodyContents.push({
       type: "text",
       text: shippingBody,
-      size: "md",
+      size: "lg",
       weight: "bold",
       color: theme.textSoft,
       wrap: true,
