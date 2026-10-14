@@ -7524,10 +7524,13 @@
               var delBtn = t.closest(".order-delete-btn");
               var name = (delBtn && delBtn.getAttribute("data-name")) || "此訂單";
               if (!confirm("確定要刪除訂單「" + name + "」嗎？")) return;
-              orders = orders.filter(function(o) { return o.id !== id; });
+              var delNorm = normalizeOrderIdToken_(id);
+              orders = orders.filter(function(o) {
+                return normalizeOrderIdToken_(o && o.id) !== delNorm;
+              });
               var ledgerMsg = "";
               if (window.MaaruLoyalty && typeof MaaruLoyalty.removeLedgerEntriesForOrderId === "function") {
-                var lr = MaaruLoyalty.removeLedgerEntriesForOrderId(MaaruLoyalty.getLedger(), id);
+                var lr = MaaruLoyalty.removeLedgerEntriesForOrderId(MaaruLoyalty.getLedger(), delNorm || id);
                 if (lr.removed > 0) {
                   MaaruLoyalty.saveLedger(lr.ledger);
                   ledgerMsg = "，已移除 " + lr.removed + " 筆紅利紀錄";
@@ -7535,7 +7538,7 @@
               }
               saveOrders();
               refreshOrderListView_();
-              deleteOrderFromSheet(id).then(function() {
+              deleteOrderFromSheet(delNorm || id).then(function() {
                 var syncChain = Promise.resolve();
                 if (ledgerMsg && typeof window.syncPointsLedgerToSheet === "function") {
                   syncChain = window.syncPointsLedgerToSheet().catch(function() { return null; });

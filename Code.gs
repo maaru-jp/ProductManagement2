@@ -42,6 +42,33 @@ var CONFIG = {
 };
 
 /**
+ * 【一次授權】同時取得：
+ * 1) 試算表讀寫（SpreadsheetApp）
+ * 2) 對外連線／LINE Push（UrlFetchApp）
+ *
+ * 用法：Apps Script 上方函式選單選本函式 → 按「執行」→ 審查權限 → 允許
+ * 成功後務必：部署 → 管理部署 → 編輯 → 版本「新版本」→ 部署
+ */
+function authorizeAllScopesOnce() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var name = ss ? ss.getName() : "(無作用中試算表)";
+  var id = ss ? ss.getId() : "";
+  var res = UrlFetchApp.fetch("https://www.google.com", {
+    method: "get",
+    muteHttpExceptions: true,
+    followRedirects: true
+  });
+  Logger.log("Sheets OK: " + name + " / " + id);
+  Logger.log("UrlFetch OK, HTTP " + res.getResponseCode());
+  return "授權完成｜試算表：" + name + "｜UrlFetch HTTP " + res.getResponseCode() + "（請部署新版本）";
+}
+
+/** 相容舊名稱：請改執行 authorizeAllScopesOnce */
+function authorizeExternalRequestOnce() {
+  return authorizeAllScopesOnce();
+}
+
+/**
  * 網頁應用程式進入點。前端用 GET 請求此 URL 取得 JSON。
  */
 function doGet(e) {
@@ -423,7 +450,10 @@ function doPost(e) {
       upsertOrder(orderSheet, order);
       clearOrderListCache_(orderSheet);
       if (isValidMemberCardNo_(normalizeMemberCardNo_(order.memberCardNo))) {
-        upsertMemberFromOrder_(ss, order);
+        try { upsertMemberFromOrder_(ss, order); } catch (eMemUp) {
+          Logger.log("[order_upsert] upsertMember " + eMemUp);
+          out.memberSyncWarning = String(eMemUp && eMemUp.message ? eMemUp.message : eMemUp);
+        }
       }
       out.message = "已寫入訂單 " + upId + " →「" + orderSheet.getName() + "」";
       out.sheetName = orderSheet.getName();
@@ -1779,7 +1809,9 @@ function patchOrdersLineUserIdByCard_(ss, card, userId) {
 function buildLineUserIdByCardMap_(ss) {
   var map = {};
   try {
-    var members = getMembers(getMemberSheet(ss));
+    var memberSheet = getMemberSheet(ss, { required: false });
+    if (!memberSheet) return map;
+    var members = getMembers(memberSheet);
     for (var i = 0; i < members.length; i++) {
       var m = members[i];
       var c = normalizeMemberCardNo_(m.memberCardNo);
@@ -3037,25 +3069,9 @@ function getOrdersPaged_(sheet, opts, ss) {
 function getOrderById_(sheet, id, ss) {
   ensureOrderHeaderRow_(sheet);
   var want = normalizeOrderId_(String(id || "").trim());
-  var wantU = String(want || "").toUpperCase();
   if (!want) return null;
 
-  // 1) 快取命中
-  var cachedFull = getCachedOrderList_(sheet, "full");
-  if (cachedFull) {
-    for (var i = 0; i < cachedFull.length; i++) {
-      var oid = normalizeOrderId_(String(cachedFull[i].id || "").trim());
-      if (oid === want || String(cachedFull[i].id || "").trim().toUpperCase() === wantU) {
-        var hit = cachedFull[i];
-        try {
-          enrichOrdersLineNotifyFlags_(ss || SpreadsheetApp.getActiveSpreadsheet(), [hit]);
-        } catch (eHit) { /* ignore */ }
-        return hit;
-      }
-    }
-  }
-
-  // 2) 只讀該列（避免整表 JSON.parse）
+  // 一律以試算表實際列為準（刪除後再新增同編號時，快取可能過期）
   var headers = getOrderHeaders_(sheet);
   var rows = findOrderRowsById_(sheet, want, headers);
   if (!rows.length) return null;
@@ -3897,7 +3913,12 @@ function resolveMemberCardForOrderFromContext_(order, allOrders, ledger, ss) {
   var card = normalizeMemberCardNo_(order && order.memberCardNo);
   if (isValidMemberCardNo_(card)) return card;
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var rosterCard = lookupMemberCardFromRoster_(ss, order);
+  var rosterCard = "";
+  try {
+    rosterCard = lookupMemberCardFromRoster_(ss, order);
+  } catch (eRoster) {
+    Logger.log("[resolveMemberCardForOrderFromContext_] roster " + eRoster);
+  }
   if (isValidMemberCardNo_(rosterCard)) return rosterCard;
   var n = normalizeCustomerNameForPoints_(order && order.customerName);
   var p = normalizePhoneForPoints_(order && order.phone);
@@ -3926,14 +3947,21 @@ function resolveMemberCardForOrderFromContext_(order, allOrders, ledger, ss) {
 function enrichOrderForSheetWrite_(order, ss) {
   order = order || {};
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var orderSheet = getOrderSheet(ss);
-  var allOrders = orderSheet ? getOrders(orderSheet) : [];
-  var pointsSheet = getPointsSheet(ss);
-  var ledger = pointsSheet ? getPointsLedger(pointsSheet) : [];
-  var card = resolveMemberCardForOrderFromContext_(order, allOrders, ledger, ss);
-  if (isValidMemberCardNo_(card)) {
-    order.memberCardNo = card;
-    upsertMemberFromOrder_(ss, order);
+  try {
+    var orderSheet = getOrderSheet(ss);
+    var allOrders = orderSheet ? getOrders(orderSheet) : [];
+    var pointsSheet = getPointsSheet(ss);
+    var ledger = pointsSheet ? getPointsLedger(pointsSheet) : [];
+    var card = resolveMemberCardForOrderFromContext_(order, allOrders, ledger, ss);
+    if (isValidMemberCardNo_(card)) {
+      order.memberCardNo = card;
+      // 會員名單寫入失敗不可阻擋訂單寫入「歷史訂單」
+      try { upsertMemberFromOrder_(ss, order); } catch (eMem) {
+        Logger.log("[enrichOrderForSheetWrite_] upsertMember " + eMem);
+      }
+    }
+  } catch (eEnrich) {
+    Logger.log("[enrichOrderForSheetWrite_] " + eEnrich);
   }
   if (!order.updated || !String(order.updated).trim()) {
     order.updated = Utilities.formatDate(
@@ -4217,7 +4245,9 @@ function getMemberRecordByCard_(ss, card) {
   card = normalizeMemberCardNo_(card);
   if (!ss || !isValidMemberCardNo_(card)) return null;
   try {
-    var members = getMembers(getMemberSheet(ss));
+    var sheet = getMemberSheet(ss, { required: false });
+    if (!sheet) return null;
+    var members = getMembers(sheet);
     for (var i = 0; i < members.length; i++) {
       if (normalizeMemberCardNo_(members[i].memberCardNo) === card) return members[i];
     }
@@ -4782,7 +4812,9 @@ function getMemberCardRosterStatus_(ss, card) {
     return { exists: false, status: "", active: false };
   }
   try {
-    var members = getMembers(getMemberSheet(ss));
+    var sheet = getMemberSheet(ss, { required: false });
+    if (!sheet) return { exists: false, status: "", active: false, rosterUnavailable: true };
+    var members = getMembers(sheet);
     for (var i = 0; i < members.length; i++) {
       if (normalizeMemberCardNo_(members[i].memberCardNo) === card) {
         var st = String(members[i].status || "有效").trim();
@@ -4791,6 +4823,7 @@ function getMemberCardRosterStatus_(ss, card) {
     }
   } catch (err) {
     Logger.log("[getMemberCardRosterStatus_] " + err);
+    return { exists: false, status: "", active: false, rosterUnavailable: true };
   }
   return { exists: false, status: "", active: false };
 }
@@ -5331,64 +5364,80 @@ function getCustomerOrdersPublic_(params) {
   if (!isValidMemberCardNo_(card)) {
     return { error: true, message: "請輸入 13 碼會員卡號" };
   }
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var orderSheet = getOrderSheet(ss);
-  var all = parsePublicOrdersFast_(ss);
-  var roster = getMemberCardRosterStatus_(ss, card);
-  var matchCtx = buildMemberCardMatchContext_(ss, all, card, []);
-  var matched = findOrdersForMemberCard_(all, card, ss);
-  var ordersWithCard = 0;
-  var ordersMatchedByRoster = 0;
-  for (var c = 0; c < all.length; c++) {
-    if (orderMatchesMemberCard_(all[c], card)) ordersWithCard++;
-    else if (orderMatchesMemberCardExtended_(all[c], card, matchCtx.linkedNames, matchCtx.rosterIdentity)) {
-      ordersMatchedByRoster++;
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var orderSheet = getOrderSheet(ss);
+    var all = parsePublicOrdersFast_(ss);
+    var roster = getMemberCardRosterStatus_(ss, card);
+    var matchCtx = buildMemberCardMatchContext_(ss, all, card, []);
+    var matched = findOrdersForMemberCard_(all, card, ss);
+    var ordersWithCard = 0;
+    var ordersMatchedByRoster = 0;
+    for (var c = 0; c < all.length; c++) {
+      if (orderMatchesMemberCard_(all[c], card)) ordersWithCard++;
+      else if (orderMatchesMemberCardExtended_(all[c], card, matchCtx.linkedNames, matchCtx.rosterIdentity)) {
+        ordersMatchedByRoster++;
+      }
     }
+    matched.sort(function(a, b) {
+      var ma = String(a.id || "").match(/^ORD(\d+)$/i);
+      var mb = String(b.id || "").match(/^ORD(\d+)$/i);
+      var na = ma ? parseInt(ma[1], 10) : Number.MAX_SAFE_INTEGER;
+      var nb = mb ? parseInt(mb[1], 10) : Number.MAX_SAFE_INTEGER;
+      return nb - na;
+    });
+    var publicOrders = [];
+    var totalPointsEarned = 0;
+    var totalPointsUsed = 0;
+    for (var j = 0; j < matched.length; j++) {
+      publicOrders.push(sanitizePublicOrder_(resolveOrderPointsFields_(matched[j], null)));
+    }
+    var totalDue = 0;
+    var activeCount = 0;
+    for (var k = 0; k < publicOrders.length; k++) {
+      var o = publicOrders[k];
+      if (o.status === "已取消") continue;
+      activeCount++;
+      totalPointsEarned += Math.max(0, Math.floor(Number(o.pointsEarned) || 0));
+      totalPointsUsed += Math.max(0, Math.floor(Number(o.pointsUsed) || 0));
+      if (o.status !== "已完成") totalDue += o.amountDue;
+    }
+    var emptyMsg = "此卡號不在會員名單，且無訂單紀錄";
+    if (publicOrders.length) emptyMsg = "OK";
+    else if (roster.exists) emptyMsg = "目前尚無訂單紀錄";
+    else if (roster.rosterUnavailable && ordersWithCard === 0) {
+      // 會員表暫時無法開時，仍以歷史訂單卡號欄匹配結果為準
+      emptyMsg = all.length ? "目前尚無此卡號訂單紀錄" : "目前尚無訂單資料";
+    }
+    return {
+      error: false,
+      memberCardNo: card,
+      orders: publicOrders,
+      orderCount: publicOrders.length,
+      activeCount: activeCount,
+      totalDue: totalDue,
+      totalPointsEarned: totalPointsEarned,
+      totalPointsUsed: totalPointsUsed,
+      debug: {
+        orderSheetName: orderSheet ? orderSheet.getName() : "",
+        orderSheetRows: all.length,
+        ordersWithMemberCard: ordersWithCard,
+        ordersMatchedByRoster: ordersMatchedByRoster,
+        rosterCustomerName: matchCtx.member ? String(matchCtx.member.customerName || "").trim() : "",
+        orderSourceSheets: listOrderSourceSheets_(ss).map(function(s) { return s.getName(); }),
+        memberInRoster: roster.exists,
+        memberStatus: roster.status || (roster.exists ? "有效" : ""),
+        rosterUnavailable: !!roster.rosterUnavailable
+      },
+      message: emptyMsg
+    };
+  } catch (err) {
+    Logger.log("[getCustomerOrdersPublic_] " + err);
+    return {
+      error: true,
+      message: "讀取訂單試算表失敗：" + String(err && err.message ? err.message : err)
+    };
   }
-  matched.sort(function(a, b) {
-    var ma = String(a.id || "").match(/^ORD(\d+)$/i);
-    var mb = String(b.id || "").match(/^ORD(\d+)$/i);
-    var na = ma ? parseInt(ma[1], 10) : Number.MAX_SAFE_INTEGER;
-    var nb = mb ? parseInt(mb[1], 10) : Number.MAX_SAFE_INTEGER;
-    return nb - na;
-  });
-  var publicOrders = [];
-  var totalPointsEarned = 0;
-  var totalPointsUsed = 0;
-  for (var j = 0; j < matched.length; j++) {
-    publicOrders.push(sanitizePublicOrder_(resolveOrderPointsFields_(matched[j], null)));
-  }
-  var totalDue = 0;
-  var activeCount = 0;
-  for (var k = 0; k < publicOrders.length; k++) {
-    var o = publicOrders[k];
-    if (o.status === "已取消") continue;
-    activeCount++;
-    totalPointsEarned += Math.max(0, Math.floor(Number(o.pointsEarned) || 0));
-    totalPointsUsed += Math.max(0, Math.floor(Number(o.pointsUsed) || 0));
-    if (o.status !== "已完成") totalDue += o.amountDue;
-  }
-  return {
-    error: false,
-    memberCardNo: card,
-    orders: publicOrders,
-    orderCount: publicOrders.length,
-    activeCount: activeCount,
-    totalDue: totalDue,
-    totalPointsEarned: totalPointsEarned,
-    totalPointsUsed: totalPointsUsed,
-    debug: {
-      orderSheetName: orderSheet ? orderSheet.getName() : "",
-      orderSheetRows: all.length,
-      ordersWithMemberCard: ordersWithCard,
-      ordersMatchedByRoster: ordersMatchedByRoster,
-      rosterCustomerName: matchCtx.member ? String(matchCtx.member.customerName || "").trim() : "",
-      orderSourceSheets: listOrderSourceSheets_(ss),
-      memberInRoster: roster.exists,
-      memberStatus: roster.status || (roster.exists ? "有效" : "")
-    },
-    message: publicOrders.length ? "OK" : (roster.exists ? "目前尚無訂單紀錄" : "此卡號不在會員名單，且無訂單紀錄")
-  };
 }
 
 function resolvePublicOrderIdParam_(params) {
@@ -6033,20 +6082,29 @@ function getOrderStatusPublic_(params) {
 
 // ========== 會員名單（主檔：姓名 ↔ 13 碼卡號） ==========
 
-/** 會員名單試算表（獨立 Memberist；留空 memberSpreadsheetId 則用 ProductManagement2 本分頁） */
-function getMemberSpreadsheet_(fallbackSs) {
+/**
+ * 會員名單試算表（獨立 Memberist；留空 memberSpreadsheetId 則用 ProductManagement2 本分頁）
+ * opts.required !== false（預設）時：Memberist 開不起來會 throw（後台會員名單管理用）
+ * opts.required === false 時：失敗則退回 fallbackSs（訂單寫入／顧客查詢不可被會員表擋住）
+ */
+function getMemberSpreadsheet_(fallbackSs, opts) {
+  opts = opts || {};
+  var required = opts.required !== false;
   var id = (CONFIG.memberSpreadsheetId || "").toString().trim();
+  var fallback = fallbackSs || SpreadsheetApp.getActiveSpreadsheet();
   if (id) {
     try {
       return SpreadsheetApp.openById(id);
     } catch (err) {
       Logger.log("[getMemberSpreadsheet_] " + err);
+      // 軟失敗：回 null，勿改用 ProductManagement2（避免誤讀／誤寫）
+      if (!required) return null;
       throw new Error(
         "無法開啟會員名單試算表。請將試算表共用「編輯者」給部署 Apps Script 的 Google 帳號：" + id
       );
     }
   }
-  return fallbackSs || SpreadsheetApp.getActiveSpreadsheet();
+  return fallback;
 }
 
 function getMemberSpreadsheetMeta_() {
@@ -6060,8 +6118,13 @@ function getMemberSpreadsheetMeta_() {
   }
 }
 
-function getMemberSheet(fallbackSs) {
-  var ss = getMemberSpreadsheet_(fallbackSs);
+function getMemberSheet(fallbackSs, opts) {
+  opts = opts || {};
+  var ss = getMemberSpreadsheet_(fallbackSs, opts);
+  if (!ss) {
+    if (opts.required === false) return null;
+    throw new Error("無法開啟會員名單試算表");
+  }
   var name = (CONFIG.memberSheetName || "會員名單").toString().trim();
   var sheet = ss.getSheetByName(name);
   if (!sheet && name !== "會員名單") {
@@ -6077,7 +6140,11 @@ function getMemberSheet(fallbackSs) {
       }
     }
   }
-  if (!sheet) sheet = ss.insertSheet(name);
+  if (!sheet) {
+    // 非強制時不要 insert，避免污染 ProductManagement2
+    if (opts.required === false) return null;
+    sheet = ss.insertSheet(name);
+  }
   ensureMemberHeaderRow_(sheet);
   return sheet;
 }
@@ -6349,7 +6416,8 @@ function pickRicherMemberRecord_(a, b) {
 
 function lookupMemberCardFromRoster_(ss, order) {
   if (!order) return "";
-  var sheet = getMemberSheet(ss);
+  var sheet = getMemberSheet(ss, { required: false });
+  if (!sheet) return "";
   var members = getMembers(sheet);
   var n = normalizeCustomerNameForPoints_(order.customerName);
   var p = normalizePhoneForPoints_(order.phone);
@@ -6388,7 +6456,9 @@ function upsertMemberFromOrder_(ss, order) {
   if (!order) return null;
   var card = normalizeMemberCardNo_(order.memberCardNo);
   if (!isValidMemberCardNo_(card)) return null;
-  var sheet = getMemberSheet(ss);
+  // Memberist 開不起來時不可 throw，否則會擋住歷史訂單寫入
+  var sheet = getMemberSheet(ss, { required: false });
+  if (!sheet) return null;
   var lineId = String(order.lineId || "").trim();
   var payload = {
     memberCardNo: card,
