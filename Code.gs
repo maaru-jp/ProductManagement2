@@ -888,9 +888,10 @@ function defaultLineNotifyTemplates_() {
     paid: [
       "【MAARU 匯款確認】",
       "",
-      "{{customerName}} 您好，已確認收到訂單 {{orderId}} 的匯款。",
+      "{{customerName}} 您好，已確認收到訂單 {{orderId}} 的預購訂金。",
       "",
-      "金額：NT${{amountDue}}",
+      "預購訂金：NT${{depositAmount}}",
+      "",
       "我們會盡快為您安排出貨，謝謝！"
     ].join("\n"),
     shipping: [
@@ -939,6 +940,10 @@ function getLineNotifyTemplates_() {
       var k = LINE_NOTIFY_TYPES_[i];
       var t = parsed && parsed[k] != null ? String(parsed[k]).trim() : "";
       out[k] = t || defaults[k];
+    }
+    // 舊版「已確認匯款」用 amountDue；改為讀取預購訂金 depositAmount
+    if (out.paid && /金額：NT\$\{\{amountDue\}\}/.test(out.paid) && out.paid.indexOf("{{depositAmount}}") < 0) {
+      out.paid = defaults.paid;
     }
     return out;
   } catch (e) {
@@ -1935,6 +1940,9 @@ function buildLineNotifyTemplateVars_(order) {
   }
   var storeName = String(order.storeName || "").trim();
   var storeLine = storeName ? ("門市／取貨處：" + storeName) : "";
+  var depositNum = Number(order.depositAmount);
+  if (isNaN(depositNum) || depositNum < 0) depositNum = 0;
+  depositNum = Math.round(depositNum);
   return {
     orderId: String(order.id || "").trim(),
     memberCardNo: normalizeMemberCardNo_(order.memberCardNo) || "",
@@ -1942,6 +1950,7 @@ function buildLineNotifyTemplateVars_(order) {
     itemsSummary: summaryLines.length ? summaryLines.join("\n") : "（詳見訂單）",
     subtotal: String(Math.round(Number(order.subtotal) || 0)),
     amountDue: String(Math.round(orderAmountDuePublic_(order) || 0)),
+    depositAmount: String(depositNum),
     shippingMethod: String(order.shippingMethod || "").trim() || "—",
     storeName: storeLine,
     status: String(order.status || "").trim()
@@ -1958,6 +1967,7 @@ function renderLineNotifyTemplate_(template, order) {
     .replace(/\{\{itemsSummary\}\}/g, v.itemsSummary)
     .replace(/\{\{subtotal\}\}/g, v.subtotal)
     .replace(/\{\{amountDue\}\}/g, v.amountDue)
+    .replace(/\{\{depositAmount\}\}/g, v.depositAmount)
     .replace(/\{\{shippingMethod\}\}/g, v.shippingMethod)
     .replace(/\{\{storeName\}\}/g, v.storeName)
     .replace(/\{\{status\}\}/g, v.status);
@@ -2314,11 +2324,11 @@ function buildLineNotifyProgressBox_(steps, brandColor, mutedColor) {
     labels.push({
       type: "text",
       text: String(steps[i].label || ""),
-      size: "xxs",
+      size: "xs",
       color: on ? activeColor : muted,
       align: "center",
       flex: 1,
-      weight: on ? "bold" : "regular"
+      weight: "bold"
     });
   }
   return {
@@ -2356,8 +2366,8 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
 
   var orderDisp = v.orderId ? ("#" + v.orderId.replace(/^#/, "")) : "—";
   var detail = lineFlexSafeText_(bodyText, 900);
-  var titleSize = theme.key === "jp" ? "lg" : "xl";
-  var titleWeight = theme.key === "kr" ? "bold" : "bold";
+  // LINE Flex size：xs < sm < md < lg < xl < xxl < 3xl < 4xl < 5xl
+  var titleSize = "xxl";
 
   var headerContents = [];
   if (logo && /^https:\/\//i.test(logo)) {
@@ -2378,9 +2388,9 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
               aspectRatio: "1:1"
             }
           ],
-          width: "40px",
-          height: "40px",
-          cornerRadius: "20px"
+          width: "48px",
+          height: "48px",
+          cornerRadius: "24px"
         },
         {
           type: "box",
@@ -2388,12 +2398,12 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
           flex: 1,
           justifyContent: "center",
           contents: [
-            { type: "text", text: brand, size: "xs", color: theme.headerBrand },
+            { type: "text", text: brand, size: "sm", weight: "bold", color: theme.headerBrand },
             {
               type: "text",
               text: lineFlexSafeText_(meta.title, 40),
               size: titleSize,
-              weight: titleWeight,
+              weight: "bold",
               color: theme.headerTitle,
               wrap: true
             }
@@ -2403,12 +2413,12 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   } else {
     headerContents.push(
-      { type: "text", text: brand, size: "xs", color: theme.headerBrand },
+      { type: "text", text: brand, size: "sm", weight: "bold", color: theme.headerBrand },
       {
         type: "text",
         text: lineFlexSafeText_(meta.title, 40),
         size: titleSize,
-        weight: titleWeight,
+        weight: "bold",
         color: theme.headerTitle,
         wrap: true,
         margin: "xs"
@@ -2427,7 +2437,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         {
           type: "text",
           text: theme.productIcon || "🎀",
-          size: "md",
+          size: "lg",
           flex: 0
         },
         {
@@ -2438,14 +2448,14 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
             {
               type: "text",
               text: lineFlexSafeText_(product.title, 80),
-              size: "sm",
+              size: "lg",
               weight: "bold",
               color: theme.text,
               wrap: true
             }
           ].concat(
             product.sub
-              ? [{ type: "text", text: lineFlexSafeText_(product.sub, 40), size: "xs", color: theme.textMuted }]
+              ? [{ type: "text", text: lineFlexSafeText_(product.sub, 40), size: "sm", weight: "bold", color: theme.textMuted }]
               : []
           )
         }
@@ -2456,30 +2466,68 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       layout: "horizontal",
       margin: "md",
       contents: [
-        { type: "text", text: theme.orderLabel, size: "sm", color: theme.textSoft, flex: 0 },
+        { type: "text", text: theme.orderLabel, size: "md", weight: "bold", color: theme.textSoft, flex: 0 },
         {
           type: "text",
           text: orderDisp,
-          size: "sm",
-          color: theme.textMuted,
+          size: "md",
+          weight: "bold",
+          color: theme.text,
           align: "end",
           flex: 1,
           wrap: true
         }
       ]
-    },
+    }
+  ];
+
+  // 已確認匯款：優先顯示訂單管理的「預購訂金」
+  var depositNum = Math.round(Number(order.depositAmount) || 0);
+  if (isNaN(depositNum) || depositNum < 0) depositNum = 0;
+  if (notifyType === "paid") {
+    bodyContents.push({
+      type: "box",
+      layout: "vertical",
+      margin: "md",
+      paddingAll: theme.key === "kr" ? "14px" : "12px",
+      cornerRadius: theme.key === "kr" ? "12px" : "8px",
+      backgroundColor: theme.chipBg,
+      contents: [
+        {
+          type: "text",
+          text: "預購訂金",
+          size: "md",
+          weight: "bold",
+          color: theme.textMuted,
+          align: "center"
+        },
+        {
+          type: "text",
+          text: "NT$" + depositNum,
+          size: "3xl",
+          weight: "bold",
+          color: theme.text,
+          align: "center",
+          margin: "xs"
+        }
+      ]
+    });
+  }
+
+  bodyContents.push(
     {
       type: "box",
       layout: "vertical",
       margin: "md",
-      paddingAll: theme.key === "kr" ? "12px" : "10px",
+      paddingAll: theme.key === "kr" ? "14px" : "12px",
       cornerRadius: theme.key === "kr" ? "12px" : "8px",
       backgroundColor: theme.chipBg,
       contents: [
         {
           type: "text",
           text: lineFlexSafeText_(shipLabel, 60),
-          size: "sm",
+          size: "md",
+          weight: "bold",
           color: theme.chipText,
           align: "center",
           wrap: true
@@ -2490,18 +2538,21 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       type: "separator",
       margin: "lg",
       color: theme.separator
-    },
+    }
+  );
+
+  bodyContents.push(
     {
       type: "box",
       layout: "horizontal",
       spacing: "sm",
       margin: "lg",
       contents: [
-        { type: "text", text: meta.sectionEmoji || "📦", size: "md", flex: 0 },
+        { type: "text", text: meta.sectionEmoji || "📦", size: "lg", flex: 0 },
         {
           type: "text",
           text: meta.sectionLabel || "通知",
-          size: "md",
+          size: "lg",
           weight: "bold",
           color: theme.text,
           flex: 1
@@ -2511,7 +2562,8 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     {
       type: "text",
       text: detail,
-      size: "xs",
+      size: "sm",
+      weight: "bold",
       color: theme.textSoft,
       wrap: true,
       margin: "sm"
@@ -2542,49 +2594,41 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       action: { type: "uri", label: theme.btnOrdersLabel, uri: ordersUrl }
     });
   }
-  if (!footerContents.length) {
-    footerContents.push({
-      type: "button",
-      style: "primary",
-      color: color,
-      height: "sm",
-      action: {
-        type: "message",
-        label: theme.btnReplyLabel,
-        text: theme.key === "kr" ? "收到了 ♡" : "收到，謝謝！"
-      }
-    });
+
+  var bubble = {
+    type: "bubble",
+    size: "mega",
+    header: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: theme.key === "jp" ? "18px" : "16px",
+      backgroundColor: color,
+      contents: headerContents
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "16px",
+      backgroundColor: theme.bodyBg,
+      contents: bodyContents
+    }
+  };
+  // 僅在有物流／訂單連結時顯示按鈕；不顯示「收到了」回覆按鈕
+  if (footerContents.length) {
+    bubble.footer = {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      paddingAll: "12px",
+      backgroundColor: theme.footerBg,
+      contents: footerContents
+    };
   }
 
   return {
     type: "flex",
     altText: brand + "｜" + (meta.alt || meta.title) + (v.orderId ? ("｜" + orderDisp) : ""),
-    contents: {
-      type: "bubble",
-      size: "mega",
-      header: {
-        type: "box",
-        layout: "vertical",
-        paddingAll: theme.key === "jp" ? "18px" : "16px",
-        backgroundColor: color,
-        contents: headerContents
-      },
-      body: {
-        type: "box",
-        layout: "vertical",
-        paddingAll: "16px",
-        backgroundColor: theme.bodyBg,
-        contents: bodyContents
-      },
-      footer: {
-        type: "box",
-        layout: "vertical",
-        spacing: "sm",
-        paddingAll: "12px",
-        backgroundColor: theme.footerBg,
-        contents: footerContents
-      }
-    }
+    contents: bubble
   };
 }
 
