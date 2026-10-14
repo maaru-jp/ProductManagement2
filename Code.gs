@@ -1356,7 +1356,7 @@ function buildLineBindGuideMessages_(opts) {
   var desc = String(opts.hint || "").trim() ||
     "請先完成會員綁定才能使用 +1 快速下單";
   if (opts.welcome && !opts.hint) {
-    desc = "請先完成會員綁定，才能接收訂單通知與使用 +1 快速下單";
+    desc = "請先完成會員綁定，才能接收訂單通知";
   }
   var note = "備註：「綁定」與 13 碼會員卡號中間請空一格\n範例：綁定 2026092312345";
 
