@@ -872,15 +872,7 @@ function isLineMessagingUserId_(s) {
 function defaultLineNotifyTemplates_() {
   return {
     confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
-    paid: [
-      "【MAARU 匯款確認】",
-      "",
-      "{{customerName}} 您好，已確認收到訂單 {{orderId}} 的預購訂金。",
-      "",
-      "預購訂金：NT${{depositAmount}}",
-      "",
-      "我們會盡快為您安排出貨，謝謝！"
-    ].join("\n"),
+    paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping: [
       "【MAARU 出貨通知】",
       "",
@@ -928,8 +920,8 @@ function getLineNotifyTemplates_() {
       var t = parsed && parsed[k] != null ? String(parsed[k]).trim() : "";
       out[k] = t || defaults[k];
     }
-    // 舊版用 amountDue；改為讀取預購訂金 depositAmount
-    if (out.paid && /金額：NT\$\{\{amountDue\}\}/.test(out.paid) && out.paid.indexOf("{{depositAmount}}") < 0) {
+    // 已確認匯款：訂金在卡片正中顯示，舊內文含金額／訂金則改為短結語（卡片不顯示此結語）
+    if (out.paid && /金額|訂金|depositAmount|amountDue|訂單編號/.test(out.paid)) {
       out.paid = defaults.paid;
     }
     // 「請匯款」訂金已在卡片正中顯示；內文只保留結語，不重複訂金／卡號等
@@ -2078,10 +2070,10 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
       ]
     },
     paid: {
-      title: "已確認收到匯款",
+      title: "已收到匯款",
       sectionLabel: "入金確認",
       sectionEmoji: "💮",
-      alt: "已確認匯款",
+      alt: "已收到匯款",
       steps: [
         { label: "下單", active: true },
         { label: "匯款", active: true },
@@ -2135,10 +2127,10 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
       ]
     },
     paid: {
-      title: "匯款已確認！",
+      title: "已收到匯款",
       sectionLabel: "付款確認",
       sectionEmoji: "✅",
-      alt: "已確認匯款",
+      alt: "已收到匯款",
       steps: [
         { label: "下單", active: true },
         { label: "匯款", active: true },
@@ -2192,10 +2184,10 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
       ]
     },
     paid: {
-      title: "已確認收到匯款",
+      title: "已收到匯款",
       sectionLabel: "匯款確認",
       sectionEmoji: "✅",
-      alt: "已確認匯款",
+      alt: "已收到匯款",
       steps: [
         { label: "下單", active: true },
         { label: "匯款", active: true },
@@ -2433,9 +2425,10 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     buildLineNotifyProgressBox_(meta.steps, color, theme.progressMuted)
   ];
 
-  // 「請匯款／已確認匯款」不顯示商品品項、不顯示超商／取貨門市
-  var hideProductAndShip = (notifyType === "paid" || notifyType === "confirm_pay");
-  if (!hideProductAndShip) {
+  // 請匯款／已確認匯款／出貨通知：不顯示商品品項
+  var hideProduct = (notifyType === "paid" || notifyType === "confirm_pay" || notifyType === "shipping");
+  var hideShip = (notifyType === "paid" || notifyType === "confirm_pay");
+  if (!hideProduct) {
     bodyContents.push({
       type: "box",
       layout: "horizontal",
@@ -2556,29 +2549,31 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       align: "center"
     });
   } else if (notifyType === "paid") {
-    // 已確認匯款：進度 → 訂單編號 → 預購訂金
+    // 已確認匯款：標題（header）→ 進度 → 訂單編號 → 會員卡號 → 預購訂金
     pushInfoRow_("訂單編號", orderDisp);
+    pushInfoRow_("會員卡號", cardDisp);
     pushDepositChip_();
   } else {
     pushInfoRow_(theme.orderLabel, orderDisp);
-    if (!hideProductAndShip) {
+    if (!hideShip) {
+      var shipTextSize = notifyType === "shipping" ? "xl" : "md";
       bodyContents.push({
         type: "box",
         layout: "vertical",
         margin: "sm",
-        paddingAll: "10px",
+        paddingAll: notifyType === "shipping" ? "12px" : "10px",
         cornerRadius: theme.key === "kr" ? "10px" : "8px",
         backgroundColor: theme.chipBg,
         contents: [
           {
             type: "text",
-            text: lineFlexSafeText_(shipLabel, 48),
-            size: "sm",
+            text: lineFlexSafeText_(shipLabel, 60),
+            size: shipTextSize,
             weight: "bold",
             color: theme.chipText,
             align: "center",
             wrap: true,
-            maxLines: 2
+            maxLines: 3
           }
         ]
       });
