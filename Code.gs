@@ -874,12 +874,11 @@ function defaultLineNotifyTemplates_() {
     confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
-      "您的訂單已出貨\n\n" +
+      "出貨通知  您的訂單已出貨！\n\n" +
       "您好：\n\n" +
-      "您的訂單已安排出貨，本次附上訂單明細，方便您收到商品後核對品項與數量，請留意查收。\n\n" +
+      "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量，請留意查收\n\n" +
       "到貨時間依物流配送安排為主\n\n" +
-      "如有任何問題，歡迎隨時與小幫手聯繫\n\n" +
-      "感謝您的支持與耐心等候，期待您收到商品後會喜歡",
+      "如有任何問題，歡迎隨時與小幫手聯繫",
     arrived:
       "【MAARU 到店／可取貨】\n\n" +
       "{{customerName}} 您好，訂單 {{orderId}} 已可取貨。\n\n" +
@@ -928,7 +927,9 @@ function getLineNotifyTemplates_() {
       out.shipping &&
       (
         /運送方式|shippingMethod|storeName|品項|itemsSummary/.test(out.shipping) ||
-        /實際到貨時間依物流安排為主/.test(out.shipping)
+        /實際到貨時間依物流安排為主/.test(out.shipping) ||
+        /本次附上訂單明細/.test(out.shipping) ||
+        /感謝您的支持與耐心等候/.test(out.shipping)
       )
     ) {
       out.shipping = defaults.shipping;
@@ -1083,7 +1084,10 @@ function saveLineAutomationSettings_(body) {
       if (k === "confirm_pay" && /訂金|depositAmount|amountDue|訂單編號|會員卡號/.test(t)) {
         t = defaults.confirm_pay;
       }
-      if (k === "shipping" && /運送方式|shippingMethod|storeName|品項|itemsSummary/.test(t)) {
+      if (
+        k === "shipping" &&
+        /運送方式|shippingMethod|storeName|品項|itemsSummary|本次附上訂單明細|感謝您的支持與耐心等候/.test(t)
+      ) {
         t = defaults.shipping;
       }
       toSave[k] = t;
@@ -1348,6 +1352,9 @@ function buildLineBindResultMessages_(ok, memberCardNo, detailMsg) {
         type: "box",
         layout: "vertical",
         spacing: "md",
+        paddingAll: "14px",
+        cornerRadius: "20px",
+        backgroundColor: "#FFFFFF",
         contents: [
           { type: "text", text: title, weight: "bold", size: "lg", color: color },
           { type: "separator" },
@@ -2425,9 +2432,9 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     buildLineNotifyProgressBox_(meta.steps, color, theme.progressMuted)
   ];
 
-  // 請匯款／已確認匯款／出貨通知：不顯示商品品項
+  // 請匯款／已確認匯款／出貨通知：不顯示商品品項；出貨亦不顯示超商門市區塊
   var hideProduct = (notifyType === "paid" || notifyType === "confirm_pay" || notifyType === "shipping");
-  var hideShip = (notifyType === "paid" || notifyType === "confirm_pay");
+  var hideShip = (notifyType === "paid" || notifyType === "confirm_pay" || notifyType === "shipping");
   if (!hideProduct) {
     bodyContents.push({
       type: "box",
@@ -2503,7 +2510,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       layout: "vertical",
       margin: "sm",
       paddingAll: "10px",
-      cornerRadius: theme.key === "kr" ? "10px" : "8px",
+      cornerRadius: "16px",
       backgroundColor: theme.chipBg,
       contents: [
         {
@@ -2553,22 +2560,53 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     pushInfoRow_("訂單編號", orderDisp);
     pushInfoRow_("會員卡號", cardDisp);
     pushDepositChip_();
+  } else if (notifyType === "shipping") {
+    // 出貨通知：標題 → 進度 → 訂單編號 → 會員卡號 → 出貨說明（無超商門市）
+    pushInfoRow_("訂單編號", orderDisp);
+    pushInfoRow_("會員卡號", cardDisp);
+    var shippingBody =
+      "您好：\n\n" +
+      "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量，請留意查收\n\n" +
+      "到貨時間依物流配送安排為主\n\n" +
+      "如有任何問題，歡迎隨時與小幫手聯繫";
+    bodyContents.push({
+      type: "separator",
+      margin: "md",
+      color: theme.separator
+    });
+    bodyContents.push({
+      type: "text",
+      text: "出貨通知  您的訂單已出貨！",
+      size: "md",
+      weight: "bold",
+      color: theme.text,
+      wrap: true,
+      margin: "md"
+    });
+    bodyContents.push({
+      type: "text",
+      text: shippingBody,
+      size: "md",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "xs"
+    });
   } else {
     pushInfoRow_(theme.orderLabel, orderDisp);
     if (!hideShip) {
-      var shipTextSize = notifyType === "shipping" ? "xl" : "md";
       bodyContents.push({
         type: "box",
         layout: "vertical",
         margin: "sm",
-        paddingAll: notifyType === "shipping" ? "12px" : "10px",
-        cornerRadius: theme.key === "kr" ? "10px" : "8px",
+        paddingAll: "10px",
+        cornerRadius: "16px",
         backgroundColor: theme.chipBg,
         contents: [
           {
             type: "text",
             text: lineFlexSafeText_(shipLabel, 60),
-            size: shipTextSize,
+            size: "md",
             weight: "bold",
             color: theme.chipText,
             align: "center",
@@ -2580,53 +2618,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     }
   }
 
-  if (notifyType === "shipping") {
-    // 出貨通知內文：不重複運送方式／門市（門市已在上方區塊）
-    var shippingBody = [
-      "您的訂單已出貨",
-      "",
-      "您好：",
-      "",
-      "您的訂單已安排出貨，本次附上訂單明細，方便您收到商品後核對品項與數量，請留意查收。",
-      "",
-      "📌 到貨時間依物流配送安排為主",
-      "",
-      "如有任何問題，歡迎隨時與小幫手聯繫",
-      "",
-      "感謝您的支持與耐心等候，期待您收到商品後會喜歡"
-    ].join("\n");
-    bodyContents.push({
-      type: "separator",
-      margin: "md",
-      color: theme.separator
-    });
-    bodyContents.push({
-      type: "box",
-      layout: "horizontal",
-      spacing: "sm",
-      margin: "md",
-      contents: [
-        { type: "text", text: "📦", size: "md", flex: 0 },
-        {
-          type: "text",
-          text: "出貨通知",
-          size: "md",
-          weight: "bold",
-          color: theme.text,
-          flex: 1
-        }
-      ]
-    });
-    bodyContents.push({
-      type: "text",
-      text: shippingBody,
-      size: "md",
-      weight: "bold",
-      color: theme.textSoft,
-      wrap: true,
-      margin: "xs"
-    });
-  } else if (notifyType !== "paid" && notifyType !== "confirm_pay") {
+  if (notifyType !== "paid" && notifyType !== "confirm_pay" && notifyType !== "shipping") {
     bodyContents.push({
       type: "separator",
       margin: "md",
@@ -2688,18 +2680,16 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   }
 
-  // giga＝LINE 單卡最寬；上下 padding／間距收斂避免過長
-  var bubble = {
-    type: "bubble",
-    size: "giga",
-    header: {
+  // 單卡外殼＋大圓角（四角圓潤）；內容拆成標題區／內文區／按鈕區
+  var cardSections = [
+    {
       type: "box",
       layout: "vertical",
-      paddingAll: "12px",
+      paddingAll: "14px",
       backgroundColor: color,
       contents: headerContents
     },
-    body: {
+    {
       type: "box",
       layout: "vertical",
       paddingAll: "12px",
@@ -2707,18 +2697,37 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       backgroundColor: theme.bodyBg,
       contents: bodyContents
     }
-  };
+  ];
   // 僅在有物流／訂單連結時顯示按鈕；不顯示「收到了」回覆按鈕
   if (footerContents.length) {
-    bubble.footer = {
+    cardSections.push({
       type: "box",
       layout: "vertical",
       spacing: "sm",
       paddingAll: "10px",
       backgroundColor: theme.footerBg,
       contents: footerContents
-    };
+    });
   }
+
+  var bubble = {
+    type: "bubble",
+    size: "giga",
+    styles: {
+      body: {
+        backgroundColor: theme.bodyBg
+      }
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "0px",
+      spacing: "none",
+      cornerRadius: "20px",
+      backgroundColor: theme.bodyBg,
+      contents: cardSections
+    }
+  };
 
   return {
     type: "flex",
