@@ -1255,7 +1255,7 @@ function processLineEvent_(event, settings) {
       if (accessToken) {
         sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideMessages_({
           welcome: false,
-          hint: "請在「綁定」後面加上您的 13 碼會員卡號後再傳送。"
+          hint: "請傳送「綁定」＋空一格＋13 碼會員卡號。\n範例：綁定 2026092312345"
         }));
       }
       return { ok: false, type: "bind_help", message: "invalid_card_format", text: text };
@@ -1358,6 +1358,7 @@ function buildLineBindGuideMessages_(opts) {
   if (opts.welcome && !opts.hint) {
     desc = "請先完成會員綁定，才能接收訂單通知與使用 +1 快速下單";
   }
+  var note = "備註：「綁定」與 13 碼會員卡號中間請空一格\n範例：綁定 2026092312345";
 
   var flex = {
     type: "flex",
@@ -1385,6 +1386,14 @@ function buildLineBindGuideMessages_(opts) {
             type: "text",
             text: desc,
             size: "sm",
+            color: "#8C8C8C",
+            wrap: true,
+            margin: "sm"
+          },
+          {
+            type: "text",
+            text: note,
+            size: "xs",
             color: "#8C8C8C",
             wrap: true,
             margin: "sm"
