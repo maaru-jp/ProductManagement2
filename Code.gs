@@ -875,6 +875,7 @@ function defaultLineNotifyTemplates_() {
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
       "出貨通知  您的訂單已出貨！\n\n" +
+      "您好：\n\n" +
       "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量，請留意查收\n\n" +
       "到貨時間依物流配送安排為主\n\n" +
       "如有任何問題，歡迎隨時與小幫手聯繫",
@@ -2560,9 +2561,33 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     pushInfoRow_("會員卡號", cardDisp);
     pushDepositChip_();
   } else if (notifyType === "shipping") {
-    // 出貨通知：標題 → 進度 → 訂單編號 → 會員卡號 → 出貨說明（無超商門市）
+    // 出貨通知：標題 → 進度 → 訂單編號 → 會員卡號 → 超商取貨 → 出貨說明
     pushInfoRow_("訂單編號", orderDisp);
     pushInfoRow_("會員卡號", cardDisp);
+    var shipPickup = String(shipLabel || "").trim();
+    if (!shipPickup || shipPickup === theme.shipFallback) {
+      shipPickup = "7-11 超商取貨";
+    }
+    bodyContents.push({
+      type: "box",
+      layout: "vertical",
+      margin: "sm",
+      paddingAll: "12px",
+      cornerRadius: "16px",
+      backgroundColor: theme.chipBg,
+      contents: [
+        {
+          type: "text",
+          text: lineFlexSafeText_(shipPickup, 60),
+          size: "xl",
+          weight: "bold",
+          color: theme.chipText,
+          align: "center",
+          wrap: true,
+          maxLines: 3
+        }
+      ]
+    });
     var shippingBody =
       "您好：\n\n" +
       "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量，請留意查收\n\n" +
