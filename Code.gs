@@ -38,7 +38,13 @@ var CONFIG = {
   pointsSheetName: "紅利點數",
   // 會員主檔：獨立試算表「Memberist」分頁「會員名單」（姓名 ↔ 13 碼卡號）
   memberSpreadsheetId: "1CJiK7WjzbKtQnumL14H4dW0KkhdOd6RsyEN7-EU3qzw",
-  memberSheetName: "會員名單"
+  memberSheetName: "會員名單",
+  // LINE Flex 推播外觀（留空則用預設）
+  lineBrandName: "MAARU",
+  lineBrandColor: "#6D28D9",
+  lineBrandLogoUrl: "",
+  // 顧客官網網址（Flex「查看我的訂單」按鈕；例：https://你的網域）
+  publicSiteUrl: ""
 };
 
 /**
@@ -60,7 +66,40 @@ function authorizeAllScopesOnce() {
   });
   Logger.log("Sheets OK: " + name + " / " + id);
   Logger.log("UrlFetch OK, HTTP " + res.getResponseCode());
-  return "授權完成｜試算表：" + name + "｜UrlFetch HTTP " + res.getResponseCode() + "（請部署新版本）";
+  var memberMsg = "";
+  var mid = (CONFIG.memberSpreadsheetId || "").toString().trim();
+  if (mid) {
+    try {
+      var mss = SpreadsheetApp.openById(mid);
+      memberMsg = "｜Memberist OK：" + mss.getName();
+      Logger.log("Memberist OK: " + mss.getName() + " / " + mss.getId());
+    } catch (eMem) {
+      var em = String(eMem && eMem.message ? eMem.message : eMem);
+      if (/permission|auth\/spreadsheets|Authorization/i.test(em)) {
+        memberMsg =
+          "｜Memberist 失敗：缺少 spreadsheets 授權。請在專案設定啟用 appsscript.json，oauthScopes 加入 https://www.googleapis.com/auth/spreadsheets 後重新執行本函式並允許權限";
+      } else {
+        memberMsg = "｜Memberist 失敗（請共用編輯者給此 Google 帳號）：" + mid;
+      }
+      Logger.log("Memberist FAIL: " + eMem);
+    }
+  }
+  return "授權完成｜試算表：" + name + "｜UrlFetch HTTP " + res.getResponseCode() + memberMsg + "（請部署新版本）";
+}
+
+/** 會員表開啟失敗時的共用說明（給後台／LINE） */
+function memberSheetShareHintMessage_() {
+  var mid = (CONFIG.memberSpreadsheetId || "").toString().trim();
+  var url = mid
+    ? ("https://docs.google.com/spreadsheets/d/" + mid + "/edit")
+    : "";
+  return {
+    error: true,
+    message: "無法開啟會員名單試算表（Memberist）。請把該試算表「共用」給部署此 Apps Script 的 Google 帳號，權限選「編輯者」，再執行 authorizeAllScopesOnce 後重新部署。",
+    memberSpreadsheetId: mid,
+    memberSpreadsheetUrl: url,
+    shareHint: "Memberist → 共用 → 加入 GAS 擁有者帳號 → 編輯者"
+  };
 }
 
 /** 相容舊名稱：請改執行 authorizeAllScopesOnce */
@@ -275,10 +314,26 @@ function doPost(e) {
 
     // 會員名單：list / upsert / delete / sync
     if (action === "member_list" || action === "member_upsert" || action === "member_delete" || action === "member_sync_from_orders" || action === "points_purge_card") {
-      var memberSheet = getMemberSheet(ss);
-      if (!memberSheet) {
+      var memberSheet = null;
+      try {
+        memberSheet = getMemberSheet(ss);
+      } catch (eMemberOpen) {
+        var hint = memberSheetShareHintMessage_();
         out.error = true;
-        out.message = "找不到會員名單工作表";
+        out.message = hint.message;
+        out.memberSpreadsheetId = hint.memberSpreadsheetId;
+        out.memberSpreadsheetUrl = hint.memberSpreadsheetUrl;
+        out.shareHint = hint.shareHint;
+        out.detail = String(eMemberOpen && eMemberOpen.message ? eMemberOpen.message : eMemberOpen);
+        return jsonOutput(out);
+      }
+      if (!memberSheet) {
+        var hint2 = memberSheetShareHintMessage_();
+        out.error = true;
+        out.message = hint2.message;
+        out.memberSpreadsheetId = hint2.memberSpreadsheetId;
+        out.memberSpreadsheetUrl = hint2.memberSpreadsheetUrl;
+        out.shareHint = hint2.shareHint;
         return jsonOutput(out);
       }
       if (action === "member_list") {
@@ -1736,7 +1791,16 @@ function bindLineUserIdToMemberCard_(ss, userId, card) {
   if (!isValidMemberCardNo_(card)) {
     return { error: true, message: "會員卡號須為 13 碼數字" };
   }
-  var sheet = getMemberSheet(ss);
+  var sheet = getMemberSheet(ss, { required: false });
+  if (!sheet) {
+    var bindHint = memberSheetShareHintMessage_();
+    return {
+      error: true,
+      message: "無法寫入會員名單（Memberist 未共用編輯權給 GAS 帳號）。請先共用後再傳「綁定」。",
+      memberSpreadsheetUrl: bindHint.memberSpreadsheetUrl,
+      shareHint: bindHint.shareHint
+    };
+  }
   ensureMemberHeaderRow_(sheet);
   var existing = getMemberRecordByCard_(ss, card);
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
@@ -1896,8 +1960,425 @@ function renderLineNotifyTemplate_(template, order) {
     .replace(/\{\{status\}\}/g, v.status);
 }
 
+/** 各通知類型：標題、區塊標籤、進度條、altText */
+function lineNotifyFlexMeta_(notifyType) {
+  var map = {
+    confirm_pay: {
+      title: "請確認並匯款",
+      sectionLabel: "匯款通知",
+      sectionEmoji: "💳",
+      alt: "訂單確認／請匯款",
+      steps: [
+        { label: "下單", active: true },
+        { label: "匯款", active: true },
+        { label: "出貨", active: false }
+      ]
+    },
+    paid: {
+      title: "已確認收到匯款",
+      sectionLabel: "匯款確認",
+      sectionEmoji: "✅",
+      alt: "已確認匯款",
+      steps: [
+        { label: "下單", active: true },
+        { label: "匯款", active: true },
+        { label: "出貨", active: false }
+      ]
+    },
+    shipping: {
+      title: "你的包裹寄出了",
+      sectionLabel: "出貨通知",
+      sectionEmoji: "📦",
+      alt: "出貨通知",
+      steps: [
+        { label: "下單", active: true },
+        { label: "到貨", active: true },
+        { label: "寄出", active: true }
+      ]
+    },
+    arrived: {
+      title: "訂單已可取貨",
+      sectionLabel: "取貨通知",
+      sectionEmoji: "🏪",
+      alt: "到店／可取貨",
+      steps: [
+        { label: "下單", active: true },
+        { label: "寄出", active: true },
+        { label: "可取", active: true }
+      ]
+    },
+    completed: {
+      title: "感謝您的購買",
+      sectionLabel: "完成通知",
+      sectionEmoji: "🎉",
+      alt: "取貨完成",
+      steps: [
+        { label: "下單", active: true },
+        { label: "出貨", active: true },
+        { label: "完成", active: true }
+      ]
+    }
+  };
+  return map[notifyType] || map.shipping;
+}
+
+function lineFlexSafeText_(s, maxLen) {
+  var t = String(s == null ? "" : s).replace(/\0/g, "").trim();
+  if (!t) t = "—";
+  maxLen = maxLen || 400;
+  if (t.length > maxLen) t = t.slice(0, maxLen - 1) + "…";
+  return t;
+}
+
+function guessLogisticsTrackUrl_(shippingMethod) {
+  var s = String(shippingMethod || "");
+  if (/7-?\s*11|交貨便|統一超商/i.test(s)) {
+    return "https://eservice.7-11.com.tw/e-tracking/search.aspx";
+  }
+  if (/全家|FamilyMart|Fami/i.test(s)) {
+    return "https://www.famiport.com.tw/Web_Famiport/page/process.aspx";
+  }
+  if (/萊爾富|Hi-?Life/i.test(s)) {
+    return "https://www.hilife.com.tw/serviceInfo_search.aspx";
+  }
+  if (/OK\s*超商|OK\s*Mart/i.test(s)) {
+    return "https://www.okmart.com.tw/convenient_QueryGoods";
+  }
+  if (/黑貓|宅急便|t-?cat/i.test(s)) {
+    return "https://www.t-cat.com.tw/Inquire/Trace.aspx";
+  }
+  if (/新竹物流|HCT/i.test(s)) {
+    return "https://www.hct.com.tw/Search/SearchGoods_n.aspx";
+  }
+  return "";
+}
+
+function buildLineNotifyProductLine_(order) {
+  var items = Array.isArray(order && order.items) ? order.items : [];
+  if (!items.length) return { title: "訂單商品", sub: "" };
+  var first = items[0] || {};
+  var name = String(first.lineName || first.name || first.product || "").trim() || "商品";
+  var qty = Number(first.qty != null ? first.qty : first.quantity) || 0;
+  var title = name + (qty ? (" x" + qty) : "");
+  var extra = items.length > 1 ? ("另有 " + (items.length - 1) + " 項") : "";
+  var sku = String(first.sku || first.style || first.code || first.variant || "").trim();
+  return { title: title, sub: sku || extra };
+}
+
+function buildLineNotifyProgressBox_(steps, brandColor) {
+  var activeColor = brandColor || "#6D28D9";
+  var muted = "#CBD5E1";
+  var dots = [];
+  var labels = [];
+  for (var i = 0; i < steps.length; i++) {
+    var on = !!steps[i].active;
+    if (i > 0) {
+      dots.push({
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        contents: [
+          {
+            type: "box",
+            layout: "vertical",
+            contents: [],
+            height: "2px",
+            backgroundColor: steps[i - 1].active ? activeColor : muted,
+            margin: "md"
+          }
+        ],
+        justifyContent: "center"
+      });
+    }
+    dots.push({
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "box",
+          layout: "vertical",
+          contents: [],
+          width: "10px",
+          height: "10px",
+          cornerRadius: "5px",
+          backgroundColor: on ? activeColor : muted
+        }
+      ],
+      alignItems: "center"
+    });
+    labels.push({
+      type: "text",
+      text: String(steps[i].label || ""),
+      size: "xxs",
+      color: on ? activeColor : "#94A3B8",
+      align: "center",
+      flex: 1,
+      weight: on ? "bold" : "regular"
+    });
+  }
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "sm",
+    margin: "lg",
+    contents: [
+      { type: "box", layout: "horizontal", contents: dots },
+      { type: "box", layout: "horizontal", contents: labels }
+    ]
+  };
+}
+
+/**
+ * 類似圖例的 Flex 出貨／進度通知卡片
+ * bodyText：後台模板渲染後的文字，顯示在卡片說明區
+ */
+function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
+  order = order || {};
+  var meta = lineNotifyFlexMeta_(notifyType);
+  var brand = String(CONFIG.lineBrandName || "MAARU").trim() || "MAARU";
+  var color = String(CONFIG.lineBrandColor || "#6D28D9").trim() || "#6D28D9";
+  var logo = String(CONFIG.lineBrandLogoUrl || "").trim();
+  var v = buildLineNotifyTemplateVars_(order);
+  var product = buildLineNotifyProductLine_(order);
+  var shipLabel = String(order.shippingMethod || "").trim();
+  if (shipLabel && String(order.storeName || "").trim()) {
+    shipLabel = shipLabel + "｜" + String(order.storeName).trim();
+  } else if (!shipLabel && String(order.storeName || "").trim()) {
+    shipLabel = String(order.storeName).trim();
+  }
+  if (!shipLabel) shipLabel = "運送方式稍後更新";
+
+  var orderDisp = v.orderId ? ("#" + v.orderId.replace(/^#/, "")) : "—";
+  var detail = lineFlexSafeText_(bodyText, 900);
+
+  var headerContents = [];
+  if (logo && /^https:\/\//i.test(logo)) {
+    headerContents.push({
+      type: "box",
+      layout: "horizontal",
+      spacing: "md",
+      contents: [
+        {
+          type: "box",
+          layout: "vertical",
+          contents: [
+            {
+              type: "image",
+              url: logo,
+              size: "full",
+              aspectMode: "cover",
+              aspectRatio: "1:1"
+            }
+          ],
+          width: "40px",
+          height: "40px",
+          cornerRadius: "20px"
+        },
+        {
+          type: "box",
+          layout: "vertical",
+          flex: 1,
+          justifyContent: "center",
+          contents: [
+            { type: "text", text: brand, size: "xs", color: "#E9D5FF" },
+            {
+              type: "text",
+              text: lineFlexSafeText_(meta.title, 40),
+              size: "lg",
+              weight: "bold",
+              color: "#FFFFFF",
+              wrap: true
+            }
+          ]
+        }
+      ]
+    });
+  } else {
+    headerContents.push(
+      { type: "text", text: brand, size: "xs", color: "#E9D5FF" },
+      {
+        type: "text",
+        text: lineFlexSafeText_(meta.title, 40),
+        size: "xl",
+        weight: "bold",
+        color: "#FFFFFF",
+        wrap: true,
+        margin: "xs"
+      }
+    );
+  }
+
+  var bodyContents = [
+    buildLineNotifyProgressBox_(meta.steps, color),
+    {
+      type: "box",
+      layout: "horizontal",
+      spacing: "sm",
+      margin: "lg",
+      contents: [
+        {
+          type: "text",
+          text: "🎀",
+          size: "md",
+          flex: 0
+        },
+        {
+          type: "box",
+          layout: "vertical",
+          flex: 1,
+          contents: [
+            {
+              type: "text",
+              text: lineFlexSafeText_(product.title, 80),
+              size: "sm",
+              weight: "bold",
+              color: "#0F172A",
+              wrap: true
+            }
+          ].concat(
+            product.sub
+              ? [{ type: "text", text: lineFlexSafeText_(product.sub, 40), size: "xs", color: "#94A3B8" }]
+              : []
+          )
+        }
+      ]
+    },
+    {
+      type: "box",
+      layout: "horizontal",
+      margin: "md",
+      contents: [
+        { type: "text", text: "訂單編號", size: "sm", color: "#64748B", flex: 0 },
+        {
+          type: "text",
+          text: orderDisp,
+          size: "sm",
+          color: "#94A3B8",
+          align: "end",
+          flex: 1,
+          wrap: true
+        }
+      ]
+    },
+    {
+      type: "box",
+      layout: "vertical",
+      margin: "md",
+      paddingAll: "10px",
+      cornerRadius: "8px",
+      backgroundColor: "#F1F5F9",
+      contents: [
+        {
+          type: "text",
+          text: lineFlexSafeText_(shipLabel, 60),
+          size: "sm",
+          color: "#334155",
+          align: "center",
+          wrap: true
+        }
+      ]
+    },
+    { type: "separator", margin: "lg" },
+    {
+      type: "box",
+      layout: "horizontal",
+      spacing: "sm",
+      margin: "lg",
+      contents: [
+        { type: "text", text: meta.sectionEmoji || "📦", size: "md", flex: 0 },
+        {
+          type: "text",
+          text: meta.sectionLabel || "通知",
+          size: "md",
+          weight: "bold",
+          color: "#0F172A",
+          flex: 1
+        }
+      ]
+    },
+    {
+      type: "text",
+      text: detail,
+      size: "xs",
+      color: "#475569",
+      wrap: true,
+      margin: "sm"
+    }
+  ];
+
+  var footerContents = [];
+  var trackUrl = guessLogisticsTrackUrl_(order.shippingMethod);
+  if (trackUrl && (notifyType === "shipping" || notifyType === "arrived")) {
+    footerContents.push({
+      type: "button",
+      style: "secondary",
+      height: "sm",
+      action: { type: "uri", label: "查詢物流", uri: trackUrl }
+    });
+  }
+  var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
+  if (site && /^https:\/\//i.test(site)) {
+    var ordersUrl = site + "/#orders";
+    if (v.memberCardNo) {
+      ordersUrl = site + "/?card=" + encodeURIComponent(v.memberCardNo) + "#orders";
+    }
+    footerContents.push({
+      type: "button",
+      style: "primary",
+      color: color,
+      height: "sm",
+      action: { type: "uri", label: "查看我的訂單", uri: ordersUrl }
+    });
+  }
+  if (!footerContents.length) {
+    footerContents.push({
+      type: "button",
+      style: "primary",
+      color: color,
+      height: "sm",
+      action: {
+        type: "message",
+        label: "回覆官方帳號",
+        text: "收到，謝謝！"
+      }
+    });
+  }
+
+  return {
+    type: "flex",
+    altText: brand + "｜" + (meta.alt || meta.title) + (v.orderId ? ("｜" + orderDisp) : ""),
+    contents: {
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "16px",
+        backgroundColor: color,
+        contents: headerContents
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "16px",
+        backgroundColor: "#FFFFFF",
+        contents: bodyContents
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        paddingAll: "12px",
+        backgroundColor: "#FFFFFF",
+        contents: footerContents
+      }
+    }
+  };
+}
+
 /**
  * 後台一鍵推播：body = { orderId, notifyType: confirm_pay|paid|shipping|arrived|completed }
+ * 以 Flex 卡片推播（外觀近似出貨通知範例）；後台文字模板填入卡片說明區。
  */
 function sendOrderLineNotify_(ss, body) {
   body = body || {};
@@ -1937,7 +2418,8 @@ function sendOrderLineNotify_(ss, body) {
   if (!String(text || "").trim()) {
     return { error: true, message: "通知模板為空，請到 LINE 設定補上" };
   }
-  var pushRes = pushLineText_(userId, accessToken, text);
+  var flexMsg = buildLineOrderNotifyFlexMessage_(notifyType, order, text);
+  var pushRes = pushLineMessages_(userId, accessToken, [flexMsg]);
   if (!pushRes || !pushRes.ok) {
     var detail = (pushRes && (pushRes.message || pushRes.body)) || "unknown";
     return {
@@ -1951,11 +2433,12 @@ function sendOrderLineNotify_(ss, body) {
   }
   return {
     error: false,
-    message: "已推播 LINE 通知",
+    message: "已推播 LINE Flex 通知",
     orderId: orderId,
     notifyType: notifyType,
     canNotify: true,
-    pushed: true
+    pushed: true,
+    format: "flex"
   };
 }
 
@@ -6543,7 +7026,20 @@ function deleteMemberByCard_(sheet, card) {
 
 function syncMembersFromOrders_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = getMemberSheet(ss);
+  var sheet = getMemberSheet(ss, { required: false });
+  if (!sheet) {
+    var syncHint = memberSheetShareHintMessage_();
+    return {
+      added: 0,
+      updated: 0,
+      skipped: 0,
+      eligible: 0,
+      failed: [],
+      conflicts: [],
+      memberSpreadsheetId: syncHint.memberSpreadsheetId,
+      message: syncHint.message
+    };
+  }
   var orders = getAllOrdersMerged_(ss);
   var byCard = {};
   var nameToCards = {};
