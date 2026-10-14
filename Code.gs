@@ -878,10 +878,7 @@ function defaultLineNotifyTemplates_() {
       "",
       "訂單編號：{{orderId}}",
       "會員卡號：{{memberCardNo}}",
-      "訂金金額：NT${{amountDue}}",
-      "",
-      "品項：",
-      "{{itemsSummary}}",
+      "預購訂金：NT${{depositAmount}}",
       "",
       "匯款完成後請回覆本對話告知，謝謝！"
     ].join("\n"),
@@ -941,9 +938,16 @@ function getLineNotifyTemplates_() {
       var t = parsed && parsed[k] != null ? String(parsed[k]).trim() : "";
       out[k] = t || defaults[k];
     }
-    // 舊版「已確認匯款」用 amountDue；改為讀取預購訂金 depositAmount
+    // 舊版用 amountDue；改為讀取預購訂金 depositAmount
     if (out.paid && /金額：NT\$\{\{amountDue\}\}/.test(out.paid) && out.paid.indexOf("{{depositAmount}}") < 0) {
       out.paid = defaults.paid;
+    }
+    if (
+      out.confirm_pay &&
+      /應付金額：NT\$\{\{amountDue\}\}/.test(out.confirm_pay) &&
+      out.confirm_pay.indexOf("{{depositAmount}}") < 0
+    ) {
+      out.confirm_pay = defaults.confirm_pay;
     }
     return out;
   } catch (e) {
@@ -2334,8 +2338,8 @@ function buildLineNotifyProgressBox_(steps, brandColor, mutedColor) {
   return {
     type: "box",
     layout: "vertical",
-    spacing: "sm",
-    margin: "lg",
+    spacing: "xs",
+    margin: "md",
     contents: [
       { type: "box", layout: "horizontal", contents: dots },
       { type: "box", layout: "horizontal", contents: labels }
@@ -2365,16 +2369,16 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
   if (!shipLabel) shipLabel = theme.shipFallback;
 
   var orderDisp = v.orderId ? ("#" + v.orderId.replace(/^#/, "")) : "—";
-  var detail = lineFlexSafeText_(bodyText, 900);
-  // LINE Flex size：xs < sm < md < lg < xl < xxl < 3xl < 4xl < 5xl
-  var titleSize = "xxl";
+  // 內文適中截斷，避免卡片過長
+  var detail = lineFlexSafeText_(bodyText, 320);
+  var titleSize = "xl";
 
   var headerContents = [];
   if (logo && /^https:\/\//i.test(logo)) {
     headerContents.push({
       type: "box",
       layout: "horizontal",
-      spacing: "md",
+      spacing: "sm",
       contents: [
         {
           type: "box",
@@ -2388,9 +2392,9 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
               aspectRatio: "1:1"
             }
           ],
-          width: "48px",
-          height: "48px",
-          cornerRadius: "24px"
+          width: "40px",
+          height: "40px",
+          cornerRadius: "20px"
         },
         {
           type: "box",
@@ -2401,7 +2405,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
             { type: "text", text: brand, size: "sm", weight: "bold", color: theme.headerBrand },
             {
               type: "text",
-              text: lineFlexSafeText_(meta.title, 40),
+              text: lineFlexSafeText_(meta.title, 36),
               size: titleSize,
               weight: "bold",
               color: theme.headerTitle,
@@ -2416,7 +2420,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       { type: "text", text: brand, size: "sm", weight: "bold", color: theme.headerBrand },
       {
         type: "text",
-        text: lineFlexSafeText_(meta.title, 40),
+        text: lineFlexSafeText_(meta.title, 36),
         size: titleSize,
         weight: "bold",
         color: theme.headerTitle,
@@ -2437,12 +2441,12 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       type: "box",
       layout: "horizontal",
       spacing: "sm",
-      margin: "lg",
+      margin: "md",
       contents: [
         {
           type: "text",
           text: theme.productIcon || "🎀",
-          size: "lg",
+          size: "md",
           flex: 0
         },
         {
@@ -2452,15 +2456,16 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
           contents: [
             {
               type: "text",
-              text: lineFlexSafeText_(product.title, 80),
-              size: "lg",
+              text: lineFlexSafeText_(product.title, 60),
+              size: "md",
               weight: "bold",
               color: theme.text,
-              wrap: true
+              wrap: true,
+              maxLines: 2
             }
           ].concat(
             product.sub
-              ? [{ type: "text", text: lineFlexSafeText_(product.sub, 40), size: "sm", weight: "bold", color: theme.textMuted }]
+              ? [{ type: "text", text: lineFlexSafeText_(product.sub, 36), size: "xs", weight: "bold", color: theme.textMuted }]
               : []
           )
         }
@@ -2471,13 +2476,13 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
   bodyContents.push({
     type: "box",
     layout: "horizontal",
-    margin: "md",
+    margin: "sm",
     contents: [
-      { type: "text", text: theme.orderLabel, size: "md", weight: "bold", color: theme.textSoft, flex: 0 },
+      { type: "text", text: theme.orderLabel, size: "sm", weight: "bold", color: theme.textSoft, flex: 0 },
       {
         type: "text",
         text: orderDisp,
-        size: "md",
+        size: "sm",
         weight: "bold",
         color: theme.text,
         align: "end",
@@ -2487,22 +2492,22 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     ]
   });
 
-  // 已確認匯款：優先顯示訂單管理的「預購訂金」
+  // 請匯款／已確認匯款：顯示訂單管理的「預購訂金」
   var depositNum = Math.round(Number(order.depositAmount) || 0);
   if (isNaN(depositNum) || depositNum < 0) depositNum = 0;
-  if (notifyType === "paid") {
+  if (notifyType === "paid" || notifyType === "confirm_pay") {
     bodyContents.push({
       type: "box",
       layout: "vertical",
-      margin: "md",
-      paddingAll: theme.key === "kr" ? "14px" : "12px",
-      cornerRadius: theme.key === "kr" ? "12px" : "8px",
+      margin: "sm",
+      paddingAll: "10px",
+      cornerRadius: theme.key === "kr" ? "10px" : "8px",
       backgroundColor: theme.chipBg,
       contents: [
         {
           type: "text",
           text: "預購訂金",
-          size: "md",
+          size: "sm",
           weight: "bold",
           color: theme.textMuted,
           align: "center"
@@ -2510,7 +2515,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         {
           type: "text",
           text: "NT$" + depositNum,
-          size: "3xl",
+          size: "xxl",
           weight: "bold",
           color: theme.text,
           align: "center",
@@ -2522,19 +2527,20 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     bodyContents.push({
       type: "box",
       layout: "vertical",
-      margin: "md",
-      paddingAll: theme.key === "kr" ? "14px" : "12px",
-      cornerRadius: theme.key === "kr" ? "12px" : "8px",
+      margin: "sm",
+      paddingAll: "10px",
+      cornerRadius: theme.key === "kr" ? "10px" : "8px",
       backgroundColor: theme.chipBg,
       contents: [
         {
           type: "text",
-          text: lineFlexSafeText_(shipLabel, 60),
-          size: "md",
+          text: lineFlexSafeText_(shipLabel, 48),
+          size: "sm",
           weight: "bold",
           color: theme.chipText,
           align: "center",
-          wrap: true
+          wrap: true,
+          maxLines: 2
         }
       ]
     });
@@ -2544,7 +2550,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
   if (notifyType !== "paid") {
     bodyContents.push({
       type: "separator",
-      margin: "lg",
+      margin: "md",
       color: theme.separator
     });
     bodyContents.push(
@@ -2552,13 +2558,13 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         type: "box",
         layout: "horizontal",
         spacing: "sm",
-        margin: "lg",
+        margin: "md",
         contents: [
-          { type: "text", text: meta.sectionEmoji || "📦", size: "lg", flex: 0 },
+          { type: "text", text: meta.sectionEmoji || "📦", size: "md", flex: 0 },
           {
             type: "text",
             text: meta.sectionLabel || "通知",
-            size: "lg",
+            size: "md",
             weight: "bold",
             color: theme.text,
             flex: 1
@@ -2568,11 +2574,12 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       {
         type: "text",
         text: detail,
-        size: "lg",
+        size: "md",
         weight: "bold",
         color: theme.textSoft,
         wrap: true,
-        margin: "sm"
+        margin: "xs",
+        maxLines: 8
       }
     );
   }
@@ -2602,20 +2609,22 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   }
 
+  // giga＝LINE 單卡最寬；上下 padding／間距收斂避免過長
   var bubble = {
     type: "bubble",
-    size: "mega",
+    size: "giga",
     header: {
       type: "box",
       layout: "vertical",
-      paddingAll: theme.key === "jp" ? "18px" : "16px",
+      paddingAll: "12px",
       backgroundColor: color,
       contents: headerContents
     },
     body: {
       type: "box",
       layout: "vertical",
-      paddingAll: "16px",
+      paddingAll: "12px",
+      spacing: "none",
       backgroundColor: theme.bodyBg,
       contents: bodyContents
     }
@@ -2626,7 +2635,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       type: "box",
       layout: "vertical",
       spacing: "sm",
-      paddingAll: "12px",
+      paddingAll: "10px",
       backgroundColor: theme.footerBg,
       contents: footerContents
     };
