@@ -873,34 +873,24 @@ function defaultLineNotifyTemplates_() {
   return {
     confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
-    shipping: [
-      "您的訂單已出貨",
-      "",
-      "您的訂單已安排出貨，本次附上訂單明細，方便您收到商品後核對品項與數量，請留意查收。",
-      "",
-      "📌 到貨時間依物流配送安排為主",
-      "",
-      "如有任何問題，歡迎隨時與小幫手聯繫",
-      "".
-    ].join("\n"),
-    arrived: [
-      "【MAARU 到店／可取貨】",
-      "",
-      "{{customerName}} 您好，訂單 {{orderId}} 已可取貨。",
-      "",
-      "取貨方式：{{shippingMethod}}",
-      "{{storeName}}",
-      "",
-      "請於期限內取件，謝謝！"
-    ].join("\n"),
-    completed: [
-      "【MAARU 取貨完成】",
-      "",
-      "{{customerName}} 您好，訂單 {{orderId}} 已完成。",
-      "",
-      "感謝您的支持！之後可用會員卡號查詢紀錄：",
+    shipping:
+      "您的訂單已出貨\n\n" +
+      "您好：\n\n" +
+      "您的訂單已安排出貨，本次附上訂單明細，方便您收到商品後核對品項與數量，請留意查收。\n\n" +
+      "到貨時間依物流配送安排為主\n\n" +
+      "如有任何問題，歡迎隨時與小幫手聯繫\n\n" +
+      "感謝您的支持與耐心等候，期待您收到商品後會喜歡",
+    arrived:
+      "【MAARU 到店／可取貨】\n\n" +
+      "{{customerName}} 您好，訂單 {{orderId}} 已可取貨。\n\n" +
+      "取貨方式：{{shippingMethod}}\n" +
+      "{{storeName}}\n\n" +
+      "請於期限內取件，謝謝！",
+    completed:
+      "【MAARU 取貨完成】\n\n" +
+      "{{customerName}} 您好，訂單 {{orderId}} 已完成。\n\n" +
+      "感謝您的支持！之後可用會員卡號查詢紀錄：\n" +
       "{{memberCardNo}}"
-    ].join("\n")
   };
 }
 
