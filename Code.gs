@@ -871,17 +871,7 @@ function isLineMessagingUserId_(s) {
 
 function defaultLineNotifyTemplates_() {
   return {
-    confirm_pay: [
-      "【MAARU 訂單確認】",
-      "",
-      "{{customerName}} 您好，訂單已確認，請依下方資訊匯款。",
-      "",
-      "訂單編號：{{orderId}}",
-      "會員卡號：{{memberCardNo}}",
-      "預購訂金：NT${{depositAmount}}",
-      "",
-      "匯款完成後請回覆本對話告知，謝謝！"
-    ].join("\n"),
+    confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: [
       "【MAARU 匯款確認】",
       "",
@@ -942,12 +932,17 @@ function getLineNotifyTemplates_() {
     if (out.paid && /金額：NT\$\{\{amountDue\}\}/.test(out.paid) && out.paid.indexOf("{{depositAmount}}") < 0) {
       out.paid = defaults.paid;
     }
+    // 「請匯款」訂金已在卡片正中顯示；內文只保留結語，不重複訂金／卡號等
     if (
       out.confirm_pay &&
-      /應付金額：NT\$\{\{amountDue\}\}/.test(out.confirm_pay) &&
-      out.confirm_pay.indexOf("{{depositAmount}}") < 0
+      (
+        out.confirm_pay.trim() !== defaults.confirm_pay ||
+        /訂金|depositAmount|amountDue|訂單編號|會員卡號|請依下方|品項/.test(out.confirm_pay)
+      )
     ) {
-      out.confirm_pay = defaults.confirm_pay;
+      if (/訂金|depositAmount|amountDue|訂單編號|會員卡號|請依下方|品項/.test(out.confirm_pay)) {
+        out.confirm_pay = defaults.confirm_pay;
+      }
     }
     return out;
   } catch (e) {
@@ -1095,6 +1090,10 @@ function saveLineAutomationSettings_(body) {
       var t = body.notifyTemplates[k] != null ? String(body.notifyTemplates[k]).trim() : "";
       if (!t) t = defaults[k];
       if (t.length > 1800) t = t.slice(0, 1800);
+      // 請匯款：訂金已在卡片正中顯示，儲存時若內文含訂金等則改回結語
+      if (k === "confirm_pay" && /訂金|depositAmount|amountDue|訂單編號|會員卡號/.test(t)) {
+        t = defaults.confirm_pay;
+      }
       toSave[k] = t;
     }
     props.setProperty(LINE_PROP_NOTIFY_TEMPLATES, JSON.stringify(toSave));
@@ -2473,29 +2472,39 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   }
 
-  bodyContents.push({
-    type: "box",
-    layout: "horizontal",
-    margin: "sm",
-    contents: [
-      { type: "text", text: theme.orderLabel, size: "sm", weight: "bold", color: theme.textSoft, flex: 0 },
-      {
-        type: "text",
-        text: orderDisp,
-        size: "sm",
-        weight: "bold",
-        color: theme.text,
-        align: "end",
-        flex: 1,
-        wrap: true
-      }
-    ]
-  });
-
-  // 請匯款／已確認匯款：顯示訂單管理的「預購訂金」
   var depositNum = Math.round(Number(order.depositAmount) || 0);
   if (isNaN(depositNum) || depositNum < 0) depositNum = 0;
-  if (notifyType === "paid" || notifyType === "confirm_pay") {
+  var cardDisp = String(v.memberCardNo || "").trim() || "—";
+
+  function pushInfoRow_(label, value) {
+    bodyContents.push({
+      type: "box",
+      layout: "horizontal",
+      margin: "sm",
+      contents: [
+        {
+          type: "text",
+          text: label,
+          size: "sm",
+          weight: "bold",
+          color: theme.textSoft,
+          flex: 0
+        },
+        {
+          type: "text",
+          text: lineFlexSafeText_(value, 40),
+          size: "sm",
+          weight: "bold",
+          color: theme.text,
+          align: "end",
+          flex: 1,
+          wrap: true
+        }
+      ]
+    });
+  }
+
+  function pushDepositChip_() {
     bodyContents.push({
       type: "box",
       layout: "vertical",
@@ -2523,31 +2532,60 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         }
       ]
     });
-  } else if (!hideProductAndShip) {
-    bodyContents.push({
-      type: "box",
-      layout: "vertical",
-      margin: "sm",
-      paddingAll: "10px",
-      cornerRadius: theme.key === "kr" ? "10px" : "8px",
-      backgroundColor: theme.chipBg,
-      contents: [
-        {
-          type: "text",
-          text: lineFlexSafeText_(shipLabel, 48),
-          size: "sm",
-          weight: "bold",
-          color: theme.chipText,
-          align: "center",
-          wrap: true,
-          maxLines: 2
-        }
-      ]
-    });
   }
 
-  // 「已確認匯款」不顯示底部入金確認／模板說明區
-  if (notifyType !== "paid") {
+  // ① 確認訂單／請匯款：進度 → 訂單編號 → 會員卡號 → 預購訂金（正中）→ 結語
+  // 訂金只顯示於正中區塊，內文不重複金額
+  if (notifyType === "confirm_pay") {
+    pushInfoRow_("訂單編號", orderDisp);
+    pushInfoRow_("會員卡號", cardDisp);
+    pushDepositChip_();
+    bodyContents.push({
+      type: "separator",
+      margin: "md",
+      color: theme.separator
+    });
+    bodyContents.push({
+      type: "text",
+      text: "匯款完成後請回覆本對話告知，謝謝！",
+      size: "md",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "md",
+      align: "center"
+    });
+  } else if (notifyType === "paid") {
+    // 已確認匯款：進度 → 訂單編號 → 預購訂金
+    pushInfoRow_("訂單編號", orderDisp);
+    pushDepositChip_();
+  } else {
+    pushInfoRow_(theme.orderLabel, orderDisp);
+    if (!hideProductAndShip) {
+      bodyContents.push({
+        type: "box",
+        layout: "vertical",
+        margin: "sm",
+        paddingAll: "10px",
+        cornerRadius: theme.key === "kr" ? "10px" : "8px",
+        backgroundColor: theme.chipBg,
+        contents: [
+          {
+            type: "text",
+            text: lineFlexSafeText_(shipLabel, 48),
+            size: "sm",
+            weight: "bold",
+            color: theme.chipText,
+            align: "center",
+            wrap: true,
+            maxLines: 2
+          }
+        ]
+      });
+    }
+  }
+
+  if (notifyType !== "paid" && notifyType !== "confirm_pay") {
     bodyContents.push({
       type: "separator",
       margin: "md",
