@@ -3320,7 +3320,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "匯款完成後請回覆本對話告知，謝謝！",
+      text: "匯款完成後請回覆，謝謝！",
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
