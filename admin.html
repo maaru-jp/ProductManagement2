@@ -1003,10 +1003,21 @@
                   <button type="button" id="lineCopyWebhookUrl" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-medium hover:bg-slate-100">複製 GAS Webhook URL</button>
                 </div>
               </div>
+              <div class="rounded-lg border border-sky-200 bg-sky-50/70 p-4 space-y-2">
+                <p class="text-sm font-medium text-sky-950">圖文選單「会員カード」設定</p>
+                <p class="text-xs text-sky-900/85 leading-relaxed">流程：加好友 → 點圖文選單（聊天室<strong>自動帶出</strong>關鍵字）→ 系統回<strong>引導卡</strong>＋【會員綁定】說明文字 → 顧客再傳 13 碼卡號。</p>
+                <ol class="text-xs text-sky-900/90 list-decimal pl-4 space-y-1 leading-relaxed">
+                  <li>LINE Official Account Manager → 圖文選單 → 編輯該區塊「動作」</li>
+                  <li>選 <strong>文字</strong>／<strong>傳送訊息</strong>（多數後台沒有 Postback）</li>
+                  <li>文字請填（建議）：<code class="bg-white px-1 rounded font-mono select-all">会員カード</code>（點了會自動出現在聊天室）</li>
+                  <li>也可用：<code class="bg-white px-1 rounded font-mono">會員綁定</code>　或　<code class="bg-white px-1 rounded font-mono">我要綁定</code>　或　<code class="bg-white px-1 rounded font-mono">會員卡</code></li>
+                </ol>
+                <p class="text-[11px] text-slate-600">部署最新 Code.gs 後生效。綁定成功後同卡訂單即可推播。</p>
+              </div>
               <div class="rounded-lg border border-amber-200 bg-amber-50/70 p-4 space-y-3">
                 <div>
                   <p class="text-sm font-medium text-amber-950">直接發送綁定引導</p>
-                  <p class="text-xs text-amber-900/80 mt-1 leading-relaxed">已加官方帳號、但訂單／會員尚無 LINE ID 時，可由此手動填 ID，或從「官方好友清單」選人發送。有會員卡號會預填按鈕「綁定 卡號」。</p>
+                  <p class="text-xs text-amber-900/80 mt-1 leading-relaxed">已加官方、但訂單／會員尚無 LINE ID 時，請手動貼 <code class="bg-amber-100 px-1 rounded">U…</code> User ID 後發送。有會員卡號會預填「綁定 卡號」。「載入官方好友清單」需 LINE 開通該 API（未開通會 403，請改手動貼 ID 或請顧客先傳訊）。</p>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -1035,7 +1046,7 @@
               <div class="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-3">
                 <div>
                   <p class="text-sm font-medium text-emerald-900">LINE 訊息模板（合併管理）</p>
-                  <p class="text-xs text-emerald-900/80 mt-1 leading-relaxed">訂單成立回覆與五種進度推播已合併；卡片版型統一為 Flex，此處只編<strong>內文</strong>。儲存一次即可全部更新。顧客加好友會收到綁定引導卡；也可傳 <code class="bg-emerald-100 px-1 rounded">綁定 13碼會員卡號</code>。</p>
+                  <p class="text-xs text-emerald-900/80 mt-1 leading-relaxed">訂單成立回覆與五種進度推播已合併；卡片版型統一為 Flex，此處只編<strong>內文</strong>。儲存一次即可全部更新。會員綁定：加好友後點圖文選單「会員カード」（postback <code class="bg-emerald-100 px-1 rounded">action=member_card</code>），再傳 13 碼卡號。</p>
                   <p class="text-xs text-slate-600 mt-1">變數：<code class="bg-white/80 px-1 rounded">{{orderId}}</code> <code class="bg-white/80 px-1 rounded">{{memberCardNo}}</code> <code class="bg-white/80 px-1 rounded">{{customerName}}</code> <code class="bg-white/80 px-1 rounded">{{itemsSummary}}</code> <code class="bg-white/80 px-1 rounded">{{depositAmount}}</code> <code class="bg-white/80 px-1 rounded">{{amountDue}}</code> <code class="bg-white/80 px-1 rounded">{{subtotal}}</code> <code class="bg-white/80 px-1 rounded">{{shippingMethod}}</code> <code class="bg-white/80 px-1 rounded">{{storeName}}</code></p>
                 </div>
                 <div>
@@ -7684,12 +7695,6 @@
           orderTableBody.addEventListener("click", function(e) {
             var t = e.target;
             if (!t || !t.closest) return;
-            var guideBtn = t.closest(".order-bind-guide-btn");
-            if (guideBtn && orderTableBody.contains(guideBtn)) {
-              e.preventDefault();
-              sendOrderBindGuideFromAdmin_(guideBtn.getAttribute("data-order-id") || "", guideBtn);
-              return;
-            }
             var lineBtn = t.closest(".order-line-notify-btn");
             if (lineBtn && orderTableBody.contains(lineBtn)) {
               e.preventDefault();
@@ -7799,16 +7804,12 @@
           if (hint) {
             hint.textContent = can
               ? "按下方按鈕即可推播對應進度到顧客官方 LINE（不會自動改訂單狀態）。"
-              : ("未綁定：可先按「發送綁定引導」。或請顧客傳「我要綁定」／「綁定 " + (card.length === 13 ? card : "13碼") + "」。");
+              : ("未綁定：請請顧客傳「我要綁定」或「綁定 " + (card.length === 13 ? card : "13碼") + "」。也可到網站設定 → LINE 直接發送引導卡。");
           }
           if (btns) {
             var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "shipping", "arrived", "completed"];
             var labels = window.LINE_NOTIFY_LABELS_ || {};
-            var guideBtn =
-              "<button type=\"button\" class=\"order-bind-guide-btn px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-950 text-xs hover:bg-amber-100\" data-order-id=\"" +
-              escapeHtml(ord.id) +
-              "\">發送綁定引導</button>";
-            btns.innerHTML = guideBtn + keys.map(function(k) {
+            btns.innerHTML = keys.map(function(k) {
               var label = labels[k] || k;
               var disabled = can ? "" : " disabled";
               var cls = can
@@ -7817,11 +7818,6 @@
               return "<button type=\"button\" class=\"" + cls + "\" data-order-id=\"" + escapeHtml(ord.id) + "\" data-notify-type=\"" + escapeHtml(k) + "\"" + disabled + ">" + escapeHtml(label) + "</button>";
             }).join("");
             btns.onclick = function(ev) {
-              var g = ev.target && ev.target.closest ? ev.target.closest(".order-bind-guide-btn") : null;
-              if (g) {
-                sendOrderBindGuideFromAdmin_(g.getAttribute("data-order-id"), g);
-                return;
-              }
               var b = ev.target && ev.target.closest ? ev.target.closest(".order-line-notify-btn") : null;
               if (!b || b.disabled) return;
               sendOrderLineNotifyFromAdmin_(b.getAttribute("data-order-id"), b.getAttribute("data-notify-type"), b);
@@ -7850,10 +7846,6 @@
           var badge = can
             ? "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 mr-1\" title=\"已綁定 LINE 推播\">可推播</span>"
             : "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 mr-1\" title=\"請請顧客傳：我要綁定 或 綁定 會員卡號\">未綁定</span>";
-          var guideBtn =
-            "<button type=\"button\" class=\"order-bind-guide-btn px-1.5 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-950 text-[10px] hover:bg-amber-100\" data-order-id=\"" +
-            escapeHtml(ord.id) +
-            "\" title=\"發送綁定引導 Flex 卡\">綁定引導</button>";
           var btns = keys.map(function(k) {
             var label = labels[k] || k;
             var disabled = can ? "" : " disabled";
@@ -7862,35 +7854,7 @@
               : "order-line-notify-btn px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-400 text-[10px] cursor-not-allowed";
             return "<button type=\"button\" class=\"" + cls + "\" data-order-id=\"" + escapeHtml(ord.id) + "\" data-notify-type=\"" + escapeHtml(k) + "\"" + disabled + " title=\"LINE：" + escapeHtml(label) + "\">" + escapeHtml(label) + "</button>";
           }).join("");
-          return "<div class=\"mb-1.5 flex flex-wrap items-center gap-1\">" + badge + guideBtn + btns + "</div>";
-        }
-
-        function sendOrderBindGuideFromAdmin_(orderId, btnEl) {
-          orderId = String(orderId || "").trim();
-          if (!orderId) return;
-          if (!confirm("對訂單 " + orderId + " 發送「綁定引導」Flex 卡片？")) return;
-          if (typeof fetchWrite !== "function") {
-            showOrderMessage("後台寫入 API 未就緒", true);
-            return;
-          }
-          if (btnEl) btnEl.disabled = true;
-          showOrderMessage("正在發送綁定引導卡…", false);
-          fetchWrite({ action: "order_bind_guide", orderId: orderId })
-            .then(function(r) { return r.text().then(function(t) {
-              try { return t ? JSON.parse(t) : {}; } catch (e) {
-                return { error: true, message: "回應非 JSON（請部署最新 Code.gs）" };
-              }
-            }); })
-            .then(function(data) {
-              if (data && data.error) throw new Error(data.message || "發送失敗");
-              showOrderMessage("已發送綁定引導卡 → " + orderId, false);
-            })
-            .catch(function(err) {
-              showOrderMessage((err && err.message) || "發送失敗", true);
-            })
-            .finally(function() {
-              if (btnEl) btnEl.disabled = false;
-            });
+          return "<div class=\"mb-1.5 flex flex-wrap items-center gap-1\">" + badge + btns + "</div>";
         }
 
         function sendOrderLineNotifyFromAdmin_(orderId, notifyType, btnEl) {
