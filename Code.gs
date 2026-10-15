@@ -910,11 +910,11 @@ function defaultLineNotifyTemplates_() {
   return {
     order_created: defaultLineOrderCreatedTemplate_(),
     order_merged: defaultLineOrderMergedTemplate_(),
-    confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
+    confirm_pay: "匯款完成後請回覆，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
       "您好：\n\n" +
-      "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量，請留意查收\n\n" +
+      "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量\n\n" +
       "到貨時間依物流配送安排為主\n\n" +
       "如有任何問題，歡迎隨時與小幫手聯繫",
     arrived:
@@ -3461,7 +3461,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "匯款完成後請回覆本對話告知，謝謝！",
+      text: "匯款完成後請回覆，謝謝！",
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
