@@ -3138,7 +3138,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
     },
     {
       type: "text",
-      text: "以下是本次訂購明細，請您確認商品與數量是否正確",
+      text: "以下是本次訂購明細",
       size: "sm",
       weight: "bold",
       color: theme.textSoft,
