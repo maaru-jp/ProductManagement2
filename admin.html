@@ -1372,6 +1372,11 @@
             <p class="text-xs text-slate-400 mt-1">可自行輸入編號，或留空由系統自動產生下一號（ORD00001～ORD99999）</p>
           </div>
           <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">團名</label>
+            <input type="text" id="orderGroupName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="選填，例：4月韓貨開團" maxlength="80" />
+            <p class="text-xs text-slate-400 mt-1">特定開團可填團名；推播「訂單成立」時會一併顯示</p>
+          </div>
+          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">關聯訂單</label>
             <div class="flex flex-wrap items-center gap-2">
               <input type="text" id="orderLinkedOrderIds" class="flex-1 min-w-[12rem] rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="例：ORD00002, ORD00003" />
@@ -2170,15 +2175,14 @@
         var lineCopyWebhookUrl = document.getElementById("lineCopyWebhookUrl");
         var lineTestOrderBtn = document.getElementById("lineTestOrderBtn");
         var lastLineWebhookToken = "";
-        var LINE_NOTIFY_TYPE_KEYS_ = ["order_established", "confirm_pay", "paid", "shipping", "arrived", "completed"];
+        var LINE_NOTIFY_TYPE_KEYS_ = ["confirm_pay", "paid", "order_established", "shipping", "arrived"];
         var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "arrived", "completed"];
         var LINE_NOTIFY_LABELS_ = {
-          order_established: "訂單成立",
-          confirm_pay: "確認／請匯款",
+          confirm_pay: "確認/請匯款",
           paid: "已確認匯款",
+          order_established: "訂單成立",
           shipping: "出貨通知",
-          arrived: "到店／可取貨",
-          completed: "取貨完成"
+          arrived: "到店/可取貨"
         };
         window.LINE_NOTIFY_TYPE_KEYS_ = LINE_NOTIFY_TYPE_KEYS_;
         window.LINE_NOTIFY_LABELS_ = LINE_NOTIFY_LABELS_;
@@ -7365,6 +7369,7 @@
           var linkedRaw = (document.getElementById("orderLinkedOrderIds") && document.getElementById("orderLinkedOrderIds").value) || "";
           return {
             memberCardNo: getOrderMemberCardFromForm_(),
+            groupName: (document.getElementById("orderGroupName") && document.getElementById("orderGroupName").value || "").trim(),
             customerName: (document.getElementById("orderCustomerName").value || "").trim(),
             phone: (document.getElementById("orderPhone").value || "").trim(),
             email: (document.getElementById("orderEmail").value || "").trim(),
@@ -7398,6 +7403,8 @@
         function setFormFromOrder(o) {
           var orderIdEl = document.getElementById("orderId");
           if (orderIdEl) { orderIdEl.value = o.id || ""; orderIdEl.readOnly = true; }
+          var groupNameEl = document.getElementById("orderGroupName");
+          if (groupNameEl) groupNameEl.value = o.groupName || "";
           var linkedEl = document.getElementById("orderLinkedOrderIds");
           if (linkedEl) linkedEl.value = formatLinkedOrderIds_(o.linkedOrderIds || "");
           var cardEl = document.getElementById("orderMemberCardNo");
@@ -7467,6 +7474,8 @@
             fillOrderLineNotifyPanel_(null);
             var orderIdEl = document.getElementById("orderId");
             if (orderIdEl) { orderIdEl.value = getNextOrderId(); orderIdEl.readOnly = false; }
+            var groupNameElNew = document.getElementById("orderGroupName");
+            if (groupNameElNew) groupNameElNew.value = "";
             document.getElementById("orderSubtotal").value = "0";
             document.getElementById("orderDiscountRate").value = "90";
             document.getElementById("orderDiscountRateCheck").checked = false;
@@ -7814,7 +7823,7 @@
             }
           }
           if (btns) {
-            var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["order_established", "confirm_pay", "paid", "shipping", "arrived", "completed"];
+            var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "order_established", "shipping", "arrived"];
             var labels = window.LINE_NOTIFY_LABELS_ || {};
             btns.innerHTML = keys.map(function(k) {
               var label = labels[k] || k;
@@ -7846,14 +7855,13 @@
 
         function renderOrderLineNotifyControls_(ord) {
           var can = orderLooksLineNotifyBound_(ord);
-          var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["order_established", "confirm_pay", "paid", "shipping", "arrived", "completed"];
+          var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "order_established", "shipping", "arrived"];
           var labels = window.LINE_NOTIFY_LABELS_ || {
-            order_established: "訂單成立",
-            confirm_pay: "確認／請匯款",
+            confirm_pay: "確認/請匯款",
             paid: "已確認匯款",
+            order_established: "訂單成立",
             shipping: "出貨通知",
-            arrived: "到店／可取貨",
-            completed: "取貨完成"
+            arrived: "到店/可取貨"
           };
           var badge = can
             ? "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 mr-1\" title=\"已綁定 LINE 推播\">可推播</span>"
@@ -9039,6 +9047,7 @@
             var ord = orders.find(function(o) { return o.id === editId; });
             if (ord) {
               ord.memberCardNo = data.memberCardNo;
+              ord.groupName = data.groupName || "";
               ord.customerName = data.customerName;
               ord.phone = data.phone;
               ord.email = data.email;
@@ -9112,6 +9121,7 @@
               date: new Date().toISOString(),
               status: "待處理",
               memberCardNo: data.memberCardNo,
+              groupName: data.groupName || "",
               customerName: data.customerName,
               phone: data.phone,
               email: data.email,

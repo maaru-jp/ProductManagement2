@@ -878,8 +878,8 @@ var LINE_PROP_NOTIFY_TEMPLATES = "line_order_notify_templates_json";
 /** 同一 LINE 用戶、狀態仍為「待處理」、且在此時間內再 +1 → 併入同一張訂單（毫秒） */
 var LINE_MERGE_WINDOW_MS_ = 2 * 60 * 60 * 1000;
 
-/** 後台一鍵推播類型（含手動「訂單成立通知」） */
-var LINE_NOTIFY_TYPES_ = ["order_established", "confirm_pay", "paid", "shipping", "arrived", "completed"];
+/** 後台一鍵推播類型（順序與訂單管理按鈕一致） */
+var LINE_NOTIFY_TYPES_ = ["confirm_pay", "paid", "order_established", "shipping", "arrived"];
 /** 統一訊息模板鍵（喊單自動回覆＋進度推播內文），後台同一區編輯、同一份 JSON 儲存 */
 var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "arrived", "completed"];
 
@@ -910,11 +910,11 @@ function defaultLineNotifyTemplates_() {
   return {
     order_created: defaultLineOrderCreatedTemplate_(),
     order_merged: defaultLineOrderMergedTemplate_(),
-    confirm_pay: "匯款完成後請回覆，謝謝！",
+    confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
       "您好：\n\n" +
-      "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量\n\n" +
+      "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量，請留意查收\n\n" +
       "到貨時間依物流配送安排為主\n\n" +
       "如有任何問題，歡迎隨時與小幫手聯繫",
     arrived:
@@ -3138,7 +3138,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
     },
     {
       type: "text",
-      text: "以下是本次訂購明細",
+      text: "以下是本次訂購明細，請您確認商品與數量是否正確",
       size: "sm",
       weight: "bold",
       color: theme.textSoft,
@@ -3148,7 +3148,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
     { type: "separator", margin: "lg", color: theme.separator },
     {
       type: "text",
-      text: "訂單資訊",
+      text: "📋 訂單資訊",
       size: "md",
       weight: "bold",
       color: theme.text,
@@ -3162,7 +3162,23 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
       color: theme.textSoft,
       wrap: true,
       margin: "sm"
-    },
+    }
+  ];
+
+  var groupNameDisp = String(order.groupName || "").trim();
+  if (groupNameDisp) {
+    bodyContents.push({
+      type: "text",
+      text: "▪️ 團名：" + lineFlexSafeText_(groupNameDisp, 40),
+      size: "sm",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "xs"
+    });
+  }
+
+  bodyContents = bodyContents.concat([
     {
       type: "text",
       text: "▪️ 預購日期：" + dateDisp,
@@ -3202,7 +3218,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
     { type: "separator", margin: "lg", color: theme.separator },
     {
       type: "text",
-      text: "若以上訂單資訊有誤，請儘快聯繫小幫手",
+      text: "若以上訂單資訊有誤，請儘快聯繫小幫手協助確認",
       size: "sm",
       weight: "bold",
       color: theme.textSoft,
@@ -3461,7 +3477,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "匯款完成後請回覆，謝謝！",
+      text: "匯款完成後請回覆本對話告知，謝謝！",
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
@@ -4089,7 +4105,8 @@ function getStandardOrderHeaders_() {
     "跨團轉出金額",
     "跨團轉出去向",
     "配送歷程",
-    "更新時間"
+    "更新時間",
+    "團名"
   ];
 }
 
@@ -4592,6 +4609,7 @@ function orderKeyMap_(headers) {
     ["跨團轉出去向", "creditOutToOrderId"],
     ["配送歷程", "trackingHistory", "deliveryHistory", "historyJson", "history"],
     ["更新時間", "updated", "updatedAt", "lastUpdated"],
+    ["團名", "groupName", "團購名稱", "開團名稱"],
     ["商品摘要", "product"]
   ];
   for (var c = 0; c < headers.length; c++) {
@@ -4647,6 +4665,7 @@ function normalizeOrderForSheet_(order) {
     creditOutToOrderId: (o.creditOutToOrderId != null) ? String(o.creditOutToOrderId).trim() : "",
     trackingHistory: "",
     updated: "",
+    groupName: (o.groupName != null) ? String(o.groupName).trim() : "",
     itemsJson: ""
   };
   try {
