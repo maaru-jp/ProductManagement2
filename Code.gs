@@ -2202,16 +2202,15 @@ function renderLineOrderCreatedTemplate_(template, created) {
     .replace(/\{\{itemsSummary\}\}/g, itemsSummary);
 }
 
-/** 訂單成立／加單成功：與推播同一套 Flex 風格；內文來自統一模板 */
+/** 訂單成立／加單成功：與推播同一套 Flex 風格（不顯示小計／模板內文；金額由後台自行填） */
 function buildLineOrderCreatedFlexMessage_(created, bodyText, isMerged) {
   created = created || {};
   var theme = getLineFlexTheme_();
   var brand = String(CONFIG.lineBrandName || "MAARU 日韓萌GO").trim() || "MAARU 日韓萌GO";
   var color = theme.headerBg;
-  var title = isMerged ? "加單成功" : "訂單已成立";
+  var title = isMerged ? "加單成功" : "訂單成立";
   var orderDisp = created.orderId ? ("#" + String(created.orderId).replace(/^#/, "")) : "—";
   var cardDisp = String(created.memberCardNo || "").trim() || "—";
-  var subtotal = Math.round(Number(created.subtotal) || 0);
   var items = created.items || [];
   var itemLines = [];
   for (var i = 0; i < items.length && i < 6; i++) {
@@ -2222,7 +2221,6 @@ function buildLineOrderCreatedFlexMessage_(created, bodyText, isMerged) {
   }
   if (items.length > 6) itemLines.push("…另有 " + (items.length - 6) + " 項");
   var itemsText = itemLines.length ? itemLines.join("\n") : "（詳見備註）";
-  var detail = lineFlexSafeText_(bodyText, 400);
 
   var bodyContents = [
     buildLineNotifyProgressBox_(
@@ -2270,40 +2268,10 @@ function buildLineOrderCreatedFlexMessage_(created, bodyText, isMerged) {
           wrap: true,
           margin: "xs",
           maxLines: 6
-        },
-        {
-          type: "text",
-          text: "小計 NT$" + subtotal,
-          size: "lg",
-          weight: "bold",
-          color: theme.text,
-          margin: "sm"
         }
       ]
-    },
-    { type: "separator", margin: "md", color: theme.separator },
-    {
-      type: "text",
-      text: detail,
-      size: "lg",
-      weight: "bold",
-      color: theme.textSoft,
-      wrap: true,
-      margin: "sm"
     }
   ];
-
-  if (!isMerged && cardDisp && cardDisp !== "—") {
-    bodyContents.push({
-      type: "text",
-      text: "接收進度通知請傳送：綁定 " + cardDisp,
-      size: "md",
-      weight: "bold",
-      color: color,
-      wrap: true,
-      margin: "md"
-    });
-  }
 
   return {
     type: "flex",
@@ -3334,15 +3302,11 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     pushInfoRow_("會員卡號", cardDisp);
     pushDepositChip_();
   } else if (notifyType === "shipping") {
-    // 出貨通知：標題 → 進度 → 訂單編號 → 會員卡號 → 超商取貨 → 出貨說明
+    // 出貨通知：標題 → 進度 → 訂單編號 → 會員卡號 → 7-11超商｜門市 → 出貨說明
     pushInfoRow_("訂單編號", orderDisp);
     pushInfoRow_("會員卡號", cardDisp);
-    var shipPickup = String(shipLabel || "").trim();
-    if (!shipPickup || shipPickup === theme.shipFallback) {
-      shipPickup = "7-11超商";
-    } else if (/7-?11.*超商取貨/i.test(shipPickup) || shipPickup === "7-11 超商取貨") {
-      shipPickup = "7-11超商";
-    }
+    var storeOnly = String(order.storeName || "").trim();
+    var shipPickup = storeOnly ? ("7-11超商｜" + storeOnly) : "7-11超商";
     bodyContents.push({
       type: "box",
       layout: "vertical",
