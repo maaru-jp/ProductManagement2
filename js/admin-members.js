@@ -32,6 +32,16 @@
       : String(card || "").replace(/\D/g, "").slice(0, 13);
   }
 
+  /** 後台顯示：優先 LINE 推播用 U…（lineUserId），否則 lineId */
+  function memberLineIdDisplay_(m) {
+    if (!m) return "—";
+    var u = String(m.lineUserId || "").trim();
+    var l = String(m.lineId || "").trim();
+    if (/^U[0-9a-fA-F]{20,}$/i.test(u)) return u;
+    if (/^U[0-9a-fA-F]{20,}$/i.test(l)) return l;
+    return l || u || "—";
+  }
+
   function showMessage(text, isError) {
     var el = document.getElementById("membersMessage");
     if (!el) return;
@@ -50,6 +60,7 @@
       m.customerName,
       m.phone,
       m.lineId,
+      m.lineUserId,
       m.email,
       m.note
     ].join(" ").toLowerCase();
@@ -91,8 +102,8 @@
           '<td class="py-2.5 px-3 text-xs text-slate-600">' +
           escapeHtml(m.phone || "—") +
           "</td>" +
-          '<td class="py-2.5 px-3 text-xs text-slate-600">' +
-          escapeHtml(m.lineId || "—") +
+          '<td class="py-2.5 px-3 text-xs text-slate-600 font-mono">' +
+          escapeHtml(memberLineIdDisplay_(m)) +
           "</td>" +
           '<td class="py-2.5 px-3">' +
           '<span class="inline-block px-2 py-0.5 rounded-full text-[11px] ' +
@@ -209,7 +220,14 @@
         });
       })
       .then(function (res) {
-        if (res && res.error) throw new Error(res.message || "載入失敗");
+        if (res && res.error) {
+          if (res.memberSpreadsheetUrl) membersMeta.url = res.memberSpreadsheetUrl;
+          var errMsg = res.message || "載入失敗";
+          if (res.memberSpreadsheetUrl && /無法開啟會員名單|Memberist|共用/.test(errMsg)) {
+            errMsg = errMsg + " 開啟：" + res.memberSpreadsheetUrl;
+          }
+          throw new Error(errMsg);
+        }
         membersCache = res.members || [];
         if (res.memberSpreadsheetUrl) membersMeta.url = res.memberSpreadsheetUrl;
         if (res.memberSpreadsheetName) membersMeta.name = res.memberSpreadsheetName;
@@ -239,7 +257,10 @@
     }
     if (nameEl) nameEl.value = (existing && existing.customerName) || "";
     if (phoneEl) phoneEl.value = (existing && existing.phone) || "";
-    if (lineEl) lineEl.value = (existing && existing.lineId) || "";
+    if (lineEl) {
+      var lineDisp = existing ? memberLineIdDisplay_(existing) : "";
+      lineEl.value = lineDisp === "—" ? "" : lineDisp;
+    }
     if (emailEl) emailEl.value = (existing && existing.email) || "";
     if (statusEl) statusEl.value = (existing && existing.status) || "有效";
     if (noteEl) noteEl.value = (existing && existing.note) || "";
