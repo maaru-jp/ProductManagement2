@@ -2802,7 +2802,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
   styleKey = styleKey || resolveLineFlexStyleKey_();
   var jp = {
     confirm_pay: {
-      title: "請確認訂單並匯款",
+      title: "訂金付款通知",
       sectionLabel: "匯款資訊",
       sectionEmoji: "✉️",
       alt: "訂單確認／請匯款",
