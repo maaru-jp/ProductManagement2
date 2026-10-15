@@ -1288,10 +1288,7 @@ function processLineEvent_(event, settings) {
 
     if (!isValidMemberCardNo_(bindCard)) {
       if (accessToken) {
-        sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideMessages_({
-          welcome: false,
-          hint: "請傳送「綁定」＋空一格＋13 碼會員卡號。\n範例：綁定 2026092312345"
-        }));
+        sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideMessages_({ welcome: false }));
       }
       return { ok: false, type: "bind_help", message: "invalid_card_format", text: text };
     }
@@ -1381,8 +1378,9 @@ function sendLineUserText_(userId, replyToken, accessToken, text) {
 }
 
 /**
- * 引導顧客綁定會員的 Flex 按鈕卡片（對齊範例：標題＋說明＋綠色按鈕）
- * opts.welcome：加好友歡迎；opts.hint：覆寫說明；opts.memberCardNo：有卡號則按鈕預填「綁定 卡號」
+ * 引導顧客綁定會員的 Flex 按鈕卡片（對齊目前範例圖）
+ * 標題 → 說明 → 備註／範例 → 綠色「前往綁定會員」
+ * opts.hint：覆寫說明；opts.memberCardNo：有卡號則按鈕預填「綁定 卡號」
  */
 function buildLineBindGuideMessages_(opts) {
   opts = opts || {};
@@ -1390,12 +1388,12 @@ function buildLineBindGuideMessages_(opts) {
   var title = "尚未綁定會員資料";
   var card = normalizeMemberCardNo_(opts.memberCardNo || "");
   var hasCard = isValidMemberCardNo_(card);
-  // 範例預設文案；welcome 時多提訂單通知
   var desc = String(opts.hint || "").trim() ||
-    "請先完成會員綁定才能使用 +1 快速下單";
-  if (opts.welcome && !opts.hint) {
-    desc = "請先完成會員綁定才能使用 +1 快速下單";
-  }
+    "請先完成會員綁定，才能接收訂單通知";
+  var note = "備註：「綁定」與 13 碼會員卡號中間請空一格";
+  var example = hasCard
+    ? ("範例：綁定 " + card)
+    : "範例：綁定 2026092312345";
   // 有卡號：點按鈕直接送出「綁定 {卡號}」；無卡號：預填「綁定 」讓顧客補上 13 碼
   var btnText = hasCard ? ("綁定 " + card) : "綁定 ";
 
@@ -1408,7 +1406,7 @@ function buildLineBindGuideMessages_(opts) {
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "md",
+        spacing: "sm",
         paddingAll: "20px",
         backgroundColor: "#FFFFFF",
         contents: [
@@ -1423,10 +1421,26 @@ function buildLineBindGuideMessages_(opts) {
           {
             type: "text",
             text: desc,
-            size: "md",
+            size: "sm",
             color: "#8C8C8C",
             wrap: true,
             margin: "md"
+          },
+          {
+            type: "text",
+            text: note,
+            size: "sm",
+            color: "#8C8C8C",
+            wrap: true,
+            margin: "sm"
+          },
+          {
+            type: "text",
+            text: example,
+            size: "sm",
+            color: "#8C8C8C",
+            wrap: true,
+            margin: "none"
           },
           {
             type: "button",
@@ -3044,8 +3058,7 @@ function sendBindGuideDirect_(ss, body) {
 
   var msgs = buildLineBindGuideMessages_({
     welcome: false,
-    memberCardNo: card,
-    hint: "請先完成會員綁定，才能接收訂單進度通知"
+    memberCardNo: card
   });
   var pushRes = pushLineMessages_(userId, tok.accessToken, msgs);
   if (!pushRes || !pushRes.ok) {
@@ -3221,8 +3234,7 @@ function sendOrderBindGuide_(ss, body) {
 
   var msgs = buildLineBindGuideMessages_({
     welcome: false,
-    memberCardNo: card,
-    hint: "請先完成會員綁定，才能接收訂單進度通知"
+    memberCardNo: card
   });
   var pushRes = pushLineMessages_(userId, accessToken, msgs);
   if (!pushRes || !pushRes.ok) {
