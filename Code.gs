@@ -1139,10 +1139,19 @@ function isLikelyLineWebhookBody_(body) {
 function handleLineWebhookPost_(e, body) {
   var settings = getLineAutomationSettings_();
   var tokenInUrl = extractWebhookTokenFromEvent_(e);
-  Logger.log("LINE webhook: enabled=" + settings.enabled +
-    " hasToken=" + !!settings.webhookToken +
+  var evList = (body && body.events) ? body.events : [];
+  var typeSummary = [];
+  for (var ti = 0; ti < evList.length; ti++) {
+    var tev = evList[ti] || {};
+    var tmsg = (tev.message && tev.message.text) ? String(tev.message.text).slice(0, 40) : "";
+    typeSummary.push(String(tev.type || "?") + (tmsg ? (":" + tmsg) : ""));
+  }
+  Logger.log("LINE webhook ENTER enabled=" + settings.enabled +
+    " hasAccessToken=" + !!String(settings.channelAccessToken || "").trim() +
+    " hasWebhookToken=" + !!settings.webhookToken +
     " urlTokenPresent=" + !!tokenInUrl +
-    " events=" + ((body && body.events) ? body.events.length : 0));
+    " events=" + evList.length +
+    " summary=[" + typeSummary.join(" | ") + "]");
 
   // 未啟用「自動建單」時：仍處理加好友／会員カード綁定引導（否則只剩官方自動回覆、沒引導卡）
   var bindOnlyMode = !settings.enabled;
