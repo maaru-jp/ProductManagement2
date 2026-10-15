@@ -1212,7 +1212,7 @@ function processLineEvent_(event, settings) {
         type: "text",
         text:
           "歡迎加入！\n" +
-          "請點下方圖文選單「会員カード」開始會員綁定，才能接收訂單通知。"
+          "請點下方圖文選單「会員カード」（會帶出「會員綁定」）完成綁定，才能接收訂單通知。"
       }
     ];
     var followSend = { replied: false, replyMode: "", detail: {} };
@@ -1513,6 +1513,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
   var existing = getMemberRecordByLineUserId_(ss, userId);
   var existingCard = existing ? normalizeMemberCardNo_(existing.memberCardNo) : "";
   if (isValidMemberCardNo_(existingCard)) {
+    // 已綁定過：只回覆現況，不送引導卡、無需再綁
     clearPendingLineBind_(userId);
     if (accessToken) {
       sendLineUserMessages_(
@@ -1522,7 +1523,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
         [{
           type: "text",
           text:
-            "您已完成會員綁定。\n" +
+            "您已完成會員綁定，無需再綁定。\n" +
             "會員卡號：" + existingCard + "\n" +
             "之後訂單進度會透過官方 LINE 通知您。"
         }],
@@ -1538,6 +1539,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
     };
   }
 
+  // 未綁定：引導卡 ＋【會員綁定】說明文字
   setPendingLineBind_(userId);
   if (accessToken) {
     sendLineUserMessages_(
@@ -1545,7 +1547,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
       replyToken,
       accessToken,
       buildLineBindGuideHelpMessages_({
-        hint: "已取得您的 LINE，請傳送 13 碼會員卡號完成綁定"
+        hint: "請先完成會員綁定，才能接收訂單通知"
       }),
       { preferPush: true }
     );
