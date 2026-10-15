@@ -1248,7 +1248,9 @@ function processLineEvent_(event, settings) {
     var pbUser = String((event.source && event.source.userId) || "").trim();
     var pbAccess = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
     if (/^(action=)?bind_guide$/i.test(pbData) || /bind_guide/i.test(pbData)) {
-      if (pbAccess) sendLineUserMessages_(pbUser, pbToken, pbAccess, buildLineBindGuideMessages_({ welcome: false }));
+      if (pbAccess) {
+        sendLineUserMessages_(pbUser, pbToken, pbAccess, buildLineBindGuideHelpMessages_(), { preferPush: true });
+      }
       return { ok: true, type: "bind_guide_postback" };
     }
     return { ok: true, skipped: "postback_other" };
@@ -1264,9 +1266,11 @@ function processLineEvent_(event, settings) {
   var userId = String(source.userId || "").trim();
   var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
 
-  // 關鍵字：打開綁定引導卡片
-  if (/^(會員綁定|綁定會員|我要綁定|前往綁定|如何綁定)$/i.test(text)) {
-    if (accessToken) sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideMessages_({ welcome: false }));
+  // 關鍵字／卡片按鈕「前往綁定會員」：顯示引導卡＋輸入說明
+  if (/^(會員綁定|綁定會員|我要綁定|前往綁定|前往綁定會員|如何綁定)$/i.test(text)) {
+    if (accessToken) {
+      sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideHelpMessages_(), { preferPush: true });
+    }
     return { ok: true, type: "bind_guide" };
   }
 
@@ -1287,8 +1291,9 @@ function processLineEvent_(event, settings) {
     }
 
     if (!isValidMemberCardNo_(bindCard)) {
+      // 只傳「綁定」或格式不對：明確回覆怎麼輸入（避免按鈕點了像沒反應）
       if (accessToken) {
-        sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideMessages_({ welcome: false }));
+        sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideHelpMessages_(), { preferPush: true });
       }
       return { ok: false, type: "bind_help", message: "invalid_card_format", text: text };
     }
@@ -1296,7 +1301,7 @@ function processLineEvent_(event, settings) {
     var bindRes = bindLineUserIdToMemberCard_(SpreadsheetApp.getActiveSpreadsheet(), userId, bindCard);
     if (accessToken) {
       var bindMessages = buildLineBindResultMessages_(!bindRes.error, bindCard, bindRes.message || "");
-      sendLineUserMessages_(userId, replyToken, accessToken, bindMessages);
+      sendLineUserMessages_(userId, replyToken, accessToken, bindMessages, { preferPush: true });
     }
     return { ok: !bindRes.error, type: "bind", memberCardNo: bindCard, message: bindRes.message || "OK" };
   }
@@ -1394,8 +1399,9 @@ function buildLineBindGuideMessages_(opts) {
   var example = hasCard
     ? ("範例：綁定 " + card)
     : "範例：綁定 2026092312345";
-  // 有卡號：點按鈕直接送出「綁定 {卡號}」；無卡號：預填「綁定 」讓顧客補上 13 碼
-  var btnText = hasCard ? ("綁定 " + card) : "綁定 ";
+  // 有卡號：一鍵送出「綁定 {卡號}」完成綁定
+  // 無卡號：送出「前往綁定會員」→ 系統回覆輸入說明（LINE 無法把半成品留在輸入框）
+  var btnText = hasCard ? ("綁定 " + card) : "前往綁定會員";
 
   var flex = {
     type: "flex",
@@ -1462,6 +1468,20 @@ function buildLineBindGuideMessages_(opts) {
   return [flex];
 }
 
+/** 引導卡＋文字說明（點按鈕／只傳綁定無卡號時用） */
+function buildLineBindGuideHelpMessages_(opts) {
+  var guide = buildLineBindGuideMessages_(opts || {});
+  var tip = {
+    type: "text",
+    text:
+      "請在對話框輸入後傳送：\n" +
+      "綁定 您的13碼會員卡號\n" +
+      "（「綁定」與卡號中間請空一格）\n" +
+      "範例：綁定 2026092312345"
+  };
+  return [tip].concat(guide);
+}
+
 /** 綁定結果：文字 + Flex 卡片（較容易在聊天室看到） */
 function buildLineBindResultMessages_(ok, memberCardNo, detailMsg) {
   var card = String(memberCardNo || "").trim();
@@ -1514,7 +1534,8 @@ function buildLineBindResultMessages_(ok, memberCardNo, detailMsg) {
   ];
 }
 
-function sendLineUserMessages_(userId, replyToken, accessToken, messages) {
+function sendLineUserMessages_(userId, replyToken, accessToken, messages, opts) {
+  opts = opts || {};
   var replied = false;
   var replyMode = "";
   var detail = {};
@@ -1522,23 +1543,39 @@ function sendLineUserMessages_(userId, replyToken, accessToken, messages) {
   if (!messages.length) return { replied: false, replyMode: "", detail: { message: "empty" } };
   // LINE 單次最多 5 則
   if (messages.length > 5) messages = messages.slice(0, 5);
-  if (replyToken) {
-    var replyRes = replyLineMessages_(replyToken, accessToken, messages);
-    detail.reply = replyRes;
-    if (replyRes && replyRes.ok) {
-      return { replied: true, replyMode: "reply", detail: detail };
-    }
-  }
-  if (userId) {
+
+  function tryPush_() {
+    if (!userId) return false;
     var pushRes = pushLineMessages_(userId, accessToken, messages);
     detail.push = pushRes;
     if (pushRes && pushRes.ok) {
       replied = true;
       replyMode = "push";
-    } else {
-      Logger.log("LINE send messages failed: " + JSON.stringify(detail));
+      return true;
     }
+    return false;
   }
+  function tryReply_() {
+    if (!replyToken) return false;
+    var replyRes = replyLineMessages_(replyToken, accessToken, messages);
+    detail.reply = replyRes;
+    if (replyRes && replyRes.ok) {
+      replied = true;
+      replyMode = "reply";
+      return true;
+    }
+    return false;
+  }
+
+  // Cloudflare 非同步轉送時 replyToken 常過期 → 綁定相關可 preferPush
+  if (opts.preferPush) {
+    if (tryPush_()) return { replied: true, replyMode: replyMode, detail: detail };
+    if (tryReply_()) return { replied: true, replyMode: replyMode, detail: detail };
+  } else {
+    if (tryReply_()) return { replied: true, replyMode: replyMode, detail: detail };
+    if (tryPush_()) return { replied: true, replyMode: replyMode, detail: detail };
+  }
+  Logger.log("LINE send messages failed: " + JSON.stringify(detail));
   return { replied: replied, replyMode: replyMode, detail: detail };
 }
 
