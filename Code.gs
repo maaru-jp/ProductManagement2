@@ -1200,15 +1200,19 @@ function isLineBindRelatedEvent_(event) {
 function isLineMemberCardKeyword_(text) {
   var raw = String(text || "")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[ｰ―─－-]/g, "ー")
     .replace(/[　\s]+/g, "")
     .trim();
   if (!raw) return false;
   if (/^(會員綁定|綁定會員|我要綁定|前往綁定|前往綁定會員|如何綁定|会員カード|會員卡|会員卡)$/i.test(raw)) {
     return true;
   }
-  // 容許前後綴極短雜訊
-  if (raw.length <= 24 && (raw.indexOf("会員カード") >= 0 || raw.indexOf("會員綁定") >= 0 || raw.indexOf("我要綁定") >= 0)) {
-    return true;
+  // 容許半形片假名／前後雜訊（圖文選單常見）
+  if (raw.length <= 32) {
+    if (raw.indexOf("會員綁定") >= 0 || raw.indexOf("我要綁定") >= 0 || raw.indexOf("綁定會員") >= 0) return true;
+    if (raw.indexOf("会員カード") >= 0 || raw.indexOf("會員卡") >= 0) return true;
+    // 会員 + カード／カード變體
+    if (/会員/.test(raw) && /カ[ーｰ]?ド|カード|ｶｰﾄﾞ|card/i.test(raw)) return true;
   }
   return false;
 }
@@ -1577,7 +1581,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
     };
   }
 
-  // 未綁定：引導卡 ＋【會員綁定】說明文字
+  // 未綁定：先送【會員綁定】文字、再送引導卡（分開 Push，避免 Flex 失敗整批沒送到）
   setPendingLineBind_(userId);
   if (!accessToken) {
     Logger.log("LINE member-card: 缺少 Channel access token，無法送引導卡 user=" + userId);
@@ -1590,20 +1594,29 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
       via: meta.via || ""
     };
   }
-  var helpMsgs = buildLineBindGuideHelpMessages_({
+  var tipMsgs = buildLineBindGuideTipMessages_();
+  var flexMsgs = buildLineBindGuideMessages_({
     hint: "請先完成會員綁定，才能接收訂單通知"
   });
-  var sendRes = sendLineUserMessages_(userId, replyToken, accessToken, helpMsgs, { preferPush: true });
-  if (!sendRes || !sendRes.replied) {
-    Logger.log("LINE member-card guide send failed: " + JSON.stringify(sendRes && sendRes.detail));
+  // 文字先送（較穩）；引導卡再送
+  var tipRes = sendLineUserMessages_(userId, replyToken, accessToken, tipMsgs, { preferPush: true });
+  var flexRes = sendLineUserMessages_(userId, "", accessToken, flexMsgs, { preferPush: true });
+  var anySent = !!(tipRes && tipRes.replied) || !!(flexRes && flexRes.replied);
+  if (!anySent) {
+    Logger.log("LINE member-card guide send failed tip=" + JSON.stringify(tipRes && tipRes.detail) +
+      " flex=" + JSON.stringify(flexRes && flexRes.detail));
+  } else if (!(flexRes && flexRes.replied)) {
+    Logger.log("LINE member-card: tip ok but flex failed " + JSON.stringify(flexRes && flexRes.detail));
   }
   return {
-    ok: !!(sendRes && sendRes.replied),
+    ok: anySent,
     type: "member_card_await_card",
     lineUserId: userId,
     pending: true,
-    sent: !!(sendRes && sendRes.replied),
-    replyMode: (sendRes && sendRes.replyMode) || "",
+    sent: anySent,
+    tipSent: !!(tipRes && tipRes.replied),
+    flexSent: !!(flexRes && flexRes.replied),
+    replyMode: (flexRes && flexRes.replied ? flexRes.replyMode : (tipRes && tipRes.replyMode)) || "",
     via: meta.via || "",
     data: meta.data || ""
   };
@@ -1702,12 +1715,9 @@ function buildLineBindGuideMessages_(opts) {
   return [flex];
 }
 
-/**
- * 點圖文選單「会員カード」後回覆：引導卡 ＋ 自動帶出「會員綁定」說明文字
- */
-function buildLineBindGuideHelpMessages_(opts) {
-  var guide = buildLineBindGuideMessages_(opts || {});
-  var tip = {
+/** 【會員綁定】說明文字（單獨一則，較不易因 Flex 失敗而整批失敗） */
+function buildLineBindGuideTipMessages_() {
+  return [{
     type: "text",
     text:
       "【會員綁定】\n" +
@@ -1719,9 +1729,14 @@ function buildLineBindGuideHelpMessages_(opts) {
       "\n" +
       "也可直接只傳 13 碼數字。\n" +
       "（「綁定」與卡號中間請空一格）"
-  };
-  // 先引導卡，再自動帶出會員綁定文字
-  return guide.concat([tip]);
+  }];
+}
+
+/**
+ * 點圖文選單「会員カード」後回覆：引導卡 ＋【會員綁定】說明
+ */
+function buildLineBindGuideHelpMessages_(opts) {
+  return buildLineBindGuideMessages_(opts || {}).concat(buildLineBindGuideTipMessages_());
 }
 
 /** 綁定結果：文字 + Flex 卡片（較容易在聊天室看到） */
