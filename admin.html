@@ -1003,20 +1003,54 @@
                   <button type="button" id="lineCopyWebhookUrl" class="mt-2 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-medium hover:bg-slate-100">複製 GAS Webhook URL</button>
                 </div>
               </div>
-              <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">訂單成立自動回覆模板</label>
-                <textarea id="lineOrderCreatedTemplate" rows="12" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed" placeholder="可用變數 {{orderId}} {{memberCardNo}} {{itemsSummary}} {{subtotal}} {{customerName}}"></textarea>
-                <p class="text-xs text-slate-500 mt-1">可用變數：<code class="bg-slate-100 px-1 rounded">{{orderId}}</code> <code class="bg-slate-100 px-1 rounded">{{memberCardNo}}</code> <code class="bg-slate-100 px-1 rounded">{{itemsSummary}}</code> <code class="bg-slate-100 px-1 rounded">{{subtotal}}</code> <code class="bg-slate-100 px-1 rounded">{{customerName}}</code></p>
+              <div class="rounded-lg border border-amber-200 bg-amber-50/70 p-4 space-y-3">
+                <div>
+                  <p class="text-sm font-medium text-amber-950">直接發送綁定引導</p>
+                  <p class="text-xs text-amber-900/80 mt-1 leading-relaxed">已加官方帳號、但訂單／會員尚無 LINE ID 時，可由此手動填 ID，或從「官方好友清單」選人發送。有會員卡號會預填按鈕「綁定 卡號」。</p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1">會員卡號（選填，13 碼）</label>
+                    <input type="text" id="lineBindGuideCard" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="例如 2026092312345" maxlength="13" inputmode="numeric" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1">LINE User ID（U 開頭）</label>
+                    <input type="text" id="lineBindGuideUserId" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" placeholder="Uxxxxxxxx…" autocomplete="off" />
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" id="lineBindGuideSendBtn" class="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700">發送綁定引導卡</button>
+                  <button type="button" id="lineFollowersLoadBtn" class="px-4 py-2 rounded-lg border border-amber-300 bg-white text-amber-950 text-sm font-medium hover:bg-amber-100">載入官方好友清單</button>
+                </div>
+                <div id="lineFollowersBox" class="hidden space-y-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <input type="text" id="lineFollowersSearch" class="flex-1 min-w-[140px] rounded-lg border border-slate-300 px-3 py-1.5 text-sm" placeholder="搜尋顯示名稱…" />
+                    <button type="button" id="lineFollowersMoreBtn" class="hidden px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs hover:bg-slate-50">載入更多</button>
+                  </div>
+                  <div id="lineFollowersList" class="max-h-56 overflow-y-auto rounded-lg border border-amber-100 bg-white divide-y divide-slate-100"></div>
+                  <p id="lineFollowersHint" class="text-[11px] text-slate-500"></p>
+                </div>
+                <p id="lineBindGuideHint" class="text-xs text-slate-600 hidden"></p>
               </div>
               <div class="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-3">
                 <div>
-                  <p class="text-sm font-medium text-emerald-900">訂單進度一鍵推播模板</p>
-                  <p class="text-xs text-emerald-900/80 mt-1 leading-relaxed">顧客需先加官方帳號並傳送 <code class="bg-emerald-100 px-1 rounded">綁定 13碼會員卡號</code>。後台訂單管理可一鍵推播以下五種通知。</p>
-                  <p class="text-xs text-slate-600 mt-1">變數：<code class="bg-white/80 px-1 rounded">{{orderId}}</code> <code class="bg-white/80 px-1 rounded">{{memberCardNo}}</code> <code class="bg-white/80 px-1 rounded">{{customerName}}</code> <code class="bg-white/80 px-1 rounded">{{itemsSummary}}</code> <code class="bg-white/80 px-1 rounded">{{amountDue}}</code> <code class="bg-white/80 px-1 rounded">{{subtotal}}</code> <code class="bg-white/80 px-1 rounded">{{shippingMethod}}</code> <code class="bg-white/80 px-1 rounded">{{storeName}}</code></p>
+                  <p class="text-sm font-medium text-emerald-900">LINE 訊息模板（合併管理）</p>
+                  <p class="text-xs text-emerald-900/80 mt-1 leading-relaxed">訂單成立回覆與五種進度推播已合併；卡片版型統一為 Flex，此處只編<strong>內文</strong>。儲存一次即可全部更新。顧客加好友會收到綁定引導卡；也可傳 <code class="bg-emerald-100 px-1 rounded">綁定 13碼會員卡號</code>。</p>
+                  <p class="text-xs text-slate-600 mt-1">變數：<code class="bg-white/80 px-1 rounded">{{orderId}}</code> <code class="bg-white/80 px-1 rounded">{{memberCardNo}}</code> <code class="bg-white/80 px-1 rounded">{{customerName}}</code> <code class="bg-white/80 px-1 rounded">{{itemsSummary}}</code> <code class="bg-white/80 px-1 rounded">{{depositAmount}}</code> <code class="bg-white/80 px-1 rounded">{{amountDue}}</code> <code class="bg-white/80 px-1 rounded">{{subtotal}}</code> <code class="bg-white/80 px-1 rounded">{{shippingMethod}}</code> <code class="bg-white/80 px-1 rounded">{{storeName}}</code></p>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-700 mb-1">⓪ 訂單成立（喊單／建單自動回覆）</label>
+                  <p class="text-[11px] text-slate-500 mb-1">訂單編號、會員卡號、品項、小計由卡片自動帶入；此處編結語說明。</p>
+                  <textarea id="lineNotifyTpl_order_created" rows="5" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-700 mb-1">⓪′ 加單成功（2 小時內 +1 併單）</label>
+                  <textarea id="lineNotifyTpl_order_merged" rows="3" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
                 </div>
                 <div>
                   <label class="block text-xs font-medium text-slate-700 mb-1">① 確認訂單／請匯款</label>
-                  <textarea id="lineNotifyTpl_confirm_pay" rows="5" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
+                  <p class="text-[11px] text-slate-500 mb-1">訂金金額由卡片正中自動顯示，此處請只留結語（勿再寫訂金／訂單編號）。預設：匯款完成後請回覆本對話告知，謝謝！</p>
+                  <textarea id="lineNotifyTpl_confirm_pay" rows="2" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
                 </div>
                 <div>
                   <label class="block text-xs font-medium text-slate-700 mb-1">② 已確認匯款</label>
@@ -1024,7 +1058,8 @@
                 </div>
                 <div>
                   <label class="block text-xs font-medium text-slate-700 mb-1">③ 出貨通知</label>
-                  <textarea id="lineNotifyTpl_shipping" rows="5" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
+                  <p class="text-[11px] text-slate-500 mb-1">運送方式／門市由卡片上方顯示。預設內文：您的訂單已出貨＋到貨時間說明＋小幫手聯繫結語。</p>
+                  <textarea id="lineNotifyTpl_shipping" rows="8" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
                 </div>
                 <div>
                   <label class="block text-xs font-medium text-slate-700 mb-1">④ 到店／可取貨</label>
@@ -2112,7 +2147,6 @@
         var lineChannelAccessToken = document.getElementById("lineChannelAccessToken");
         var lineChannelSecret = document.getElementById("lineChannelSecret");
         var lineWebhookToken = document.getElementById("lineWebhookToken");
-        var lineOrderCreatedTemplate = document.getElementById("lineOrderCreatedTemplate");
         var lineWebhookUrlPreview = document.getElementById("lineWebhookUrlPreview");
         var lineSettingsHint = document.getElementById("lineSettingsHint");
         var lineTokenHint = document.getElementById("lineTokenHint");
@@ -2124,6 +2158,7 @@
         var lineTestOrderBtn = document.getElementById("lineTestOrderBtn");
         var lastLineWebhookToken = "";
         var LINE_NOTIFY_TYPE_KEYS_ = ["confirm_pay", "paid", "shipping", "arrived", "completed"];
+        var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged"].concat(LINE_NOTIFY_TYPE_KEYS_);
         var LINE_NOTIFY_LABELS_ = {
           confirm_pay: "確認／請匯款",
           paid: "已確認匯款",
@@ -2136,7 +2171,7 @@
 
         function getLineNotifyTemplateEls_() {
           var out = {};
-          LINE_NOTIFY_TYPE_KEYS_.forEach(function(k) {
+          LINE_MSG_TEMPLATE_KEYS_.forEach(function(k) {
             out[k] = document.getElementById("lineNotifyTpl_" + k);
           });
           return out;
@@ -2145,7 +2180,7 @@
         function collectLineNotifyTemplatesFromForm_() {
           var els = getLineNotifyTemplateEls_();
           var out = {};
-          LINE_NOTIFY_TYPE_KEYS_.forEach(function(k) {
+          LINE_MSG_TEMPLATE_KEYS_.forEach(function(k) {
             out[k] = els[k] ? String(els[k].value || "") : "";
           });
           return out;
@@ -2154,7 +2189,7 @@
         function applyLineNotifyTemplatesToForm_(templates) {
           templates = templates || {};
           var els = getLineNotifyTemplateEls_();
-          LINE_NOTIFY_TYPE_KEYS_.forEach(function(k) {
+          LINE_MSG_TEMPLATE_KEYS_.forEach(function(k) {
             if (els[k] && templates[k] != null) els[k].value = templates[k];
           });
         }
@@ -2213,10 +2248,14 @@
             lineWebhookToken.value = data.webhookTokenMasked || "(已設定)";
           }
           updateLineWebhookUrlPreview_(data.webhookToken || lastLineWebhookToken || "");
-          if (lineOrderCreatedTemplate && data.orderCreatedTemplate) {
-            lineOrderCreatedTemplate.value = data.orderCreatedTemplate;
+          var mergedTpl = data.notifyTemplates || {};
+          if (!mergedTpl.order_created && data.orderCreatedTemplate) {
+            mergedTpl.order_created = data.orderCreatedTemplate;
           }
-          if (data.notifyTemplates) applyLineNotifyTemplatesToForm_(data.notifyTemplates);
+          if (!mergedTpl.order_merged && data.orderMergedTemplate) {
+            mergedTpl.order_merged = data.orderMergedTemplate;
+          }
+          applyLineNotifyTemplatesToForm_(mergedTpl);
         }
 
         function loadLineSettings_() {
@@ -2253,11 +2292,12 @@
             alert("後台寫入 API 未就緒。請用 http://localhost:3000/admin.html 開啟，或確認網路。");
             return;
           }
+          var notifyTpl = collectLineNotifyTemplatesFromForm_();
           var body = {
             action: "line_settings_save",
             enabled: !!(lineAutoEnabled && lineAutoEnabled.checked),
-            orderCreatedTemplate: lineOrderCreatedTemplate ? lineOrderCreatedTemplate.value : "",
-            notifyTemplates: collectLineNotifyTemplatesFromForm_()
+            orderCreatedTemplate: notifyTpl.order_created || "",
+            notifyTemplates: notifyTpl
           };
           if (lineChannelAccessToken && lineChannelAccessToken.value.trim()) {
             body.channelAccessToken = lineChannelAccessToken.value.trim();
@@ -2380,6 +2420,161 @@
                 lineTestOrderBtn.disabled = false;
                 lineTestOrderBtn.textContent = "模擬建單測試";
               });
+          });
+        }
+
+        var lineBindGuideCard = document.getElementById("lineBindGuideCard");
+        var lineBindGuideUserId = document.getElementById("lineBindGuideUserId");
+        var lineBindGuideSendBtn = document.getElementById("lineBindGuideSendBtn");
+        var lineBindGuideHint = document.getElementById("lineBindGuideHint");
+        var lineFollowersLoadBtn = document.getElementById("lineFollowersLoadBtn");
+        var lineFollowersMoreBtn = document.getElementById("lineFollowersMoreBtn");
+        var lineFollowersBox = document.getElementById("lineFollowersBox");
+        var lineFollowersList = document.getElementById("lineFollowersList");
+        var lineFollowersSearch = document.getElementById("lineFollowersSearch");
+        var lineFollowersHint = document.getElementById("lineFollowersHint");
+        var lineFollowersCache_ = [];
+        var lineFollowersNext_ = "";
+
+        function showLineBindGuideHint_(msg, isErr) {
+          if (!lineBindGuideHint) return;
+          lineBindGuideHint.textContent = msg || "";
+          lineBindGuideHint.classList.toggle("hidden", !msg);
+          lineBindGuideHint.className = "text-xs " + (isErr ? "text-rose-600" : "text-emerald-700");
+        }
+
+        function sendLineBindGuideDirect_(userIdOverride, btnEl) {
+          if (typeof fetchWrite !== "function") {
+            showLineBindGuideHint_("後台寫入 API 未就緒", true);
+            return;
+          }
+          var userId = String(userIdOverride || (lineBindGuideUserId && lineBindGuideUserId.value) || "").trim();
+          var card = String((lineBindGuideCard && lineBindGuideCard.value) || "").replace(/\D/g, "");
+          if (!/^U[0-9a-fA-F]{32}$/i.test(userId) && !/^U.{20,}$/.test(userId)) {
+            showLineBindGuideHint_("請填入或從好友清單選取 LINE User ID（U 開頭）", true);
+            return;
+          }
+          if (lineBindGuideUserId) lineBindGuideUserId.value = userId;
+          if (!confirm("確定發送「綁定引導」卡片到此 LINE 用戶？\n" + userId + (card ? ("\n卡號預填：綁定 " + card) : ""))) return;
+          if (btnEl) btnEl.disabled = true;
+          if (lineBindGuideSendBtn) lineBindGuideSendBtn.disabled = true;
+          showLineBindGuideHint_("發送中…", false);
+          fetchWrite({ action: "line_bind_guide_send", lineUserId: userId, memberCardNo: card })
+            .then(parseLineSettingsResponse_)
+            .then(function(data) {
+              if (data && data.error) throw new Error(data.message || "發送失敗");
+              showLineBindGuideHint_(data.message || "已發送", false);
+            })
+            .catch(function(err) {
+              showLineBindGuideHint_((err && err.message) || "發送失敗", true);
+            })
+            .finally(function() {
+              if (btnEl) btnEl.disabled = false;
+              if (lineBindGuideSendBtn) lineBindGuideSendBtn.disabled = false;
+            });
+        }
+
+        function renderLineFollowersList_() {
+          if (!lineFollowersList) return;
+          var q = String((lineFollowersSearch && lineFollowersSearch.value) || "").trim().toLowerCase();
+          var rows = lineFollowersCache_.filter(function(f) {
+            if (!q) return true;
+            var name = String(f.displayName || "").toLowerCase();
+            var id = String(f.lineUserId || "").toLowerCase();
+            return name.indexOf(q) >= 0 || id.indexOf(q) >= 0;
+          });
+          if (!rows.length) {
+            lineFollowersList.innerHTML = "<p class=\"px-3 py-4 text-xs text-slate-500 text-center\">沒有符合的好友</p>";
+            return;
+          }
+          lineFollowersList.innerHTML = rows.map(function(f) {
+            var name = String(f.displayName || "(無名稱)").replace(/</g, "&lt;");
+            var uid = String(f.lineUserId || "");
+            var shortId = uid.length > 10 ? (uid.slice(0, 6) + "…" + uid.slice(-4)) : uid;
+            return "<div class=\"flex items-center gap-2 px-3 py-2 hover:bg-amber-50/50\" data-line-uid=\"" + uid.replace(/"/g, "") + "\">" +
+              "<div class=\"min-w-0 flex-1\">" +
+              "<p class=\"text-sm text-slate-800 truncate\">" + name + "</p>" +
+              "<p class=\"text-[10px] text-slate-400 font-mono\">" + shortId.replace(/</g, "&lt;") + "</p>" +
+              "</div>" +
+              "<button type=\"button\" class=\"line-follower-pick shrink-0 px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 text-[11px] hover:bg-slate-50\">選取</button>" +
+              "<button type=\"button\" class=\"line-follower-send shrink-0 px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-950 text-[11px] hover:bg-amber-100\">發送</button>" +
+              "</div>";
+          }).join("");
+        }
+
+        function loadLineFollowers_(append) {
+          if (typeof fetchWrite !== "function") {
+            showLineBindGuideHint_("後台寫入 API 未就緒", true);
+            return;
+          }
+          if (!append) {
+            lineFollowersCache_ = [];
+            lineFollowersNext_ = "";
+          }
+          if (lineFollowersLoadBtn) lineFollowersLoadBtn.disabled = true;
+          if (lineFollowersMoreBtn) lineFollowersMoreBtn.disabled = true;
+          if (lineFollowersHint) lineFollowersHint.textContent = "載入中…";
+          if (lineFollowersBox) lineFollowersBox.classList.remove("hidden");
+          var payload = { action: "line_followers_list", limit: 30 };
+          if (append && lineFollowersNext_) payload.start = lineFollowersNext_;
+          fetchWrite(payload)
+            .then(parseLineSettingsResponse_)
+            .then(function(data) {
+              if (data && data.error) throw new Error(data.message || "載入失敗");
+              var friends = Array.isArray(data.friends) ? data.friends : [];
+              if (append) lineFollowersCache_ = lineFollowersCache_.concat(friends);
+              else lineFollowersCache_ = friends;
+              lineFollowersNext_ = String(data.next || "");
+              if (lineFollowersMoreBtn) {
+                lineFollowersMoreBtn.classList.toggle("hidden", !lineFollowersNext_);
+              }
+              renderLineFollowersList_();
+              if (lineFollowersHint) {
+                lineFollowersHint.textContent = "目前顯示 " + lineFollowersCache_.length + " 位好友" +
+                  (lineFollowersNext_ ? "（可按「載入更多」）" : "（已全部載入）");
+              }
+              showLineBindGuideHint_("已載入官方好友清單（即使尚未傳訊／未寫入訂單也可選）", false);
+            })
+            .catch(function(err) {
+              showLineBindGuideHint_((err && err.message) || "載入好友失敗", true);
+              if (lineFollowersHint) lineFollowersHint.textContent = "";
+            })
+            .finally(function() {
+              if (lineFollowersLoadBtn) lineFollowersLoadBtn.disabled = false;
+              if (lineFollowersMoreBtn) lineFollowersMoreBtn.disabled = false;
+            });
+        }
+
+        if (lineBindGuideSendBtn) {
+          lineBindGuideSendBtn.addEventListener("click", function() {
+            sendLineBindGuideDirect_("", lineBindGuideSendBtn);
+          });
+        }
+        if (lineFollowersLoadBtn) {
+          lineFollowersLoadBtn.addEventListener("click", function() { loadLineFollowers_(false); });
+        }
+        if (lineFollowersMoreBtn) {
+          lineFollowersMoreBtn.addEventListener("click", function() { loadLineFollowers_(true); });
+        }
+        if (lineFollowersSearch) {
+          lineFollowersSearch.addEventListener("input", function() { renderLineFollowersList_(); });
+        }
+        if (lineFollowersList) {
+          lineFollowersList.addEventListener("click", function(e) {
+            var t = e.target;
+            if (!t || !t.closest) return;
+            var row = t.closest("[data-line-uid]");
+            if (!row) return;
+            var uid = row.getAttribute("data-line-uid") || "";
+            if (t.closest(".line-follower-pick")) {
+              if (lineBindGuideUserId) lineBindGuideUserId.value = uid;
+              showLineBindGuideHint_("已選取 " + uid + "，可再填卡號後按「發送綁定引導卡」", false);
+              return;
+            }
+            if (t.closest(".line-follower-send")) {
+              if (lineBindGuideUserId) lineBindGuideUserId.value = uid;
+              sendLineBindGuideDirect_(uid, t.closest(".line-follower-send"));
+            }
           });
         }
 
@@ -7489,6 +7684,12 @@
           orderTableBody.addEventListener("click", function(e) {
             var t = e.target;
             if (!t || !t.closest) return;
+            var guideBtn = t.closest(".order-bind-guide-btn");
+            if (guideBtn && orderTableBody.contains(guideBtn)) {
+              e.preventDefault();
+              sendOrderBindGuideFromAdmin_(guideBtn.getAttribute("data-order-id") || "", guideBtn);
+              return;
+            }
             var lineBtn = t.closest(".order-line-notify-btn");
             if (lineBtn && orderTableBody.contains(lineBtn)) {
               e.preventDefault();
@@ -7598,12 +7799,16 @@
           if (hint) {
             hint.textContent = can
               ? "按下方按鈕即可推播對應進度到顧客官方 LINE（不會自動改訂單狀態）。"
-              : ("請請顧客加官方帳號後傳送：綁定 " + (card.length === 13 ? card : "13碼會員卡號"));
+              : ("未綁定：可先按「發送綁定引導」。或請顧客傳「我要綁定」／「綁定 " + (card.length === 13 ? card : "13碼") + "」。");
           }
           if (btns) {
             var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "shipping", "arrived", "completed"];
             var labels = window.LINE_NOTIFY_LABELS_ || {};
-            btns.innerHTML = keys.map(function(k) {
+            var guideBtn =
+              "<button type=\"button\" class=\"order-bind-guide-btn px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-950 text-xs hover:bg-amber-100\" data-order-id=\"" +
+              escapeHtml(ord.id) +
+              "\">發送綁定引導</button>";
+            btns.innerHTML = guideBtn + keys.map(function(k) {
               var label = labels[k] || k;
               var disabled = can ? "" : " disabled";
               var cls = can
@@ -7612,6 +7817,11 @@
               return "<button type=\"button\" class=\"" + cls + "\" data-order-id=\"" + escapeHtml(ord.id) + "\" data-notify-type=\"" + escapeHtml(k) + "\"" + disabled + ">" + escapeHtml(label) + "</button>";
             }).join("");
             btns.onclick = function(ev) {
+              var g = ev.target && ev.target.closest ? ev.target.closest(".order-bind-guide-btn") : null;
+              if (g) {
+                sendOrderBindGuideFromAdmin_(g.getAttribute("data-order-id"), g);
+                return;
+              }
               var b = ev.target && ev.target.closest ? ev.target.closest(".order-line-notify-btn") : null;
               if (!b || b.disabled) return;
               sendOrderLineNotifyFromAdmin_(b.getAttribute("data-order-id"), b.getAttribute("data-notify-type"), b);
@@ -7639,7 +7849,11 @@
           };
           var badge = can
             ? "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 mr-1\" title=\"已綁定 LINE 推播\">可推播</span>"
-            : "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 mr-1\" title=\"請請顧客傳：綁定 會員卡號\">未綁定</span>";
+            : "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 mr-1\" title=\"請請顧客傳：我要綁定 或 綁定 會員卡號\">未綁定</span>";
+          var guideBtn =
+            "<button type=\"button\" class=\"order-bind-guide-btn px-1.5 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-950 text-[10px] hover:bg-amber-100\" data-order-id=\"" +
+            escapeHtml(ord.id) +
+            "\" title=\"發送綁定引導 Flex 卡\">綁定引導</button>";
           var btns = keys.map(function(k) {
             var label = labels[k] || k;
             var disabled = can ? "" : " disabled";
@@ -7648,7 +7862,35 @@
               : "order-line-notify-btn px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-400 text-[10px] cursor-not-allowed";
             return "<button type=\"button\" class=\"" + cls + "\" data-order-id=\"" + escapeHtml(ord.id) + "\" data-notify-type=\"" + escapeHtml(k) + "\"" + disabled + " title=\"LINE：" + escapeHtml(label) + "\">" + escapeHtml(label) + "</button>";
           }).join("");
-          return "<div class=\"mb-1.5 flex flex-wrap items-center gap-1\">" + badge + btns + "</div>";
+          return "<div class=\"mb-1.5 flex flex-wrap items-center gap-1\">" + badge + guideBtn + btns + "</div>";
+        }
+
+        function sendOrderBindGuideFromAdmin_(orderId, btnEl) {
+          orderId = String(orderId || "").trim();
+          if (!orderId) return;
+          if (!confirm("對訂單 " + orderId + " 發送「綁定引導」Flex 卡片？")) return;
+          if (typeof fetchWrite !== "function") {
+            showOrderMessage("後台寫入 API 未就緒", true);
+            return;
+          }
+          if (btnEl) btnEl.disabled = true;
+          showOrderMessage("正在發送綁定引導卡…", false);
+          fetchWrite({ action: "order_bind_guide", orderId: orderId })
+            .then(function(r) { return r.text().then(function(t) {
+              try { return t ? JSON.parse(t) : {}; } catch (e) {
+                return { error: true, message: "回應非 JSON（請部署最新 Code.gs）" };
+              }
+            }); })
+            .then(function(data) {
+              if (data && data.error) throw new Error(data.message || "發送失敗");
+              showOrderMessage("已發送綁定引導卡 → " + orderId, false);
+            })
+            .catch(function(err) {
+              showOrderMessage((err && err.message) || "發送失敗", true);
+            })
+            .finally(function() {
+              if (btnEl) btnEl.disabled = false;
+            });
         }
 
         function sendOrderLineNotifyFromAdmin_(orderId, notifyType, btnEl) {

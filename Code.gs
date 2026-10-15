@@ -127,8 +127,8 @@ function doGet(e) {
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info", "line_diag"],
-        postRoutes: ["customer_order_submit", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_line_notify", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
-        lineWebhookHint: "Webhook URL 用 Cloudflare Worker 中繼。顧客傳「綁定 13碼卡號」可綁定推播。後台可一鍵 LINE 通知訂單進度。",
+        postRoutes: ["customer_order_submit", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_line_notify", "order_bind_guide", "line_bind_guide_send", "line_followers_list", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
+        lineWebhookHint: "Webhook URL 用 Cloudflare Worker 中繼。顧客傳「我要綁定」或「綁定 13碼」可綁定。後台可直接發送綁定引導卡／進度推播。",
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
         memberSpreadsheetName: getMemberSpreadsheetMeta_().name
@@ -253,6 +253,15 @@ function doPost(e) {
     }
     if (action === "order_line_notify") {
       return jsonOutput(sendOrderLineNotify_(ss, body));
+    }
+    if (action === "order_bind_guide") {
+      return jsonOutput(sendOrderBindGuide_(ss, body));
+    }
+    if (action === "line_bind_guide_send") {
+      return jsonOutput(sendBindGuideDirect_(ss, body));
+    }
+    if (action === "line_followers_list") {
+      return jsonOutput(listLineFollowersForAdmin_(body));
     }
 
     // 紅利紀錄：list / sync / repair
@@ -1347,12 +1356,17 @@ function buildLineBindGuideMessages_(opts) {
   opts = opts || {};
   var btnColor = "#06C755";
   var title = "尚未綁定會員資料";
+  var card = normalizeMemberCardNo_(opts.memberCardNo || "");
+  var hasCard = isValidMemberCardNo_(card);
   var desc = String(opts.hint || "").trim() ||
     "請先完成會員綁定才能使用 +1 快速下單";
   if (opts.welcome && !opts.hint) {
     desc = "請先完成會員綁定，才能接收訂單通知與使用 +1 快速下單";
   }
-  var note = "備註：「綁定」與 13 碼會員卡號中間請空一格\n範例：綁定 2026092312345";
+  var note = hasCard
+    ? ("備註：點按鈕後請直接傳送（中間已空一格）\n綁定 " + card)
+    : "備註：「綁定」與 13 碼會員卡號中間請空一格\n範例：綁定 2026092312345";
+  var btnText = hasCard ? ("綁定 " + card) : "綁定 ";
 
   var flex = {
     type: "flex",
@@ -1401,7 +1415,7 @@ function buildLineBindGuideMessages_(opts) {
             action: {
               type: "message",
               label: "前往綁定會員",
-              text: "綁定 "
+              text: btnText
             }
           }
         ]
@@ -2973,6 +2987,222 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     type: "flex",
     altText: brand + "｜" + (meta.alt || meta.title) + (v.orderId ? ("｜" + orderDisp) : ""),
     contents: bubble
+  };
+}
+
+function getLineChannelAccessTokenOrError_() {
+  var settings = getLineAutomationSettings_();
+  var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
+  if (!accessToken) {
+    return { error: true, message: "尚未設定 Channel access token（請到網站設定 → LINE）" };
+  }
+  return { error: false, accessToken: accessToken };
+}
+
+/**
+ * 直接發送綁定引導（不依賴訂單）。
+ * body: { lineUserId, memberCardNo? }
+ * 有卡號時 Flex 按鈕預填「綁定 {卡號}」；可選寫回會員名單。
+ */
+function sendBindGuideDirect_(ss, body) {
+  body = body || {};
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var userId = String(body.lineUserId || body.userId || body.to || "").trim();
+  var card = normalizeMemberCardNo_(body.memberCardNo || body.card || "") || "";
+
+  if (!isLineMessagingUserId_(userId)) {
+    return {
+      error: true,
+      message: "請填入正確的 LINE User ID（U 開頭）。可從下方「官方好友清單」選取。"
+    };
+  }
+
+  var tok = getLineChannelAccessTokenOrError_();
+  if (tok.error) return tok;
+
+  var msgs = buildLineBindGuideMessages_({
+    welcome: false,
+    memberCardNo: card,
+    hint: "請先完成會員綁定，才能接收訂單進度通知"
+  });
+  var pushRes = pushLineMessages_(userId, tok.accessToken, msgs);
+  if (!pushRes || !pushRes.ok) {
+    var detail = (pushRes && (pushRes.message || pushRes.body)) || "unknown";
+    return {
+      error: true,
+      lineUserId: userId,
+      memberCardNo: card,
+      message: "Push 失敗：" + String(detail).slice(0, 200)
+    };
+  }
+
+  var bound = false;
+  if (isValidMemberCardNo_(card) && body.saveBind !== false) {
+    try {
+      var bindRes = bindLineUserIdToMemberCard_(ss, userId, card);
+      bound = !(bindRes && bindRes.error);
+    } catch (e) { /* soft-fail */ }
+  }
+
+  return {
+    error: false,
+    message: bound
+      ? ("已發送綁定引導卡，並寫入會員 LINE ID（卡號 " + card + "）")
+      : "已發送綁定引導卡片",
+    lineUserId: userId,
+    memberCardNo: card,
+    pushed: true,
+    bound: bound
+  };
+}
+
+/**
+ * 取得官方帳號好友（已加好友即可列出，即使尚未傳過訊息／未寫入訂單）。
+ * body: { start?, limit? }  — start 為上一頁 next 游標
+ */
+function listLineFollowersForAdmin_(body) {
+  body = body || {};
+  var tok = getLineChannelAccessTokenOrError_();
+  if (tok.error) return tok;
+  var accessToken = tok.accessToken;
+  var limit = Math.min(40, Math.max(1, parseInt(body.limit, 10) || 30));
+  var start = String(body.start || body.next || "").trim();
+
+  var url = "https://api.line.me/v2/bot/followers/ids?limit=" + encodeURIComponent(String(limit));
+  if (start) url += "&start=" + encodeURIComponent(start);
+
+  var idsRes;
+  try {
+    idsRes = UrlFetchApp.fetch(url, {
+      method: "get",
+      headers: { Authorization: "Bearer " + accessToken },
+      muteHttpExceptions: true
+    });
+  } catch (e) {
+    return { error: true, message: "讀取好友清單失敗：" + String(e && e.message ? e.message : e) };
+  }
+  var idsCode = idsRes.getResponseCode();
+  var idsText = idsRes.getContentText() || "";
+  if (idsCode >= 300) {
+    return {
+      error: true,
+      message: "LINE 好友 API 失敗 HTTP " + idsCode + "：" + idsText.slice(0, 180)
+    };
+  }
+  var idsJson = {};
+  try { idsJson = JSON.parse(idsText); } catch (e2) {
+    return { error: true, message: "好友清單回應非 JSON" };
+  }
+  var userIds = Array.isArray(idsJson.userIds) ? idsJson.userIds : [];
+  var next = String(idsJson.next || "").trim();
+
+  var friends = [];
+  if (userIds.length) {
+    var reqs = [];
+    for (var i = 0; i < userIds.length; i++) {
+      reqs.push({
+        url: "https://api.line.me/v2/bot/profile/" + encodeURIComponent(userIds[i]),
+        method: "get",
+        headers: { Authorization: "Bearer " + accessToken },
+        muteHttpExceptions: true
+      });
+    }
+    var profiles = [];
+    try {
+      profiles = UrlFetchApp.fetchAll(reqs);
+    } catch (e3) {
+      profiles = [];
+    }
+    for (var j = 0; j < userIds.length; j++) {
+      var uid = String(userIds[j] || "").trim();
+      var displayName = "";
+      var pictureUrl = "";
+      var statusMessage = "";
+      if (profiles[j]) {
+        try {
+          if (profiles[j].getResponseCode() < 300) {
+            var pj = JSON.parse(profiles[j].getContentText() || "{}");
+            displayName = String(pj.displayName || "").trim();
+            pictureUrl = String(pj.pictureUrl || "").trim();
+            statusMessage = String(pj.statusMessage || "").trim();
+          }
+        } catch (e4) { /* ignore */ }
+      }
+      friends.push({
+        lineUserId: uid,
+        displayName: displayName || "(無法取得名稱)",
+        pictureUrl: pictureUrl,
+        statusMessage: statusMessage
+      });
+    }
+  }
+
+  return {
+    error: false,
+    message: "OK",
+    count: friends.length,
+    friends: friends,
+    next: next,
+    hasMore: !!next
+  };
+}
+
+/**
+ * 後台對訂單發送「綁定引導」Flex。
+ * 有會員卡號時按鈕預填「綁定 {卡號}」；需已有 Messaging userId 才能 Push。
+ */
+function sendOrderBindGuide_(ss, body) {
+  body = body || {};
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var orderId = String(body.orderId || body.id || "").trim();
+  if (!orderId) return { error: true, message: "缺少訂單編號" };
+
+  var tok = getLineChannelAccessTokenOrError_();
+  if (tok.error) return tok;
+  var accessToken = tok.accessToken;
+
+  var orderSheet = getOrderSheet(ss);
+  if (!orderSheet) return { error: true, message: "找不到訂單工作表" };
+  var order = getOrderById_(orderSheet, orderId, ss);
+  if (!order) return { error: true, message: "找不到訂單 " + orderId };
+
+  var card = normalizeMemberCardNo_(order.memberCardNo) || "";
+  var userId = resolveLinePushUserIdForOrder_(ss, order);
+  var customerHint =
+    "請到「網站設定 → LINE」用「直接發送綁定引導」從官方好友清單選取後發送，或請顧客傳「我要綁定」。";
+
+  if (!userId) {
+    return {
+      error: true,
+      needCustomerAction: true,
+      orderId: orderId,
+      memberCardNo: card,
+      message: customerHint,
+      customerHint: customerHint
+    };
+  }
+
+  var msgs = buildLineBindGuideMessages_({
+    welcome: false,
+    memberCardNo: card,
+    hint: "請先完成會員綁定，才能接收訂單進度通知"
+  });
+  var pushRes = pushLineMessages_(userId, accessToken, msgs);
+  if (!pushRes || !pushRes.ok) {
+    var detail = (pushRes && (pushRes.message || pushRes.body)) || "unknown";
+    return {
+      error: true,
+      orderId: orderId,
+      message: "Push 失敗：" + String(detail).slice(0, 200),
+      customerHint: customerHint
+    };
+  }
+  return {
+    error: false,
+    message: "已發送綁定引導卡片",
+    orderId: orderId,
+    memberCardNo: card,
+    pushed: true
   };
 }
 
