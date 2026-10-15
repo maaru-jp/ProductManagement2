@@ -1359,7 +1359,7 @@ function buildLineBindGuideMessages_(opts) {
     altText: "尚未綁定會員資料｜前往綁定會員",
     contents: {
       type: "bubble",
-      size: "mega",
+      size: "giga",
       body: {
         type: "box",
         layout: "vertical",
@@ -1899,7 +1899,7 @@ function buildLineOrderCreatedFlexMessage_(created, bodyText, isMerged) {
     altText: brand + "｜" + title + (created.orderId ? ("｜#" + created.orderId) : ""),
     contents: {
       type: "bubble",
-      size: "mega",
+      size: "giga",
       body: {
         type: "box",
         layout: "vertical",
@@ -2920,7 +2920,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   }
 
-  // 還原 mega 寬度；四角圓潤；文字加大
+  // giga＝較寬版本；四角圓潤
   var cardSections = [
     {
       type: "box",
@@ -2952,7 +2952,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
 
   var bubble = {
     type: "bubble",
-    size: "mega",
+    size: "giga",
     styles: {
       body: {
         backgroundColor: theme.bodyBg
