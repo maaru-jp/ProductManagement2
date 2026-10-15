@@ -3148,7 +3148,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
     { type: "separator", margin: "lg", color: theme.separator },
     {
       type: "text",
-      text: "📋 訂單資訊",
+      text: "訂單資訊",
       size: "md",
       weight: "bold",
       color: theme.text,
