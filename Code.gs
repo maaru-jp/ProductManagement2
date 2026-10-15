@@ -2477,6 +2477,11 @@ function bindLineUserIdToMemberCard_(ss, userId, card) {
   } catch (ePatch) {
     Logger.log("patchOrdersLineUserIdByCard_: " + ePatch);
   }
+  // 無論是否改到訂單列，都清快取，讓後台列表重讀 Memberist 可推播狀態
+  try {
+    var osClear = getOrderSheet(ss);
+    if (osClear) clearOrderListCache_(osClear);
+  } catch (eCache) { /* ignore */ }
   // 讀回確認
   var verify = getMemberRecordByCard_(ss, card);
   var savedUid = verify ? String(verify.lineUserId || verify.lineId || "").trim() : "";
@@ -2587,15 +2592,47 @@ function enrichMembersLineIdsFromOrders_(ss, memberSheet) {
   return { updated: updated };
 }
 
-function resolveLinePushUserIdForOrder_(ss, order) {
-  if (!order) return "";
-  if (isLineMessagingUserId_(order.lineId)) return String(order.lineId).trim();
-  var card = normalizeMemberCardNo_(order.memberCardNo);
-  if (!isValidMemberCardNo_(card)) return "";
-  var member = getMemberRecordByCard_(ss, card);
+function memberMessagingUserId_(member) {
   if (!member) return "";
   if (isLineMessagingUserId_(member.lineUserId)) return String(member.lineUserId).trim();
   if (isLineMessagingUserId_(member.lineId)) return String(member.lineId).trim();
+  return "";
+}
+
+/** 依卡號／姓名／電話從 Memberist 找推播用 U… */
+function resolveLinePushUserIdForOrder_(ss, order) {
+  if (!order) return "";
+  if (isLineMessagingUserId_(order.lineId)) return String(order.lineId).trim();
+
+  var card = normalizeMemberCardNo_(order.memberCardNo);
+  if (isValidMemberCardNo_(card)) {
+    var byCard = memberMessagingUserId_(getMemberRecordByCard_(ss, card));
+    if (byCard) return byCard;
+  }
+
+  // 訂單缺卡號時：用姓名／電話對 Memberist
+  try {
+    var sheet = getMemberSheet(ss, { required: false });
+    if (!sheet) return "";
+    var members = getMembers(sheet);
+    var n = normalizeCustomerNameForPoints_(order.customerName);
+    var p = normalizePhoneForPoints_(order.phone);
+    var i;
+    if (n) {
+      for (i = 0; i < members.length; i++) {
+        if (normalizeCustomerNameForPoints_(members[i].customerName) !== n) continue;
+        var uidN = memberMessagingUserId_(members[i]);
+        if (uidN) return uidN;
+      }
+    }
+    if (p) {
+      for (i = 0; i < members.length; i++) {
+        if (normalizePhoneForPoints_(members[i].phone) !== p) continue;
+        var uidP = memberMessagingUserId_(members[i]);
+        if (uidP) return uidP;
+      }
+    }
+  } catch (e) { /* ignore */ }
   return "";
 }
 
@@ -2603,25 +2640,54 @@ function orderCanLineNotify_(order, userByCard) {
   if (!order) return false;
   if (isLineMessagingUserId_(order.lineId)) return true;
   var card = normalizeMemberCardNo_(order.memberCardNo);
-  return !!(card && userByCard && userByCard[card]);
+  if (card && userByCard && userByCard[card]) return true;
+  return false;
 }
 
 /**
- * 訂單列表／單筆：用 Memberist 會員卡號補上 LINE ID（U…）
- * — 訂單本身沒有 lineId、但清冊已綁定時，後台可顯示／可推播
+ * 訂單列表／單筆：用 Memberist 補上 LINE ID（U…）與可推播旗標
  */
 function enrichOrdersLineNotifyFlags_(ss, orders) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var map = buildLineUserIdByCardMap_(ss);
+  var members = [];
+  try {
+    var mSheet = getMemberSheet(ss, { required: false });
+    if (mSheet) members = getMembers(mSheet);
+  } catch (eMem) { members = []; }
+
+  var byName = {};
+  var byPhone = {};
+  for (var mi = 0; mi < members.length; mi++) {
+    var mem = members[mi];
+    var uid = memberMessagingUserId_(mem);
+    if (!uid) continue;
+    var cn = normalizeCustomerNameForPoints_(mem.customerName);
+    var ph = normalizePhoneForPoints_(mem.phone);
+    if (cn && !byName[cn]) byName[cn] = uid;
+    if (ph && !byPhone[ph]) byPhone[ph] = uid;
+  }
+
   for (var i = 0; i < (orders || []).length; i++) {
     if (!orders[i]) continue;
     var ord = orders[i];
     var card = normalizeMemberCardNo_(ord.memberCardNo);
-    var fromMember = (card && map[card]) ? String(map[card]).trim() : "";
+    var fromMember = "";
+    if (card && map[card]) fromMember = String(map[card]).trim();
+    if (!fromMember) {
+      var nn = normalizeCustomerNameForPoints_(ord.customerName);
+      var pp = normalizePhoneForPoints_(ord.phone);
+      if (nn && byName[nn]) fromMember = byName[nn];
+      else if (pp && byPhone[pp]) fromMember = byPhone[pp];
+    }
     if (!isLineMessagingUserId_(ord.lineId) && isLineMessagingUserId_(fromMember)) {
       ord.lineId = fromMember;
       ord.lineIdFromMemberist = true;
     }
-    orders[i].canLineNotify = orderCanLineNotify_(orders[i], map) || isLineMessagingUserId_(ord.lineId);
+    orders[i].canLineNotify =
+      orderCanLineNotify_(orders[i], map) ||
+      isLineMessagingUserId_(ord.lineId) ||
+      isLineMessagingUserId_(fromMember);
   }
   return orders;
 }

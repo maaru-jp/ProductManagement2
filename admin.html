@@ -7804,9 +7804,13 @@
               : "text-[11px] px-1.5 py-0.5 rounded border border-slate-300 bg-slate-100 text-slate-600";
           }
           if (hint) {
-            hint.textContent = can
-              ? "按下方按鈕即可推播對應進度到顧客官方 LINE（不會自動改訂單狀態）。"
-              : ("未綁定：請請顧客傳「我要綁定」或「綁定 " + (card.length === 13 ? card : "13碼") + "」。也可到網站設定 → LINE 直接發送引導卡。");
+            if (can) {
+              hint.textContent = card.length === 13 && !isLineMessagingUserIdClient_(ord.lineId) && ord.canLineNotify !== true
+                ? "此訂單有會員卡號；推播時會依 Memberist 該卡的 LINE ID 發送。請重新整理訂單列表以更新狀態。"
+                : "按下方按鈕即可推播對應進度到顧客官方 LINE（不會自動改訂單狀態）。";
+            } else {
+              hint.textContent = "未綁定：請確認訂單有 13 碼會員卡號，且顧客已傳「綁定 卡號」寫入 Memberist。也可重新整理訂單列表。";
+            }
           }
           if (btns) {
             var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "shipping", "arrived", "completed"];
@@ -7832,6 +7836,10 @@
           // Messaging userId（U…）優先：有就能推，不受本機舊 canLineNotify=false 影響
           if (isLineMessagingUserIdClient_(ord.lineId)) return true;
           if (ord.canLineNotify === true) return true;
+          if (ord.lineIdFromMemberist === true && isLineMessagingUserIdClient_(ord.lineId)) return true;
+          // 有 13 碼卡號：允許點推播（伺服端會再依 Memberist 解析；未綁定會回錯誤訊息）
+          var card = String(ord.memberCardNo || "").replace(/\D/g, "");
+          if (card.length === 13) return true;
           return false;
         }
 
