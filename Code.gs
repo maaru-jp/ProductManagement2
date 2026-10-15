@@ -3202,7 +3202,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
     { type: "separator", margin: "lg", color: theme.separator },
     {
       type: "text",
-      text: "若以上訂單資訊有誤，請儘快聯繫小幫手協助確認",
+      text: "若以上訂單資訊有誤，請儘快聯繫小幫手",
       size: "sm",
       weight: "bold",
       color: theme.textSoft,
