@@ -1005,14 +1005,13 @@
               </div>
               <div class="rounded-lg border border-sky-200 bg-sky-50/70 p-4 space-y-2">
                 <p class="text-sm font-medium text-sky-950">圖文選單「会員カード」設定</p>
-                <p class="text-xs text-sky-900/85 leading-relaxed">流程：加好友 → 點圖文選單（聊天室<strong>自動帶出</strong>關鍵字）→ 系統回<strong>引導卡</strong>＋【會員綁定】說明文字 → 顧客再傳 13 碼卡號。</p>
+                <p class="text-xs text-sky-900/85 leading-relaxed">流程：加好友 → 點「会員カード」→ 聊天室出現 <code class="bg-sky-100 px-1 rounded">會員綁定</code> → 未綁定則系統自動送<strong>引導卡</strong>＋【會員綁定】說明；<strong>已綁定過則只回覆卡號、不再引導</strong>。</p>
                 <ol class="text-xs text-sky-900/90 list-decimal pl-4 space-y-1 leading-relaxed">
-                  <li>LINE Official Account Manager → 圖文選單 → 編輯該區塊「動作」</li>
-                  <li>選 <strong>文字</strong>／<strong>傳送訊息</strong>（多數後台沒有 Postback）</li>
-                  <li>文字請填（建議）：<code class="bg-white px-1 rounded font-mono select-all">会員カード</code>（點了會自動出現在聊天室）</li>
-                  <li>也可用：<code class="bg-white px-1 rounded font-mono">會員綁定</code>　或　<code class="bg-white px-1 rounded font-mono">我要綁定</code>　或　<code class="bg-white px-1 rounded font-mono">會員卡</code></li>
+                  <li>圖文選單按鈕圖可寫「会員カード」</li>
+                  <li>動作選 <strong>文字</strong>／<strong>傳送訊息</strong></li>
+                  <li>文字內容請填（須完全相同）：<code class="bg-white px-1 rounded font-mono select-all">會員綁定</code></li>
                 </ol>
-                <p class="text-[11px] text-slate-600">部署最新 Code.gs 後生效。綁定成功後同卡訂單即可推播。</p>
+                <p class="text-[11px] text-slate-600">也相容關鍵字：会員カード、我要綁定、會員卡。部署最新 Code.gs 後生效。</p>
               </div>
               <div class="rounded-lg border border-amber-200 bg-amber-50/70 p-4 space-y-3">
                 <div>
@@ -1046,7 +1045,7 @@
               <div class="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-3">
                 <div>
                   <p class="text-sm font-medium text-emerald-900">LINE 訊息模板（合併管理）</p>
-                  <p class="text-xs text-emerald-900/80 mt-1 leading-relaxed">訂單成立回覆與五種進度推播已合併；卡片版型統一為 Flex，此處只編<strong>內文</strong>。儲存一次即可全部更新。會員綁定：加好友後點圖文選單「会員カード」（postback <code class="bg-emerald-100 px-1 rounded">action=member_card</code>），再傳 13 碼卡號。</p>
+                  <p class="text-xs text-emerald-900/80 mt-1 leading-relaxed">訂單成立回覆與五種進度推播已合併；卡片版型統一為 Flex，此處只編<strong>內文</strong>。會員綁定：點圖文選單帶出「會員綁定」→ 未綁定送引導卡＋說明；已綁定則提示無需再綁。</p>
                   <p class="text-xs text-slate-600 mt-1">變數：<code class="bg-white/80 px-1 rounded">{{orderId}}</code> <code class="bg-white/80 px-1 rounded">{{memberCardNo}}</code> <code class="bg-white/80 px-1 rounded">{{customerName}}</code> <code class="bg-white/80 px-1 rounded">{{itemsSummary}}</code> <code class="bg-white/80 px-1 rounded">{{depositAmount}}</code> <code class="bg-white/80 px-1 rounded">{{amountDue}}</code> <code class="bg-white/80 px-1 rounded">{{subtotal}}</code> <code class="bg-white/80 px-1 rounded">{{shippingMethod}}</code> <code class="bg-white/80 px-1 rounded">{{storeName}}</code></p>
                 </div>
                 <div>
