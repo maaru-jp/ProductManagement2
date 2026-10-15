@@ -909,7 +909,7 @@ function defaultLineNotifyTemplates_() {
   return {
     order_created: defaultLineOrderCreatedTemplate_(),
     order_merged: defaultLineOrderMergedTemplate_(),
-    confirm_pay: "匯款完成後請回覆，謝謝！",
+    confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
       "您好：\n\n" +
@@ -2862,7 +2862,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
       ]
     },
     shipping: {
-      title: "包裹已寄出",
+      title: "出貨通知",
       sectionLabel: "出貨通知",
       sectionEmoji: "📦",
       alt: "出貨通知",
@@ -2919,7 +2919,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
       ]
     },
     shipping: {
-      title: "包裹已寄出",
+      title: "出貨通知",
       sectionLabel: "出貨通知",
       sectionEmoji: "🚚",
       alt: "出貨通知",
@@ -2976,7 +2976,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
       ]
     },
     shipping: {
-      title: "包裹已寄出",
+      title: "出貨通知",
       sectionLabel: "出貨通知",
       sectionEmoji: "📦",
       alt: "出貨通知",
@@ -3142,7 +3142,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
 
   var orderDisp = v.orderId ? ("#" + v.orderId.replace(/^#/, "")) : "—";
   var detail = lineFlexSafeText_(bodyText, 400);
-  var titleSize = "xxl";
+  var titleSize = "xl";
 
   var headerContents = [];
   if (logo && /^https:\/\//i.test(logo)) {
@@ -3320,7 +3320,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "匯款完成後請回覆，謝謝！",
+      text: "匯款完成後請回覆本對話告知，謝謝！",
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
@@ -3339,7 +3339,9 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     pushInfoRow_("會員卡號", cardDisp);
     var shipPickup = String(shipLabel || "").trim();
     if (!shipPickup || shipPickup === theme.shipFallback) {
-      shipPickup = "7-11 超商取貨";
+      shipPickup = "7-11超商";
+    } else if (/7-?11.*超商取貨/i.test(shipPickup) || shipPickup === "7-11 超商取貨") {
+      shipPickup = "7-11超商";
     }
     bodyContents.push({
       type: "box",
