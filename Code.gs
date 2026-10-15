@@ -909,7 +909,7 @@ function defaultLineNotifyTemplates_() {
   return {
     order_created: defaultLineOrderCreatedTemplate_(),
     order_merged: defaultLineOrderMergedTemplate_(),
-    confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
+    confirm_pay: "匯款完成後請回覆，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
       "您好：\n\n" +
@@ -3283,7 +3283,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "匯款完成後請回覆本對話告知，謝謝！",
+      text: "匯款完成後請回覆，謝謝！",
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
