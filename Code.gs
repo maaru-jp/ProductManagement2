@@ -863,14 +863,36 @@ var LINE_PROP_NOTIFY_TEMPLATES = "line_order_notify_templates_json";
 var LINE_MERGE_WINDOW_MS_ = 2 * 60 * 60 * 1000;
 
 var LINE_NOTIFY_TYPES_ = ["confirm_pay", "paid", "shipping", "arrived", "completed"];
+/** 統一訊息模板鍵（訂單成立＋五種推播），後台同一區編輯、同一份 JSON 儲存 */
+var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged"].concat(LINE_NOTIFY_TYPES_);
 
 function isLineMessagingUserId_(s) {
   var v = String(s || "").trim();
   return /^U[0-9a-fA-F]{20,}$/.test(v);
 }
 
+function defaultLineOrderCreatedTemplate_() {
+  return (
+    "您好，已收到您的登記！\n\n" +
+    "之後若要再加購：2 小時內傳 +1 會併入同一張訂單；\n" +
+    "超過時間、或訂單已在處理／已收訂金，則會開新單。\n\n" +
+    "運費／訂金與出貨進度，店家確認後會再通知您。\n" +
+    "如有問題請直接回覆此對話。"
+  );
+}
+
+function defaultLineOrderMergedTemplate_() {
+  return (
+    "已將本次商品併入同一張訂單。\n\n" +
+    "之後若要再加購：2 小時內傳 +1 仍會併入本單。\n" +
+    "如有問題請直接回覆此對話。"
+  );
+}
+
 function defaultLineNotifyTemplates_() {
   return {
+    order_created: defaultLineOrderCreatedTemplate_(),
+    order_merged: defaultLineOrderMergedTemplate_(),
     confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
@@ -879,16 +901,11 @@ function defaultLineNotifyTemplates_() {
       "到貨時間依物流配送安排為主\n\n" +
       "如有任何問題，歡迎隨時與小幫手聯繫",
     arrived:
-      "【MAARU 到店／可取貨】\n\n" +
       "{{customerName}} 您好，訂單 {{orderId}} 已可取貨。\n\n" +
-      "取貨方式：{{shippingMethod}}\n" +
-      "{{storeName}}\n\n" +
       "請於期限內取件，謝謝！",
     completed:
-      "【MAARU 取貨完成】\n\n" +
       "{{customerName}} 您好，訂單 {{orderId}} 已完成。\n\n" +
-      "感謝您的支持！之後可用會員卡號查詢紀錄：\n" +
-      "{{memberCardNo}}"
+      "感謝您的支持！之後可用會員卡號查詢紀錄。"
   };
 }
 
@@ -896,14 +913,22 @@ function getLineNotifyTemplates_() {
   var props = PropertiesService.getScriptProperties();
   var raw = String(props.getProperty(LINE_PROP_NOTIFY_TEMPLATES) || "").trim();
   var defaults = defaultLineNotifyTemplates_();
-  if (!raw) return defaults;
+  var legacyCreated = String(props.getProperty(LINE_PROP_REPLY_TEMPLATE) || "").trim();
+  if (!raw) {
+    var boot = defaults;
+    if (legacyCreated) boot.order_created = legacyCreated;
+    return boot;
+  }
   try {
     var parsed = JSON.parse(raw);
     var out = {};
-    for (var i = 0; i < LINE_NOTIFY_TYPES_.length; i++) {
-      var k = LINE_NOTIFY_TYPES_[i];
+    for (var i = 0; i < LINE_MSG_TEMPLATE_KEYS_.length; i++) {
+      var k = LINE_MSG_TEMPLATE_KEYS_[i];
       var t = parsed && parsed[k] != null ? String(parsed[k]).trim() : "";
       out[k] = t || defaults[k];
+    }
+    if ((!parsed || parsed.order_created == null || !String(parsed.order_created).trim()) && legacyCreated) {
+      out.order_created = legacyCreated;
     }
     // 已確認匯款：訂金在卡片正中顯示，舊內文含金額／訂金則改為短結語（卡片不顯示此結語）
     if (out.paid && /金額|訂金|depositAmount|amountDue|訂單編號/.test(out.paid)) {
@@ -940,48 +965,6 @@ function getLineNotifyTemplates_() {
   }
 }
 
-function defaultLineOrderCreatedTemplate_() {
-  return [
-    "【MAARU 訂單成立通知】",
-    "",
-    "您好，已收到您的登記！",
-    "",
-    "訂單編號：{{orderId}}",
-    "會員卡號：{{memberCardNo}}",
-    "",
-    "登記內容：",
-    "{{itemsSummary}}",
-    "",
-    "商品小計：NT${{subtotal}}",
-    "目前狀態：待處理",
-    "",
-    "之後若要再加購：2 小時內傳 +1 會併入同一張訂單；",
-    "超過時間、或訂單已在處理／已收訂金，則會開新單。",
-    "",
-    "請保留本訊息。運費／訂金與出貨進度，店家確認後會再通知您。",
-    "如有問題請直接回覆此對話。"
-  ].join("\n");
-}
-
-function defaultLineOrderMergedTemplate_() {
-  return [
-    "【MAARU 加單成功】",
-    "",
-    "已幫您併入原訂單（未另開新單）。",
-    "",
-    "訂單編號：{{orderId}}",
-    "會員卡號：{{memberCardNo}}",
-    "",
-    "本次新增：",
-    "{{itemsSummary}}",
-    "",
-    "訂單目前小計：NT${{subtotal}}",
-    "目前狀態：待處理",
-    "",
-    "如有問題請直接回覆此對話。"
-  ].join("\n");
-}
-
 /** 找可併單的待處理訂單：同 lineId、待處理、2 小時內有更新 */
 function findMergeableLineOrder_(allOrders, lineId) {
   lineId = String(lineId || "").trim();
@@ -1009,13 +992,16 @@ function findMergeableLineOrder_(allOrders, lineId) {
 
 function getLineAutomationSettings_() {
   var props = PropertiesService.getScriptProperties();
+  var templates = getLineNotifyTemplates_();
   return {
     enabled: String(props.getProperty(LINE_PROP_ENABLED) || "") === "1",
     channelAccessToken: String(props.getProperty(LINE_PROP_CHANNEL_TOKEN) || ""),
     channelSecret: String(props.getProperty(LINE_PROP_CHANNEL_SECRET) || ""),
     webhookToken: String(props.getProperty(LINE_PROP_WEBHOOK_TOKEN) || ""),
-    orderCreatedTemplate: String(props.getProperty(LINE_PROP_REPLY_TEMPLATE) || "") || defaultLineOrderCreatedTemplate_(),
-    notifyTemplates: getLineNotifyTemplates_()
+    // 與推播模板合併：訂單成立／加單文案也在 notifyTemplates 內
+    orderCreatedTemplate: templates.order_created || defaultLineOrderCreatedTemplate_(),
+    orderMergedTemplate: templates.order_merged || defaultLineOrderMergedTemplate_(),
+    notifyTemplates: templates
   };
 }
 
@@ -1035,8 +1021,10 @@ function getLineAutomationSettingsPublic_(includeSecrets) {
     webhookTokenMasked: wh ? (wh.slice(0, 4) + "…" + wh.slice(-2)) : "",
     webhookToken: wh,
     orderCreatedTemplate: s.orderCreatedTemplate,
+    orderMergedTemplate: s.orderMergedTemplate,
     notifyTemplates: s.notifyTemplates,
     notifyTypes: LINE_NOTIFY_TYPES_.slice(),
+    messageTemplateKeys: LINE_MSG_TEMPLATE_KEYS_.slice(),
     bindHint: "顧客請先加官方帳號為好友，傳：綁定 13碼會員卡號",
     message: "OK"
   };
@@ -1066,21 +1054,18 @@ function saveLineAutomationSettings_(body) {
   } else if (!String(props.getProperty(LINE_PROP_WEBHOOK_TOKEN) || "").trim()) {
     props.setProperty(LINE_PROP_WEBHOOK_TOKEN, Utilities.getUuid().replace(/-/g, "").slice(0, 24));
   }
-  if (body.orderCreatedTemplate != null) {
-    var tpl = String(body.orderCreatedTemplate || "").trim();
-    if (!tpl) tpl = defaultLineOrderCreatedTemplate_();
-    if (tpl.length > 1800) tpl = tpl.slice(0, 1800);
-    props.setProperty(LINE_PROP_REPLY_TEMPLATE, tpl);
-  }
   if (body.notifyTemplates != null && typeof body.notifyTemplates === "object") {
     var defaults = defaultLineNotifyTemplates_();
     var toSave = {};
-    for (var i = 0; i < LINE_NOTIFY_TYPES_.length; i++) {
-      var k = LINE_NOTIFY_TYPES_[i];
+    // 相容：若表單仍分開送 orderCreatedTemplate，併入統一模板
+    if (body.orderCreatedTemplate != null && body.notifyTemplates.order_created == null) {
+      body.notifyTemplates.order_created = body.orderCreatedTemplate;
+    }
+    for (var i = 0; i < LINE_MSG_TEMPLATE_KEYS_.length; i++) {
+      var k = LINE_MSG_TEMPLATE_KEYS_[i];
       var t = body.notifyTemplates[k] != null ? String(body.notifyTemplates[k]).trim() : "";
       if (!t) t = defaults[k];
       if (t.length > 1800) t = t.slice(0, 1800);
-      // 請匯款：訂金已在卡片正中顯示，儲存時若內文含訂金等則改回結語
       if (k === "confirm_pay" && /訂金|depositAmount|amountDue|訂單編號|會員卡號/.test(t)) {
         t = defaults.confirm_pay;
       }
@@ -1093,6 +1078,15 @@ function saveLineAutomationSettings_(body) {
       toSave[k] = t;
     }
     props.setProperty(LINE_PROP_NOTIFY_TEMPLATES, JSON.stringify(toSave));
+    // 相容舊欄位：同步寫入訂單成立模板
+    props.setProperty(LINE_PROP_REPLY_TEMPLATE, toSave.order_created || defaults.order_created);
+  } else if (body.orderCreatedTemplate != null) {
+    var tplOnly = String(body.orderCreatedTemplate || "").trim() || defaultLineOrderCreatedTemplate_();
+    if (tplOnly.length > 1800) tplOnly = tplOnly.slice(0, 1800);
+    props.setProperty(LINE_PROP_REPLY_TEMPLATE, tplOnly);
+    var merged = getLineNotifyTemplates_();
+    merged.order_created = tplOnly;
+    props.setProperty(LINE_PROP_NOTIFY_TEMPLATES, JSON.stringify(merged));
   }
   return getLineAutomationSettingsPublic_(true);
 }
@@ -1313,15 +1307,15 @@ function processLineEvent_(event, settings) {
     }
   } catch (eBind) { /* ignore */ }
 
-  var replyText = created.merged
-    ? renderLineOrderCreatedTemplate_(defaultLineOrderMergedTemplate_(), created)
-    : renderLineOrderCreatedTemplate_(settings.orderCreatedTemplate, created);
-  if (!created.merged && created.memberCardNo) {
-    replyText += "\n\n——\n接收訂單進度通知請傳送：\n綁定 " + created.memberCardNo;
-  }
+  var allTpl = getLineNotifyTemplates_();
+  var replyTpl = created.merged
+    ? (allTpl.order_merged || defaultLineOrderMergedTemplate_())
+    : (allTpl.order_created || settings.orderCreatedTemplate || defaultLineOrderCreatedTemplate_());
+  var replyText = renderLineOrderCreatedTemplate_(replyTpl, created);
   var sendRes = { replied: false, replyMode: "", detail: null };
   if (accessToken) {
-    sendRes = sendLineUserText_(userId, replyToken, accessToken, replyText);
+    var orderFlex = buildLineOrderCreatedFlexMessage_(created, replyText, !!created.merged);
+    sendRes = sendLineUserMessages_(userId, replyToken, accessToken, [orderFlex]);
   } else {
     Logger.log("LINE: 無 Channel access token，已建單但無法回覆");
   }
@@ -1356,7 +1350,7 @@ function buildLineBindGuideMessages_(opts) {
   var desc = String(opts.hint || "").trim() ||
     "請先完成會員綁定才能使用 +1 快速下單";
   if (opts.welcome && !opts.hint) {
-    desc = "請先完成會員綁定，才能接收訂單通知";
+    desc = "請先完成會員綁定，才能接收訂單通知與使用 +1 快速下單";
   }
   var note = "備註：「綁定」與 13 碼會員卡號中間請空一格\n範例：綁定 2026092312345";
 
@@ -1378,14 +1372,14 @@ function buildLineBindGuideMessages_(opts) {
             type: "text",
             text: title,
             weight: "bold",
-            size: "lg",
+            size: "xl",
             color: "#111111",
             wrap: true
           },
           {
             type: "text",
             text: desc,
-            size: "sm",
+            size: "md",
             color: "#8C8C8C",
             wrap: true,
             margin: "sm"
@@ -1393,7 +1387,7 @@ function buildLineBindGuideMessages_(opts) {
           {
             type: "text",
             text: note,
-            size: "xs",
+            size: "sm",
             color: "#8C8C8C",
             wrap: true,
             margin: "sm"
@@ -1795,6 +1789,154 @@ function renderLineOrderCreatedTemplate_(template, created) {
     .replace(/\{\{subtotal\}\}/g, String(Math.round(Number(created.subtotal) || 0)))
     .replace(/\{\{customerName\}\}/g, created.customerName || "")
     .replace(/\{\{itemsSummary\}\}/g, itemsSummary);
+}
+
+/** 訂單成立／加單成功：與推播同一套 Flex 風格；內文來自統一模板 */
+function buildLineOrderCreatedFlexMessage_(created, bodyText, isMerged) {
+  created = created || {};
+  var theme = getLineFlexTheme_();
+  var brand = String(CONFIG.lineBrandName || "MAARU 日韓萌GO").trim() || "MAARU 日韓萌GO";
+  var color = theme.headerBg;
+  var title = isMerged ? "加單成功" : "訂單已成立";
+  var orderDisp = created.orderId ? ("#" + String(created.orderId).replace(/^#/, "")) : "—";
+  var cardDisp = String(created.memberCardNo || "").trim() || "—";
+  var subtotal = Math.round(Number(created.subtotal) || 0);
+  var items = created.items || [];
+  var itemLines = [];
+  for (var i = 0; i < items.length && i < 6; i++) {
+    var it = items[i] || {};
+    var name = String(it.lineName || it.name || "商品").trim();
+    var qty = Number(it.qty) || 0;
+    itemLines.push(name + (qty ? (" x" + qty) : ""));
+  }
+  if (items.length > 6) itemLines.push("…另有 " + (items.length - 6) + " 項");
+  var itemsText = itemLines.length ? itemLines.join("\n") : "（詳見備註）";
+  var detail = lineFlexSafeText_(bodyText, 400);
+
+  var bodyContents = [
+    buildLineNotifyProgressBox_(
+      [
+        { label: "下單", active: true },
+        { label: "匯款", active: false },
+        { label: "出貨", active: false }
+      ],
+      color,
+      theme.progressMuted
+    ),
+    {
+      type: "box",
+      layout: "horizontal",
+      margin: "sm",
+      contents: [
+        { type: "text", text: "訂單編號", size: "md", weight: "bold", color: theme.textSoft, flex: 0 },
+        { type: "text", text: orderDisp, size: "md", weight: "bold", color: theme.text, align: "end", flex: 1, wrap: true }
+      ]
+    },
+    {
+      type: "box",
+      layout: "horizontal",
+      margin: "sm",
+      contents: [
+        { type: "text", text: "會員卡號", size: "md", weight: "bold", color: theme.textSoft, flex: 0 },
+        { type: "text", text: cardDisp, size: "md", weight: "bold", color: theme.text, align: "end", flex: 1, wrap: true }
+      ]
+    },
+    {
+      type: "box",
+      layout: "vertical",
+      margin: "sm",
+      paddingAll: "12px",
+      cornerRadius: "16px",
+      backgroundColor: theme.chipBg,
+      contents: [
+        { type: "text", text: "登記內容", size: "sm", weight: "bold", color: theme.textMuted },
+        {
+          type: "text",
+          text: lineFlexSafeText_(itemsText, 200),
+          size: "md",
+          weight: "bold",
+          color: theme.chipText,
+          wrap: true,
+          margin: "xs",
+          maxLines: 6
+        },
+        {
+          type: "text",
+          text: "小計 NT$" + subtotal,
+          size: "lg",
+          weight: "bold",
+          color: theme.text,
+          margin: "sm"
+        }
+      ]
+    },
+    { type: "separator", margin: "md", color: theme.separator },
+    {
+      type: "text",
+      text: detail,
+      size: "lg",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "sm"
+    }
+  ];
+
+  if (!isMerged && cardDisp && cardDisp !== "—") {
+    bodyContents.push({
+      type: "text",
+      text: "接收進度通知請傳送：綁定 " + cardDisp,
+      size: "md",
+      weight: "bold",
+      color: color,
+      wrap: true,
+      margin: "md"
+    });
+  }
+
+  return {
+    type: "flex",
+    altText: brand + "｜" + title + (created.orderId ? ("｜#" + created.orderId) : ""),
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "0px",
+        spacing: "none",
+        cornerRadius: "20px",
+        backgroundColor: theme.bodyBg,
+        contents: [
+          {
+            type: "box",
+            layout: "vertical",
+            paddingAll: "16px",
+            backgroundColor: color,
+            contents: [
+              { type: "text", text: brand, size: "md", weight: "bold", color: theme.headerBrand },
+              {
+                type: "text",
+                text: title,
+                size: "xxl",
+                weight: "bold",
+                color: theme.headerTitle,
+                margin: "xs",
+                wrap: true
+              }
+            ]
+          },
+          {
+            type: "box",
+            layout: "vertical",
+            paddingAll: "16px",
+            backgroundColor: theme.bodyBg,
+            contents: bodyContents
+          }
+        ]
+      }
+    }
+  };
 }
 
 function fetchLineDisplayName_(userId, accessToken) {
@@ -2410,7 +2552,7 @@ function buildLineNotifyProgressBox_(steps, brandColor, mutedColor) {
     labels.push({
       type: "text",
       text: String(steps[i].label || ""),
-      size: "xs",
+      size: "sm",
       color: on ? activeColor : muted,
       align: "center",
       flex: 1,
@@ -2451,9 +2593,8 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
   if (!shipLabel) shipLabel = theme.shipFallback;
 
   var orderDisp = v.orderId ? ("#" + v.orderId.replace(/^#/, "")) : "—";
-  // 內文適中截斷，避免卡片過長
-  var detail = lineFlexSafeText_(bodyText, 320);
-  var titleSize = "xl";
+  var detail = lineFlexSafeText_(bodyText, 400);
+  var titleSize = "xxl";
 
   var headerContents = [];
   if (logo && /^https:\/\//i.test(logo)) {
@@ -2474,9 +2615,9 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
               aspectRatio: "1:1"
             }
           ],
-          width: "40px",
-          height: "40px",
-          cornerRadius: "20px"
+          width: "44px",
+          height: "44px",
+          cornerRadius: "22px"
         },
         {
           type: "box",
@@ -2484,7 +2625,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
           flex: 1,
           justifyContent: "center",
           contents: [
-            { type: "text", text: brand, size: "sm", weight: "bold", color: theme.headerBrand },
+            { type: "text", text: brand, size: "md", weight: "bold", color: theme.headerBrand },
             {
               type: "text",
               text: lineFlexSafeText_(meta.title, 36),
@@ -2499,7 +2640,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   } else {
     headerContents.push(
-      { type: "text", text: brand, size: "sm", weight: "bold", color: theme.headerBrand },
+      { type: "text", text: brand, size: "md", weight: "bold", color: theme.headerBrand },
       {
         type: "text",
         text: lineFlexSafeText_(meta.title, 36),
@@ -2569,7 +2710,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         {
           type: "text",
           text: label,
-          size: "sm",
+          size: "md",
           weight: "bold",
           color: theme.textSoft,
           flex: 0
@@ -2577,7 +2718,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         {
           type: "text",
           text: lineFlexSafeText_(value, 40),
-          size: "sm",
+          size: "md",
           weight: "bold",
           color: theme.text,
           align: "end",
@@ -2593,14 +2734,14 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       type: "box",
       layout: "vertical",
       margin: "sm",
-      paddingAll: "10px",
+      paddingAll: "12px",
       cornerRadius: "16px",
       backgroundColor: theme.chipBg,
       contents: [
         {
           type: "text",
           text: "預購訂金",
-          size: "sm",
+          size: "md",
           weight: "bold",
           color: theme.textMuted,
           align: "center"
@@ -2608,7 +2749,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         {
           type: "text",
           text: "NT$" + depositNum,
-          size: "xxl",
+          size: "3xl",
           weight: "bold",
           color: theme.text,
           align: "center",
@@ -2632,7 +2773,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     bodyContents.push({
       type: "text",
       text: "匯款完成後請回覆本對話告知，謝謝！",
-      size: "md",
+      size: "lg",
       weight: "bold",
       color: theme.textSoft,
       wrap: true,
@@ -2663,7 +2804,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         {
           type: "text",
           text: lineFlexSafeText_(shipPickup, 60),
-          size: "xl",
+          size: "xxl",
           weight: "bold",
           color: theme.chipText,
           align: "center",
@@ -2685,7 +2826,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     bodyContents.push({
       type: "text",
       text: shippingBody,
-      size: "lg",
+      size: "xl",
       weight: "bold",
       color: theme.textSoft,
       wrap: true,
@@ -2705,7 +2846,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
           {
             type: "text",
             text: lineFlexSafeText_(shipLabel, 60),
-            size: "md",
+            size: "lg",
             weight: "bold",
             color: theme.chipText,
             align: "center",
@@ -2730,11 +2871,11 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
         spacing: "sm",
         margin: "md",
         contents: [
-          { type: "text", text: meta.sectionEmoji || "📦", size: "md", flex: 0 },
+          { type: "text", text: meta.sectionEmoji || "📦", size: "lg", flex: 0 },
           {
             type: "text",
             text: meta.sectionLabel || "通知",
-            size: "md",
+            size: "lg",
             weight: "bold",
             color: theme.text,
             flex: 1
@@ -2744,7 +2885,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       {
         type: "text",
         text: detail,
-        size: "md",
+        size: "xl",
         weight: "bold",
         color: theme.textSoft,
         wrap: true,
@@ -2779,19 +2920,19 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   }
 
-  // 單卡外殼＋大圓角（四角圓潤）；內容拆成標題區／內文區／按鈕區
+  // 還原 mega 寬度；四角圓潤；文字加大
   var cardSections = [
     {
       type: "box",
       layout: "vertical",
-      paddingAll: "14px",
+      paddingAll: "16px",
       backgroundColor: color,
       contents: headerContents
     },
     {
       type: "box",
       layout: "vertical",
-      paddingAll: "12px",
+      paddingAll: "16px",
       spacing: "none",
       backgroundColor: theme.bodyBg,
       contents: bodyContents
@@ -2803,7 +2944,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       type: "box",
       layout: "vertical",
       spacing: "sm",
-      paddingAll: "10px",
+      paddingAll: "12px",
       backgroundColor: theme.footerBg,
       contents: footerContents
     });
@@ -2811,7 +2952,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
 
   var bubble = {
     type: "bubble",
-    size: "giga",
+    size: "mega",
     styles: {
       body: {
         backgroundColor: theme.bodyBg
