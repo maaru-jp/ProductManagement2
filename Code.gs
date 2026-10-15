@@ -42,6 +42,8 @@ var CONFIG = {
   // LINE Flex 推播外觀
   // lineFlexStyle: "jp"（日系柔和）｜"kr"（韓系清透）｜"classic"（圖例紫系）
   lineFlexStyle: "jp",
+  // 推播 Flex bubble 寬度（五種進度＋訂單成立／綁定卡共用）：nano｜micro｜kilo｜mega｜giga
+  lineFlexBubbleSize: "mega",
   lineBrandName: "MAARU 日韓萌GO",
   // 非空時覆寫該風格的主色（例：#7A9E7E）
   lineBrandColor: "",
@@ -1724,7 +1726,7 @@ function buildLineBindGuideMessages_(opts) {
     altText: "尚未綁定會員資料｜前往綁定會員",
     contents: {
       type: "bubble",
-      size: "mega",
+      size: getLineFlexBubbleSize_(),
       body: {
         type: "box",
         layout: "vertical",
@@ -1817,7 +1819,7 @@ function buildLineBindResultMessages_(ok, memberCardNo, detailMsg) {
     altText: title + (card ? ("｜" + card) : ""),
     contents: {
       type: "bubble",
-      size: "kilo",
+      size: getLineFlexBubbleSize_(),
       body: {
         type: "box",
         layout: "vertical",
@@ -2308,7 +2310,7 @@ function buildLineOrderCreatedFlexMessage_(created, bodyText, isMerged) {
     altText: brand + "｜" + title + (created.orderId ? ("｜#" + created.orderId) : ""),
     contents: {
       type: "bubble",
-      size: "giga",
+      size: getLineFlexBubbleSize_(),
       body: {
         type: "box",
         layout: "vertical",
@@ -2738,6 +2740,13 @@ function renderLineNotifyTemplate_(template, order) {
     .replace(/\{\{shippingMethod\}\}/g, v.shippingMethod)
     .replace(/\{\{storeName\}\}/g, v.storeName)
     .replace(/\{\{status\}\}/g, v.status);
+}
+
+/** 推播 Flex bubble 統一寬度（訂單成立＋五種進度＋綁定相關卡） */
+function getLineFlexBubbleSize_() {
+  var s = String(CONFIG.lineFlexBubbleSize || "mega").trim().toLowerCase();
+  if (s === "nano" || s === "micro" || s === "kilo" || s === "mega" || s === "giga") return s;
+  return "mega";
 }
 
 /** Flex 視覺風格：jp｜kr｜classic */
@@ -3459,7 +3468,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
   }
 
-  // giga＝較寬版本；四角圓潤
+  // mega＝適中寬度（勿用 giga，手機上偏寬）
   var cardSections = [
     {
       type: "box",
@@ -3491,7 +3500,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
 
   var bubble = {
     type: "bubble",
-    size: "giga",
+    size: getLineFlexBubbleSize_(),
     styles: {
       body: {
         backgroundColor: theme.bodyBg
