@@ -1139,10 +1139,8 @@ function handleLineWebhookPost_(e, body) {
     " urlTokenPresent=" + !!tokenInUrl +
     " events=" + ((body && body.events) ? body.events.length : 0));
 
-  if (!settings.enabled) {
-    return ContentService.createTextOutput(JSON.stringify({ ok: true, skipped: "disabled" }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  // 未啟用「自動建單」時：仍處理加好友／会員カード綁定引導（否則只剩官方自動回覆、沒引導卡）
+  var bindOnlyMode = !settings.enabled;
   if (!settings.webhookToken) {
     return ContentService.createTextOutput(JSON.stringify({ error: true, message: "尚未設定 webhook_token" }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -1163,7 +1161,12 @@ function handleLineWebhookPost_(e, body) {
   var results = [];
   for (var i = 0; i < events.length; i++) {
     try {
-      results.push(processLineEvent_(events[i], settings));
+      var ev = events[i] || {};
+      if (bindOnlyMode && !isLineBindRelatedEvent_(ev)) {
+        results.push({ ok: true, skipped: "disabled_non_bind", type: ev.type || "" });
+        continue;
+      }
+      results.push(processLineEvent_(ev, settings));
     } catch (err) {
       Logger.log("LINE event error: " + err);
       results.push({ ok: false, message: String(err && err.message ? err.message : err) });
@@ -1172,8 +1175,42 @@ function handleLineWebhookPost_(e, body) {
   return ContentService.createTextOutput(JSON.stringify({
     ok: true,
     auth: tokenInUrl ? "url_token" : "line_payload_fallback",
+    bindOnlyMode: bindOnlyMode,
     results: results
   })).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** 加好友／会員カード／綁定相關事件（未啟用自動建單時仍要處理） */
+function isLineBindRelatedEvent_(event) {
+  event = event || {};
+  if (event.type === "follow") return true;
+  if (event.type === "postback") {
+    var d = String((event.postback && event.postback.data) || "");
+    return isMemberCardPostbackData_(d) || !!parsePostbackBindCard_(d);
+  }
+  if (event.type === "message" && event.message && event.message.type === "text") {
+    var t = String(event.message.text || "");
+    if (isLineMemberCardKeyword_(t)) return true;
+    if (/^(?:綁定|bind)\b/i.test(t.trim()) || /^綁定/.test(t.trim())) return true;
+  }
+  return false;
+}
+
+/** 正規化後判斷是否為會員綁定關鍵字（圖文選單「会員カード」等） */
+function isLineMemberCardKeyword_(text) {
+  var raw = String(text || "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[　\s]+/g, "")
+    .trim();
+  if (!raw) return false;
+  if (/^(會員綁定|綁定會員|我要綁定|前往綁定|前往綁定會員|如何綁定|会員カード|會員卡|会員卡)$/i.test(raw)) {
+    return true;
+  }
+  // 容許前後綴極短雜訊
+  if (raw.length <= 24 && (raw.indexOf("会員カード") >= 0 || raw.indexOf("會員綁定") >= 0 || raw.indexOf("我要綁定") >= 0)) {
+    return true;
+  }
+  return false;
 }
 
 /** LINE 逾時重試時同一則 message.id 會再打一次 → 用快取去重，避免重複建單 */
@@ -1265,8 +1302,9 @@ function processLineEvent_(event, settings) {
   var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
   var ssActive = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 關鍵字：等同點「会員カード」→ 進入待綁定並顯示引導
-  if (/^(會員綁定|綁定會員|我要綁定|前往綁定|前往綁定會員|如何綁定|会員カード|會員卡)$/i.test(text)) {
+  // 關鍵字／圖文選單「会員カード」→ 引導卡＋【會員綁定】說明（已綁定則只回覆現況）
+  if (isLineMemberCardKeyword_(text)) {
+    Logger.log("LINE member-card keyword hit: " + text + " user=" + userId);
     return handleMemberCardBindStart_(ssActive, userId, replyToken, accessToken, { via: "keyword", text: text });
   }
 
@@ -1541,22 +1579,31 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
 
   // 未綁定：引導卡 ＋【會員綁定】說明文字
   setPendingLineBind_(userId);
-  if (accessToken) {
-    sendLineUserMessages_(
-      userId,
-      replyToken,
-      accessToken,
-      buildLineBindGuideHelpMessages_({
-        hint: "請先完成會員綁定，才能接收訂單通知"
-      }),
-      { preferPush: true }
-    );
+  if (!accessToken) {
+    Logger.log("LINE member-card: 缺少 Channel access token，無法送引導卡 user=" + userId);
+    return {
+      ok: false,
+      type: "member_card_await_card",
+      lineUserId: userId,
+      pending: true,
+      message: "missing_channel_access_token",
+      via: meta.via || ""
+    };
+  }
+  var helpMsgs = buildLineBindGuideHelpMessages_({
+    hint: "請先完成會員綁定，才能接收訂單通知"
+  });
+  var sendRes = sendLineUserMessages_(userId, replyToken, accessToken, helpMsgs, { preferPush: true });
+  if (!sendRes || !sendRes.replied) {
+    Logger.log("LINE member-card guide send failed: " + JSON.stringify(sendRes && sendRes.detail));
   }
   return {
-    ok: true,
+    ok: !!(sendRes && sendRes.replied),
     type: "member_card_await_card",
     lineUserId: userId,
     pending: true,
+    sent: !!(sendRes && sendRes.replied),
+    replyMode: (sendRes && sendRes.replyMode) || "",
     via: meta.via || "",
     data: meta.data || ""
   };
@@ -1576,10 +1623,10 @@ function buildLineBindGuideMessages_(opts) {
     "請先完成會員綁定，才能接收訂單通知";
   var note = hasCard
     ? ("備註：點下方按鈕即可綁定卡號 " + card)
-    : "備註：請先點圖文選單「会員カード」，再傳送 13 碼會員卡號";
+    : "備註：「綁定」與 13 碼會員卡號中間請空一格";
   var example = hasCard
     ? ("將綁定：" + card)
-    : "範例：綁定 2026092312345　或直接傳 13 碼數字";
+    : "範例：綁定 2026092312345";
 
   // 官方後台圖文選單多半無 Postback → Flex 按鈕用「訊息」自動帶出文字
   var btnAction = hasCard
