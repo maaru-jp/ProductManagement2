@@ -3226,7 +3226,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
       margin: "md",
       align: "center"
     }
-  ];
+  ]);
 
   return {
     type: "flex",
