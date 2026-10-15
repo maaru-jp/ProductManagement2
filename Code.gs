@@ -1194,9 +1194,10 @@ function isLineBindRelatedEvent_(event) {
     return isMemberCardPostbackData_(d) || !!parsePostbackBindCard_(d);
   }
   if (event.type === "message" && event.message && event.message.type === "text") {
-    var t = String(event.message.text || "");
+    var t = String(event.message.text || "").trim();
     if (isLineMemberCardKeyword_(t)) return true;
-    if (/^(?:綁定|bind)\b/i.test(t.trim()) || /^綁定/.test(t.trim())) return true;
+    if (/^綁定/.test(t) || /^bind\b/i.test(t) || (/綁定/.test(t) && !!extractMemberCardFromBindText_(t))) return true;
+    if (/^\d{13}$/.test(t.replace(/\D/g, "")) && t.replace(/\D/g, "").length === 13) return true;
   }
   return false;
 }
@@ -1311,33 +1312,78 @@ function processLineEvent_(event, settings) {
   var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
   var ssActive = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 關鍵字／圖文選單「会員カード」→ 引導卡＋【會員綁定】說明（已綁定則只回覆現況）
-  if (isLineMemberCardKeyword_(text)) {
-    Logger.log("LINE member-card keyword hit: " + text + " user=" + userId);
-    return handleMemberCardBindStart_(ssActive, userId, replyToken, accessToken, { via: "keyword", text: text });
-  }
-
-  // 解析卡號：綁定 2026…／純 13 碼（圖文選單後待綁定時可只傳卡號）
+  // 先處理「綁定 卡號」（優先於会員カード關鍵字，避免誤判）
   var pendingBind = hasPendingLineBind_(userId);
   var bindCard = extractMemberCardFromBindText_(text);
-  var bindIntent = /^(?:綁定|bind)\b/i.test(text) || /^綁定/.test(text) || (pendingBind && !!bindCard);
+  var pure13 = /^\d{13}$/.test(String(text || "").replace(/[０-９]/g, function(c) {
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  }).replace(/\s+/g, ""));
+  var bindIntent =
+    /^綁定/.test(text) ||
+    /^bind\s/i.test(text) ||
+    /^bind$/i.test(text) ||
+    (/綁定/.test(text) && !!bindCard) ||
+    (pendingBind && !!bindCard) ||
+    (pure13 && !!bindCard); // 點選單後直接貼 13 碼也可綁
 
   if (bindIntent) {
+    Logger.log("LINE bind intent text=[" + text + "] card=[" + bindCard + "] user=" + userId);
     if (!isValidMemberCardNo_(bindCard)) {
       if (accessToken) {
-        sendLineUserMessages_(userId, replyToken, accessToken, buildLineBindGuideHelpMessages_(), { preferPush: true });
+        sendLineUserMessages_(userId, replyToken, accessToken, [{
+          type: "text",
+          text:
+            "綁定格式不正確。\n" +
+            "請傳：綁定 您的13碼會員卡號\n" +
+            "範例：綁定 2026092312345\n" +
+            "（「綁定」與卡號中間請空一格）"
+        }], { preferPush: true });
+        sendLineUserMessages_(userId, "", accessToken, buildLineBindGuideMessages_({ welcome: false }), { preferPush: true });
       }
       if (userId) setPendingLineBind_(userId);
       return { ok: false, type: "bind_help", message: "invalid_card_format", text: text, pending: true };
     }
 
+    if (!isLineMessagingUserId_(userId)) {
+      Logger.log("LINE bind missing userId");
+      return { ok: false, type: "bind", message: "missing_userId", text: text };
+    }
+    if (!accessToken) {
+      Logger.log("LINE bind missing accessToken");
+      return { ok: false, type: "bind", message: "missing_channel_access_token", memberCardNo: bindCard };
+    }
+
     var bindRes = bindLineUserIdToMemberCard_(ssActive, userId, bindCard);
     clearPendingLineBind_(userId);
-    if (accessToken) {
-      var bindMessages = buildLineBindResultMessages_(!bindRes.error, bindCard, bindRes.message || "");
-      sendLineUserMessages_(userId, replyToken, accessToken, bindMessages, { preferPush: true });
+    // 文字與 Flex 分送：文字一定先到，避免 Flex 失敗導致完全無回覆
+    var okBind = !(bindRes && bindRes.error);
+    var plain =
+      (okBind ? "綁定成功！\n" : "綁定失敗\n") +
+      "會員卡號：" + bindCard + "\n" +
+      (okBind
+        ? "已連結此官方帳號，之後可接收訂單進度通知。"
+        : String((bindRes && bindRes.message) || "請確認卡號後再試"));
+    var tipSend = sendLineUserMessages_(userId, replyToken, accessToken, [{ type: "text", text: plain }], { preferPush: true });
+    try {
+      sendLineUserMessages_(userId, "", accessToken, buildLineBindResultMessages_(okBind, bindCard, (bindRes && bindRes.message) || "").slice(1), { preferPush: true });
+    } catch (eFlexBind) {
+      Logger.log("LINE bind flex skipped: " + eFlexBind);
     }
-    return { ok: !bindRes.error, type: "bind", memberCardNo: bindCard, lineUserId: userId, message: bindRes.message || "OK" };
+    Logger.log("LINE bind done ok=" + okBind + " tipSent=" + !!(tipSend && tipSend.replied) + " msg=" + ((bindRes && bindRes.message) || ""));
+    return {
+      ok: okBind,
+      type: "bind",
+      memberCardNo: bindCard,
+      lineUserId: userId,
+      message: (bindRes && bindRes.message) || "OK",
+      replied: !!(tipSend && tipSend.replied)
+    };
+  }
+
+  // 關鍵字／圖文選單「会員カード」→ 引導卡＋【會員綁定】說明（已綁定則只回覆現況）
+  if (isLineMemberCardKeyword_(text)) {
+    Logger.log("LINE member-card keyword hit: " + text + " user=" + userId);
+    return handleMemberCardBindStart_(ssActive, userId, replyToken, accessToken, { via: "keyword", text: text });
   }
 
   // 僅處理像喊單／登記清單的訊息，一般閒聊不回
