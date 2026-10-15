@@ -910,7 +910,7 @@ function defaultLineNotifyTemplates_() {
   return {
     order_created: defaultLineOrderCreatedTemplate_(),
     order_merged: defaultLineOrderMergedTemplate_(),
-    confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
+    confirm_pay: "匯款完成後請回覆，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
       "您好：\n\n" +
@@ -2802,7 +2802,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
   styleKey = styleKey || resolveLineFlexStyleKey_();
   var jp = {
     confirm_pay: {
-      title: "請確認訂單並匯款",
+      title: "訂金付款通知",
       sectionLabel: "匯款資訊",
       sectionEmoji: "✉️",
       alt: "訂單確認／請匯款",
@@ -3477,7 +3477,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "匯款完成後請回覆本對話告知，謝謝！",
+      text: "匯款完成後請回覆，謝謝！",
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
