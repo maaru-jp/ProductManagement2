@@ -1441,18 +1441,13 @@ function processLineEvent_(event, settings) {
     }
   } catch (eBind) { /* ignore */ }
 
-  var allTpl = getLineNotifyTemplates_();
-  var replyTpl = created.merged
-    ? (allTpl.order_merged || defaultLineOrderMergedTemplate_())
-    : (allTpl.order_created || settings.orderCreatedTemplate || defaultLineOrderCreatedTemplate_());
-  var replyText = renderLineOrderCreatedTemplate_(replyTpl, created);
   var sendRes = { replied: false, replyMode: "", detail: null };
-  if (accessToken) {
-    var orderFlex = buildLineOrderCreatedFlexMessage_(created, replyText, !!created.merged);
-    sendRes = sendLineUserMessages_(userId, replyToken, accessToken, [orderFlex]);
-  } else {
-    Logger.log("LINE: 無 Channel access token，已建單但無法回覆");
-  }
+  // 顧客官方 LINE「商品+1」：只寫入後台訂單，不回覆／推播訂單成立 Flex
+  Logger.log(
+    "LINE order from +1 (no flex): " +
+      (created.orderId || "") +
+      (created.merged ? " (merged)" : "")
+  );
   return {
     ok: true,
     merged: !!created.merged,
@@ -2202,13 +2197,13 @@ function renderLineOrderCreatedTemplate_(template, created) {
     .replace(/\{\{itemsSummary\}\}/g, itemsSummary);
 }
 
-/** 訂單成立／加單成功：與推播同一套 Flex 風格（不顯示小計／模板內文；金額由後台自行填） */
-function buildLineOrderCreatedFlexMessage_(created, bodyText, isMerged) {
+/** 訂單成立：與推播同一套 Flex 風格（不顯示小計／模板內文；金額由後台自行填） */
+function buildLineOrderCreatedFlexMessage_(created) {
   created = created || {};
   var theme = getLineFlexTheme_();
   var brand = String(CONFIG.lineBrandName || "MAARU 日韓萌GO").trim() || "MAARU 日韓萌GO";
   var color = theme.headerBg;
-  var title = isMerged ? "加單成功" : "訂單成立";
+  var title = "訂單成立";
   var orderDisp = created.orderId ? ("#" + String(created.orderId).replace(/^#/, "")) : "—";
   var cardDisp = String(created.memberCardNo || "").trim() || "—";
   var items = created.items || [];
