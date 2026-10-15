@@ -1048,7 +1048,7 @@
               <div class="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-3">
                 <div>
                   <p class="text-sm font-medium text-emerald-900">LINE 訊息模板（合併管理）</p>
-                  <p class="text-xs text-emerald-900/80 mt-1 leading-relaxed">訂單成立回覆與五種進度推播已合併；卡片版型統一為 Flex，此處只編<strong>內文</strong>。會員綁定：點圖文選單帶出「會員綁定」→ 未綁定送引導卡＋說明；已綁定則提示無需再綁。</p>
+                  <p class="text-xs text-emerald-900/80 mt-1 leading-relaxed">進度推播內文可在此編輯；訂單管理另有「訂單成立」一鍵推播（固定版型：訂單編號／預購日期／購買商品）。會員綁定：點圖文選單帶出「會員綁定」→ 未綁定送引導卡＋說明；已綁定則提示無需再綁。</p>
                   <p class="text-xs text-slate-600 mt-1">變數：<code class="bg-white/80 px-1 rounded">{{orderId}}</code> <code class="bg-white/80 px-1 rounded">{{memberCardNo}}</code> <code class="bg-white/80 px-1 rounded">{{customerName}}</code> <code class="bg-white/80 px-1 rounded">{{itemsSummary}}</code> <code class="bg-white/80 px-1 rounded">{{depositAmount}}</code> <code class="bg-white/80 px-1 rounded">{{amountDue}}</code> <code class="bg-white/80 px-1 rounded">{{subtotal}}</code> <code class="bg-white/80 px-1 rounded">{{shippingMethod}}</code> <code class="bg-white/80 px-1 rounded">{{storeName}}</code></p>
                 </div>
                 <div>
@@ -2170,9 +2170,10 @@
         var lineCopyWebhookUrl = document.getElementById("lineCopyWebhookUrl");
         var lineTestOrderBtn = document.getElementById("lineTestOrderBtn");
         var lastLineWebhookToken = "";
-        var LINE_NOTIFY_TYPE_KEYS_ = ["confirm_pay", "paid", "shipping", "arrived", "completed"];
-        var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged"].concat(LINE_NOTIFY_TYPE_KEYS_);
+        var LINE_NOTIFY_TYPE_KEYS_ = ["order_established", "confirm_pay", "paid", "shipping", "arrived", "completed"];
+        var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "arrived", "completed"];
         var LINE_NOTIFY_LABELS_ = {
+          order_established: "訂單成立",
           confirm_pay: "確認／請匯款",
           paid: "已確認匯款",
           shipping: "出貨通知",
@@ -7813,7 +7814,7 @@
             }
           }
           if (btns) {
-            var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "shipping", "arrived", "completed"];
+            var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["order_established", "confirm_pay", "paid", "shipping", "arrived", "completed"];
             var labels = window.LINE_NOTIFY_LABELS_ || {};
             btns.innerHTML = keys.map(function(k) {
               var label = labels[k] || k;
@@ -7845,8 +7846,9 @@
 
         function renderOrderLineNotifyControls_(ord) {
           var can = orderLooksLineNotifyBound_(ord);
-          var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "shipping", "arrived", "completed"];
+          var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["order_established", "confirm_pay", "paid", "shipping", "arrived", "completed"];
           var labels = window.LINE_NOTIFY_LABELS_ || {
+            order_established: "訂單成立",
             confirm_pay: "確認／請匯款",
             paid: "已確認匯款",
             shipping: "出貨通知",

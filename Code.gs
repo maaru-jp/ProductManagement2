@@ -878,9 +878,10 @@ var LINE_PROP_NOTIFY_TEMPLATES = "line_order_notify_templates_json";
 /** 同一 LINE 用戶、狀態仍為「待處理」、且在此時間內再 +1 → 併入同一張訂單（毫秒） */
 var LINE_MERGE_WINDOW_MS_ = 2 * 60 * 60 * 1000;
 
-var LINE_NOTIFY_TYPES_ = ["confirm_pay", "paid", "shipping", "arrived", "completed"];
-/** 統一訊息模板鍵（訂單成立＋五種推播），後台同一區編輯、同一份 JSON 儲存 */
-var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged"].concat(LINE_NOTIFY_TYPES_);
+/** 後台一鍵推播類型（含手動「訂單成立通知」） */
+var LINE_NOTIFY_TYPES_ = ["order_established", "confirm_pay", "paid", "shipping", "arrived", "completed"];
+/** 統一訊息模板鍵（喊單自動回覆＋進度推播內文），後台同一區編輯、同一份 JSON 儲存 */
+var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "arrived", "completed"];
 
 function isLineMessagingUserId_(s) {
   var v = String(s || "").trim();
@@ -909,7 +910,7 @@ function defaultLineNotifyTemplates_() {
   return {
     order_created: defaultLineOrderCreatedTemplate_(),
     order_merged: defaultLineOrderMergedTemplate_(),
-    confirm_pay: "匯款完成後請回覆，謝謝！",
+    confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
       "您好：\n\n" +
@@ -1415,10 +1416,8 @@ function processLineEvent_(event, settings) {
 
   var parsed = parseLineOrderMessage_(text);
   if (!parsed || !parsed.items || !parsed.items.length) {
-    if (accessToken) {
-      var parseFailMsg = "已收到訊息，但無法辨識商品列。\n請用例如：\n商品名稱 款式 +1\n或貼上完整「登記清單」（含商品總計）。";
-      sendLineUserText_(userId, replyToken, accessToken, parseFailMsg);
-    }
+    // 無法辨識喊單：不回覆顧客（避免干擾一般對話）
+    Logger.log("LINE parse_failed (no reply): " + String(text || "").slice(0, 80));
     return { ok: false, message: "parse_failed" };
   }
 
@@ -3082,6 +3081,185 @@ function buildLineNotifyProgressBox_(steps, brandColor, mutedColor) {
   };
 }
 
+/** 訂單成立通知：預購日期顯示字串 */
+function formatOrderEstablishedDateDisp_(order) {
+  order = order || {};
+  var raw = order.preorderDate != null && String(order.preorderDate).trim() !== ""
+    ? order.preorderDate
+    : order.date;
+  if (isSheetDate_(raw)) return formatSheetDateLocal_(raw);
+  var n = normalizeSheetDateValue_(raw);
+  return n ? String(n) : "—";
+}
+
+/** 訂單成立通知：讀取訂單品項為 ① ② ③… */
+function buildOrderEstablishedItemLines_(order) {
+  order = order || {};
+  var items = Array.isArray(order.items) ? order.items : [];
+  var circles = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⑪", "⑫", "⑬", "⑭", "⑮", "⑯", "⑰", "⑱", "⑲", "⑳"];
+  var lines = [];
+  for (var i = 0; i < items.length && i < 20; i++) {
+    var it = items[i] || {};
+    var name = String(it.lineName || it.name || it.product || "").trim() || "商品";
+    var qty = Number(it.qty != null ? it.qty : it.quantity) || 0;
+    var circ = circles[i] || (String(i + 1) + ".");
+    lines.push(circ + " " + name + (qty ? (" ×" + qty) : ""));
+  }
+  if (!lines.length) {
+    var fallback = String(order.product || order.itemSummary || "").trim();
+    lines.push(fallback ? ("① " + fallback) : "① （尚無品項，請於後台補上）");
+  }
+  return lines;
+}
+
+/**
+ * 後台「訂單成立」一鍵推播 Flex（版型固定）
+ * 標題：訂單成立通知；品項讀取訂單管理購買商品
+ */
+function buildLineOrderEstablishedNotifyFlexMessage_(order) {
+  order = order || {};
+  var theme = getLineFlexTheme_();
+  var brand = String(CONFIG.lineBrandName || "MAARU").trim() || "MAARU";
+  var color = theme.headerBg;
+  var orderId = String(order.id || "").trim();
+  var orderDisp = orderId ? ("#" + orderId.replace(/^#/, "")) : "—";
+  var dateDisp = formatOrderEstablishedDateDisp_(order);
+  var itemLines = buildOrderEstablishedItemLines_(order);
+  var itemsText = itemLines.join("\n");
+
+  var bodyContents = [
+    {
+      type: "text",
+      text: "您好",
+      size: "md",
+      weight: "bold",
+      color: theme.text,
+      wrap: true
+    },
+    {
+      type: "text",
+      text: "以下是本次訂購明細，請您確認商品與數量是否正確",
+      size: "sm",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "sm"
+    },
+    { type: "separator", margin: "lg", color: theme.separator },
+    {
+      type: "text",
+      text: "📋 訂單資訊",
+      size: "md",
+      weight: "bold",
+      color: theme.text,
+      margin: "lg"
+    },
+    {
+      type: "text",
+      text: "▪️ 訂單編號：" + orderDisp,
+      size: "sm",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "sm"
+    },
+    {
+      type: "text",
+      text: "▪️ 預購日期：" + dateDisp,
+      size: "sm",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "xs"
+    },
+    {
+      type: "text",
+      text: "🛒 本次訂購商品",
+      size: "md",
+      weight: "bold",
+      color: theme.text,
+      margin: "lg"
+    },
+    {
+      type: "box",
+      layout: "vertical",
+      margin: "sm",
+      paddingAll: "12px",
+      cornerRadius: "16px",
+      backgroundColor: theme.chipBg,
+      contents: [
+        {
+          type: "text",
+          text: lineFlexSafeText_(itemsText, 500),
+          size: "md",
+          weight: "bold",
+          color: theme.chipText,
+          wrap: true,
+          maxLines: 20
+        }
+      ]
+    },
+    { type: "separator", margin: "lg", color: theme.separator },
+    {
+      type: "text",
+      text: "若以上訂單資訊有誤，請儘快聯繫小幫手協助確認",
+      size: "sm",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "md",
+      align: "center"
+    }
+  ];
+
+  return {
+    type: "flex",
+    altText: brand + "｜訂單成立通知" + (orderId ? ("｜" + orderDisp) : ""),
+    contents: {
+      type: "bubble",
+      size: getLineFlexBubbleSize_(),
+      styles: {
+        body: { backgroundColor: theme.bodyBg }
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "0px",
+        spacing: "none",
+        cornerRadius: "20px",
+        backgroundColor: theme.bodyBg,
+        contents: [
+          {
+            type: "box",
+            layout: "vertical",
+            paddingAll: "16px",
+            backgroundColor: color,
+            contents: [
+              { type: "text", text: brand, size: "md", weight: "bold", color: theme.headerBrand },
+              {
+                type: "text",
+                text: "訂單成立通知",
+                size: "xl",
+                weight: "bold",
+                color: theme.headerTitle,
+                margin: "xs",
+                wrap: true
+              }
+            ]
+          },
+          {
+            type: "box",
+            layout: "vertical",
+            paddingAll: "16px",
+            backgroundColor: theme.bodyBg,
+            contents: bodyContents
+          }
+        ]
+      }
+    }
+  };
+}
+
 /**
  * Flex 出貨／進度通知卡片（jp 日系｜kr 韓系｜classic）
  * bodyText：後台模板渲染後的文字，顯示在卡片說明區
@@ -3283,7 +3461,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "匯款完成後請回覆，謝謝！",
+      text: "匯款完成後請回覆本對話告知，謝謝！",
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
@@ -3715,8 +3893,8 @@ function sendOrderBindGuide_(ss, body) {
 }
 
 /**
- * 後台一鍵推播：body = { orderId, notifyType: confirm_pay|paid|shipping|arrived|completed }
- * 以 Flex 卡片推播（外觀近似出貨通知範例）；後台文字模板填入卡片說明區。
+ * 後台一鍵推播：body = { orderId, notifyType: order_established|confirm_pay|paid|shipping|arrived|completed }
+ * 以 Flex 卡片推播；進度類以後台文字模板填入說明區；訂單成立通知版型固定。
  */
 function sendOrderLineNotify_(ss, body) {
   body = body || {};
@@ -3751,12 +3929,17 @@ function sendOrderLineNotify_(ss, body) {
     };
   }
 
-  var templates = getLineNotifyTemplates_();
-  var text = renderLineNotifyTemplate_(templates[notifyType] || "", order);
-  if (!String(text || "").trim()) {
-    return { error: true, message: "通知模板為空，請到 LINE 設定補上" };
+  var flexMsg;
+  if (notifyType === "order_established") {
+    flexMsg = buildLineOrderEstablishedNotifyFlexMessage_(order);
+  } else {
+    var templates = getLineNotifyTemplates_();
+    var text = renderLineNotifyTemplate_(templates[notifyType] || "", order);
+    if (!String(text || "").trim()) {
+      return { error: true, message: "通知模板為空，請到 LINE 設定補上" };
+    }
+    flexMsg = buildLineOrderNotifyFlexMessage_(notifyType, order, text);
   }
-  var flexMsg = buildLineOrderNotifyFlexMessage_(notifyType, order, text);
   var pushRes = pushLineMessages_(userId, accessToken, [flexMsg]);
   if (!pushRes || !pushRes.ok) {
     var detail = (pushRes && (pushRes.message || pushRes.body)) || "unknown";
