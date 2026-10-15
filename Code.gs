@@ -1469,8 +1469,13 @@ function extractMemberCardFromBindText_(text) {
   var digitsOnly = text
     .replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
     .replace(/\D/g, "");
-  var m13 = text.match(/(?:綁定|bind)\s*[:：]?\s*(\d{13})\b/i);
-  if (m13) return normalizeMemberCardNo_(m13[1]);
+  // 不用 \b（中文後常失效）；優先抓「綁定」後的 13 碼
+  var m13 = text.match(/(?:綁定|bind)\s*[:：]?\s*([0-9０-９]{13})/i);
+  if (m13) {
+    return normalizeMemberCardNo_(
+      String(m13[1]).replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    );
+  }
   if (/^\d{13}$/.test(digitsOnly)) return digitsOnly;
   var any13 = digitsOnly.match(/\d{13}/);
   if (any13) return any13[0];
@@ -2387,10 +2392,9 @@ function bindLineUserIdToMemberCard_(ss, userId, card) {
   var member;
   if (existing) {
     member = normalizeMemberRecord_(existing);
+    // 推播用 U… 一定寫入 lineUserId，並同步到 Line ID（後台列表主要看這欄）
     member.lineUserId = userId;
-    if (!member.lineId || isLineMessagingUserId_(member.lineId)) {
-      member.lineId = userId;
-    }
+    member.lineId = userId;
     member.updatedAt = now;
     if (!member.status) member.status = "有效";
   } else {
@@ -2405,20 +2409,25 @@ function bindLineUserIdToMemberCard_(ss, userId, card) {
       updatedAt: now
     });
   }
-  // 直接寫入，避免 pickRicher 覆寫掉剛綁的 lineUserId
+  // 依「實際試算表表頭」寫入，避免欄位錯位導致 LINE ID 沒寫進可見欄
   var rowNum = findMemberRowByCard_(sheet, card);
-  var row = buildRowFromMemberRecord_(member);
-  if (rowNum <= 0) {
-    sheet.appendRow(row);
-  } else {
-    var width = Math.max(row.length, getStandardMemberHeaders_().length, sheet.getLastColumn());
-    while (row.length < width) row.push("");
-    sheet.getRange(rowNum, 1, 1, width).setValues([row.slice(0, width)]);
-  }
+  writeMemberRecordToSheet_(sheet, member, rowNum);
   try {
     patchOrdersLineUserIdByCard_(ss, card, userId);
   } catch (ePatch) {
     Logger.log("patchOrdersLineUserIdByCard_: " + ePatch);
+  }
+  // 讀回確認
+  var verify = getMemberRecordByCard_(ss, card);
+  var savedUid = verify ? String(verify.lineUserId || verify.lineId || "").trim() : "";
+  if (!isLineMessagingUserId_(savedUid)) {
+    Logger.log("bindLineUserIdToMemberCard_ verify fail card=" + card + " saved=" + savedUid);
+    return {
+      error: true,
+      message: "已嘗試綁定，但會員名單未成功寫入 LINE ID。請確認 Memberist 已共用編輯權，並重新整理後台。",
+      memberCardNo: card,
+      lineUserId: userId
+    };
   }
   return { error: false, message: "OK", memberCardNo: card, lineUserId: userId };
 }
@@ -2488,11 +2497,22 @@ function orderCanLineNotify_(order, userByCard) {
   return !!(card && userByCard && userByCard[card]);
 }
 
+/**
+ * 訂單列表／單筆：用 Memberist 會員卡號補上 LINE ID（U…）
+ * — 訂單本身沒有 lineId、但清冊已綁定時，後台可顯示／可推播
+ */
 function enrichOrdersLineNotifyFlags_(ss, orders) {
   var map = buildLineUserIdByCardMap_(ss);
   for (var i = 0; i < (orders || []).length; i++) {
     if (!orders[i]) continue;
-    orders[i].canLineNotify = orderCanLineNotify_(orders[i], map);
+    var ord = orders[i];
+    var card = normalizeMemberCardNo_(ord.memberCardNo);
+    var fromMember = (card && map[card]) ? String(map[card]).trim() : "";
+    if (!isLineMessagingUserId_(ord.lineId) && isLineMessagingUserId_(fromMember)) {
+      ord.lineId = fromMember;
+      ord.lineIdFromMemberist = true;
+    }
+    orders[i].canLineNotify = orderCanLineNotify_(orders[i], map) || isLineMessagingUserId_(ord.lineId);
   }
   return orders;
 }
@@ -7917,6 +7937,59 @@ function buildRowFromMemberRecord_(rec) {
   return row;
 }
 
+/**
+ * 依會員名單「實際表頭」寫入一列（保留未對應欄位既有值，避免欄位錯位）
+ * rowNum <= 0 時 append
+ */
+function writeMemberRecordToSheet_(sheet, member, rowNum) {
+  ensureMemberHeaderRow_(sheet);
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function(h) {
+    return String(h || "").trim();
+  });
+  lastCol = Math.max(sheet.getLastColumn(), headers.length, 1);
+  headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function(h) {
+    return String(h || "").trim();
+  });
+  var keyMap = memberKeyMap_(headers);
+  var norm = normalizeMemberRecord_(member);
+  var row;
+  if (rowNum > 0) {
+    row = sheet.getRange(rowNum, 1, 1, lastCol).getValues()[0];
+  } else {
+    row = [];
+    for (var i = 0; i < lastCol; i++) row.push("");
+  }
+  var hasLineUserCol = false;
+  for (var c = 0; c < headers.length; c++) {
+    var key = keyMap[c];
+    if (!key) continue;
+    if (key === "lineUserId") hasLineUserCol = true;
+    if (key === "memberCardNo") {
+      if (norm.memberCardNo) row[c] = "'" + norm.memberCardNo;
+      continue;
+    }
+    if (norm[key] !== undefined && norm[key] !== null && String(norm[key]) !== "") {
+      row[c] = norm[key];
+    }
+  }
+  // 表上若只有「Line ID」、沒有「LINE推播ID」，仍把 U… 寫進 Line ID
+  if (!hasLineUserCol && isLineMessagingUserId_(norm.lineUserId)) {
+    for (var c2 = 0; c2 < headers.length; c2++) {
+      if (keyMap[c2] === "lineId") {
+        row[c2] = norm.lineUserId;
+        break;
+      }
+    }
+  }
+  while (row.length < lastCol) row.push("");
+  if (rowNum > 0) {
+    sheet.getRange(rowNum, 1, 1, lastCol).setValues([row.slice(0, lastCol)]);
+  } else {
+    sheet.appendRow(row.slice(0, lastCol));
+  }
+}
+
 function getMembers(sheet) {
   ensureMemberHeaderRow_(sheet);
   var lastRow = sheet.getLastRow();
@@ -8181,12 +8254,7 @@ function upsertMemberRecord_(sheet, member, ss) {
     }
   }
   member.updatedAt = now;
-  var row = buildRowFromMemberRecord_(member);
-  if (created) {
-    sheet.appendRow(row);
-  } else {
-    sheet.getRange(rowNum, 1, 1, row.length).setValues([row]);
-  }
+  writeMemberRecordToSheet_(sheet, member, created ? 0 : rowNum);
   return { error: false, member: member, created: created };
 }
 
