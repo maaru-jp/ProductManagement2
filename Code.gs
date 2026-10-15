@@ -349,8 +349,13 @@ function doPost(e) {
         return jsonOutput(out);
       }
       if (action === "member_list") {
+        // 從歷史訂單把已有的 U… LINE ID 補回 Memberist／後台顯示
+        var lineSync = enrichMembersLineIdsFromOrders_(ss, memberSheet);
         out.members = getMembers(memberSheet);
-        out.message = "OK";
+        out.message = lineSync.updated
+          ? ("OK（已從訂單補上 " + lineSync.updated + " 筆 LINE ID）")
+          : "OK";
+        out.lineIdSyncedFromOrders = lineSync.updated;
         out.memberCount = out.members.length;
         out.memberSpreadsheetId = getMemberSpreadsheetMeta_().id;
         out.memberSpreadsheetName = getMemberSpreadsheetMeta_().name;
@@ -2476,6 +2481,55 @@ function buildLineUserIdByCardMap_(ss) {
     }
   } catch (e) { /* ignore */ }
   return map;
+}
+
+/** 從歷史訂單收集「卡號 → U…」 */
+function buildLineUserIdByCardMapFromOrders_(ss) {
+  var map = {};
+  try {
+    var orders = getAllOrdersMerged_(ss);
+    for (var i = 0; i < (orders || []).length; i++) {
+      var ord = orders[i];
+      if (!ord) continue;
+      var card = normalizeMemberCardNo_(ord.memberCardNo);
+      if (!isValidMemberCardNo_(card)) continue;
+      var uid = "";
+      if (isLineMessagingUserId_(ord.lineId)) uid = String(ord.lineId).trim();
+      if (!uid) continue;
+      if (!map[card]) map[card] = uid;
+    }
+  } catch (e2) { /* ignore */ }
+  return map;
+}
+
+/**
+ * 會員清冊缺 LINE ID 時，用訂單上已有的 U… 回填 Memberist（並寫回試算表）
+ * 注意：只「加過官方」但從未綁定／訂單也無 U… 的，仍然不會有 userId
+ */
+function enrichMembersLineIdsFromOrders_(ss, memberSheet) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  memberSheet = memberSheet || getMemberSheet(ss, { required: false });
+  if (!memberSheet) return { updated: 0 };
+  var fromOrders = buildLineUserIdByCardMapFromOrders_(ss);
+  if (!Object.keys(fromOrders).length) return { updated: 0 };
+  var members = getMembers(memberSheet);
+  var updated = 0;
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
+  for (var i = 0; i < members.length; i++) {
+    var m = normalizeMemberRecord_(members[i]);
+    var card = normalizeMemberCardNo_(m.memberCardNo);
+    if (!isValidMemberCardNo_(card)) continue;
+    if (isLineMessagingUserId_(m.lineUserId) || isLineMessagingUserId_(m.lineId)) continue;
+    var uid = fromOrders[card];
+    if (!isLineMessagingUserId_(uid)) continue;
+    m.lineUserId = uid;
+    m.lineId = uid;
+    m.updatedAt = now;
+    var rowNum = findMemberRowByCard_(memberSheet, card);
+    writeMemberRecordToSheet_(memberSheet, m, rowNum);
+    updated++;
+  }
+  return { updated: updated };
 }
 
 function resolveLinePushUserIdForOrder_(ss, order) {
@@ -8302,12 +8356,15 @@ function syncMembersFromOrders_(ss) {
       if (!nameToCards[nKey]) nameToCards[nKey] = {};
       nameToCards[nKey][card] = true;
     }
+    var ordLine = isLineMessagingUserId_(ord.lineId) ? String(ord.lineId).trim() : String(ord.lineId || "").trim();
+    var ordLineUser = isLineMessagingUserId_(ord.lineId) ? String(ord.lineId).trim() : "";
     if (!byCard[card]) {
       byCard[card] = {
         memberCardNo: card,
         customerName: name,
         phone: ord.phone || "",
-        lineId: ord.lineId || "",
+        lineId: ordLine,
+        lineUserId: ordLineUser,
         email: ord.email || "",
         status: "有效",
         note: "由歷史訂單匯入"
@@ -8317,9 +8374,14 @@ function syncMembersFromOrders_(ss) {
         memberCardNo: card,
         customerName: name,
         phone: ord.phone || "",
-        lineId: ord.lineId || "",
+        lineId: ordLine,
+        lineUserId: ordLineUser,
         email: ord.email || ""
       }));
+      if (ordLineUser) {
+        byCard[card].lineUserId = ordLineUser;
+        byCard[card].lineId = ordLineUser;
+      }
     }
   }
 
@@ -8332,11 +8394,8 @@ function syncMembersFromOrders_(ss) {
 
   var existing = getMembers(sheet);
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
-  var appendRows = [];
-  var updateJobs = [];
   var added = 0;
   var updated = 0;
-  var width = getStandardMemberHeaders_().length;
 
   Object.keys(byCard).forEach(function(cardKey) {
     var member = normalizeMemberRecord_(byCard[cardKey]);
@@ -8356,29 +8415,29 @@ function syncMembersFromOrders_(ss) {
         }
       }
       if (prev) {
+        var prevLineUser = isLineMessagingUserId_(prev.lineUserId) ? String(prev.lineUserId).trim() : "";
+        var incomingLineUser = isLineMessagingUserId_(member.lineUserId) ? String(member.lineUserId).trim() : "";
         member = normalizeMemberRecord_(pickRicherMemberRecord_(prev, member));
         member.memberCardNo = card;
+        if (incomingLineUser) {
+          member.lineUserId = incomingLineUser;
+          member.lineId = incomingLineUser;
+        } else if (prevLineUser) {
+          member.lineUserId = prevLineUser;
+          member.lineId = prevLineUser;
+        }
         if (!member.createdAt) member.createdAt = prev.createdAt || now.slice(0, 10);
       }
       member.updatedAt = now;
-      updateJobs.push({ rowNum: rowNum, row: buildRowFromMemberRecord_(member) });
+      writeMemberRecordToSheet_(sheet, member, rowNum);
       updated++;
     } else {
       member.createdAt = member.createdAt || now.slice(0, 10);
       member.updatedAt = now;
-      appendRows.push(buildRowFromMemberRecord_(member));
+      writeMemberRecordToSheet_(sheet, member, 0);
       added++;
     }
   });
-
-  if (appendRows.length) {
-    var startRow = getMembers(sheet).length ? getMemberSheetAppendRow_(sheet) : 2;
-    sheet.getRange(startRow, 1, appendRows.length, width).setValues(appendRows);
-  }
-  for (var u = 0; u < updateJobs.length; u++) {
-    var job = updateJobs[u];
-    sheet.getRange(job.rowNum, 1, 1, job.row.length).setValues([job.row]);
-  }
 
   var compacted = compactMemberSheetDataToRow2_(sheet);
 
