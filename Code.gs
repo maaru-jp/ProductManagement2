@@ -1201,13 +1201,45 @@ function claimLineEventOnce_(event) {
 function processLineEvent_(event, settings) {
   event = event || {};
   if (event.type === "follow") {
+    // 封鎖後再加回／解除封鎖都會收到 follow（follow.isUnblocked=true）
     var followToken = event.replyToken || "";
     var followUser = String((event.source && event.source.userId) || "").trim();
     var followAccess = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
-    if (followToken && followAccess) {
-      sendLineUserMessages_(followUser, followToken, followAccess, buildLineBindGuideMessages_({ welcome: true }));
+    var isUnblocked = !!(event.follow && event.follow.isUnblocked);
+    var welcomeMsgs = buildLineBindGuideMessages_({ welcome: true });
+    var followSend = { replied: false, replyMode: "", detail: {} };
+    if (!followAccess) {
+      Logger.log("LINE follow: 缺少 Channel access token，無法發送歡迎卡");
+    } else if (!followUser) {
+      Logger.log("LINE follow: 缺少 userId");
+    } else {
+      // Cloudflare Worker 先回 200 再非同步轉 GAS，replyToken 常已過期 → 加好友歡迎以 Push 為主
+      var followPush = pushLineMessages_(followUser, followAccess, welcomeMsgs);
+      followSend.detail.push = followPush;
+      if (followPush && followPush.ok) {
+        followSend.replied = true;
+        followSend.replyMode = "push";
+      } else if (followToken) {
+        var followReply = replyLineMessages_(followToken, followAccess, welcomeMsgs);
+        followSend.detail.reply = followReply;
+        if (followReply && followReply.ok) {
+          followSend.replied = true;
+          followSend.replyMode = "reply";
+        }
+      }
+      if (!followSend.replied) {
+        Logger.log("LINE follow welcome failed user=" + followUser + " unblocked=" + isUnblocked + " " + JSON.stringify(followSend.detail));
+      }
     }
-    return { ok: true, type: "follow", userId: followUser };
+    return {
+      ok: true,
+      type: "follow",
+      userId: followUser,
+      isUnblocked: isUnblocked,
+      sent: !!followSend.replied,
+      replyMode: followSend.replyMode || "",
+      detail: followSend.detail
+    };
   }
   // 點 Flex「前往綁定」等 postback
   if (event.type === "postback") {
@@ -1349,8 +1381,8 @@ function sendLineUserText_(userId, replyToken, accessToken, text) {
 }
 
 /**
- * 引導顧客綁定會員的 Flex 按鈕卡片（簡潔版，對齊範例圖）
- * opts.welcome：加好友歡迎；opts.hint：額外提示（覆寫說明文字）
+ * 引導顧客綁定會員的 Flex 按鈕卡片（對齊範例：標題＋說明＋綠色按鈕）
+ * opts.welcome：加好友歡迎；opts.hint：覆寫說明；opts.memberCardNo：有卡號則按鈕預填「綁定 卡號」
  */
 function buildLineBindGuideMessages_(opts) {
   opts = opts || {};
@@ -1358,14 +1390,13 @@ function buildLineBindGuideMessages_(opts) {
   var title = "尚未綁定會員資料";
   var card = normalizeMemberCardNo_(opts.memberCardNo || "");
   var hasCard = isValidMemberCardNo_(card);
+  // 範例預設文案；welcome 時多提訂單通知
   var desc = String(opts.hint || "").trim() ||
     "請先完成會員綁定才能使用 +1 快速下單";
   if (opts.welcome && !opts.hint) {
-    desc = "請先完成會員綁定，才能接收訂單通知與使用 +1 快速下單";
+    desc = "請先完成會員綁定才能使用 +1 快速下單";
   }
-  var note = hasCard
-    ? ("備註：點按鈕後請直接傳送（中間已空一格）\n綁定 " + card)
-    : "備註：「綁定」與 13 碼會員卡號中間請空一格\n範例：綁定 2026092312345";
+  // 有卡號：點按鈕直接送出「綁定 {卡號}」；無卡號：預填「綁定 」讓顧客補上 13 碼
   var btnText = hasCard ? ("綁定 " + card) : "綁定 ";
 
   var flex = {
@@ -1373,13 +1404,12 @@ function buildLineBindGuideMessages_(opts) {
     altText: "尚未綁定會員資料｜前往綁定會員",
     contents: {
       type: "bubble",
-      size: "giga",
+      size: "mega",
       body: {
         type: "box",
         layout: "vertical",
         spacing: "md",
-        paddingAll: "16px",
-        cornerRadius: "20px",
+        paddingAll: "20px",
         backgroundColor: "#FFFFFF",
         contents: [
           {
@@ -1396,22 +1426,14 @@ function buildLineBindGuideMessages_(opts) {
             size: "md",
             color: "#8C8C8C",
             wrap: true,
-            margin: "sm"
-          },
-          {
-            type: "text",
-            text: note,
-            size: "sm",
-            color: "#8C8C8C",
-            wrap: true,
-            margin: "sm"
+            margin: "md"
           },
           {
             type: "button",
             style: "primary",
             color: btnColor,
             height: "md",
-            margin: "lg",
+            margin: "xl",
             action: {
               type: "message",
               label: "前往綁定會員",
@@ -3084,9 +3106,24 @@ function listLineFollowersForAdmin_(body) {
   var idsCode = idsRes.getResponseCode();
   var idsText = idsRes.getContentText() || "";
   if (idsCode >= 300) {
+    var idsMsg = "";
+    try {
+      var idsErr = JSON.parse(idsText);
+      idsMsg = String((idsErr && idsErr.message) || "").trim();
+    } catch (eParse) { /* ignore */ }
+    if (idsCode === 403 || /not available for your account/i.test(idsMsg) || /Access to this API/i.test(idsMsg)) {
+      return {
+        error: true,
+        code: idsCode,
+        message:
+          "此官方帳號無法使用「好友清單 API」（LINE 方案／權限未開通，常見於未認證或未升級帳號）。" +
+          "請改為：手動貼上 LINE User ID（U…），或請顧客在官方對話傳任意訊息／「我要綁定」後再推播。"
+      };
+    }
     return {
       error: true,
-      message: "LINE 好友 API 失敗 HTTP " + idsCode + "：" + idsText.slice(0, 180)
+      code: idsCode,
+      message: "LINE 好友 API 失敗 HTTP " + idsCode + "：" + (idsMsg || idsText).slice(0, 180)
     };
   }
   var idsJson = {};
