@@ -1252,13 +1252,27 @@ function isLineBindRelatedEvent_(event) {
  * 取貨門市：yyy
  */
 function parseLineApplyMemberPayload_(text) {
-  var raw = String(text || "").replace(/\r\n/g, "\n").trim();
-  var isApply = /^申請會員\b/.test(raw) || /^申請會員/.test(raw.replace(/\s+/g, ""));
+  // LINE 深連結有時會把換行變成空白，統一再解析
+  var raw = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u3000/g, " ")
+    .trim();
+  var compact = raw.replace(/\s+/g, "");
+  var isApply = /^申請會員/.test(raw) || /^申請會員/.test(compact);
   var communityName = "";
   var pickupStore = "";
-  var mName = raw.match(/(?:客戶姓名|社群名稱|社群暱稱|姓名|社群)[:：]\s*([^\n\r]+)/);
+  var mName =
+    raw.match(/(?:客戶姓名|社群名稱|社群暱稱|顧客姓名|姓名)\s*[:：]\s*([^\n\r]+)/) ||
+    compact.match(/(?:客戶姓名|社群名稱|社群暱稱|顧客姓名|姓名)[:：]([^取貨門市]+?)(?=取貨門市[:：]|$)/);
   if (mName) communityName = String(mName[1] || "").trim();
-  var mStore = raw.match(/(?:取貨門市|取貨店|門市)[:：]\s*([^\n\r]+)/);
+  // 相容舊格式「社群：xxx」（避免誤吃「社群名稱」）
+  if (!communityName) {
+    var mName2 = raw.match(/(?:^|\n)\s*社群\s*[:：]\s*([^\n\r]+)/);
+    if (mName2) communityName = String(mName2[1] || "").trim();
+  }
+  var mStore =
+    raw.match(/(?:取貨門市|取貨店|門市)\s*[:：]\s*([^\n\r]+)/) ||
+    compact.match(/(?:取貨門市|取貨店|門市)[:：](.+)$/);
   if (mStore) pickupStore = String(mStore[1] || "").trim();
   if (communityName.length > 40) communityName = communityName.slice(0, 40);
   if (pickupStore.length > 60) pickupStore = pickupStore.slice(0, 60);
@@ -1770,11 +1784,13 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
         via: meta.via || ""
       };
     }
-    // 審核中再送：若有填社群名稱／門市則更新會員資料
-    if (communityName || pickupStore) {
+    // 審核中再送：更新社群名稱（顧客姓名）
+    if (memberName || pickupStore) {
       try {
         patchMemberApplyProfile_(ss, existingCard, memberName, memberNote);
-      } catch (ePatchPending) { /* ignore */ }
+      } catch (ePatchPending) {
+        Logger.log("patchMemberApplyProfile_ pending: " + ePatchPending);
+      }
     }
     var reuseOtp = issueLineApplyMemberOtp_(existingCard, userId, memberName || String(existing.customerName || ""));
     var reuseMsgs = buildLineApplyMemberPendingMessages_(reuseOtp, existingCard, false);
@@ -1808,7 +1824,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
     };
   }
 
-  var bindRes = bindLineUserIdToMemberCard_(ss, userId, card);
+  var bindRes = bindLineUserIdToMemberCard_(ss, userId, card, { customerName: memberName });
   if (bindRes && bindRes.error) {
     sendLineUserMessages_(userId, replyToken, accessToken, [{
       type: "text",
@@ -1824,11 +1840,11 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
     };
   }
 
-  // 綁定後再寫一次社群名稱／門市（避免 bind 覆寫空姓名）
-  if (communityName || pickupStore) {
-    try {
-      patchMemberApplyProfile_(ss, card, memberName, memberNote);
-    } catch (ePatchNew) { /* ignore */ }
+  // 綁定後強制再寫社群名稱 → 後台「姓名／顧客姓名」
+  try {
+    patchMemberApplyProfile_(ss, card, memberName, memberNote);
+  } catch (ePatchNew) {
+    Logger.log("patchMemberApplyProfile_ after bind: " + ePatchNew);
   }
 
   var otp = issueLineApplyMemberOtp_(card, userId, memberName);
@@ -1926,21 +1942,88 @@ function checkLineBindCommunityNamePublic_(body) {
   };
 }
 
-/** 更新申請中的社群名稱／備註（門市） */
+/** 更新申請中的社群名稱／備註（寫入後台顧客姓名欄） */
 function patchMemberApplyProfile_(ss, memberCardNo, customerName, note) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var card = normalizeMemberCardNo_(memberCardNo);
-  if (!isValidMemberCardNo_(card)) return;
+  if (!isValidMemberCardNo_(card)) return false;
   var sheet = getMemberSheet(ss, { required: false });
-  if (!sheet) return;
+  if (!sheet) return false;
   var existing = getMemberRecordByCard_(ss, card);
-  if (!existing) return;
+  if (!existing) return false;
   var member = normalizeMemberRecord_(existing);
-  if (String(customerName || "").trim()) member.customerName = String(customerName || "").trim();
+  var name = String(customerName || "").trim();
+  if (name) member.customerName = name;
   if (String(note || "").trim()) member.note = String(note || "").trim();
   member.updatedAt = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
   var rowNum = findMemberRowByCard_(sheet, card);
   writeMemberRecordToSheet_(sheet, member, rowNum);
+  // 若表頭是「顧客姓名」等別名，上面 keyMap 已可寫入；再保險直接找姓名欄覆寫
+  if (name) {
+    try {
+      ensureMemberNameWritten_(sheet, rowNum, name);
+    } catch (eName) {
+      Logger.log("ensureMemberNameWritten_: " + eName);
+    }
+    // 同步到訂單管理的「顧客姓名」
+    try {
+      patchOrdersCustomerNameByCardOrLine_(ss, card, String(member.lineUserId || member.lineId || ""), name);
+    } catch (eOrdName) {
+      Logger.log("patchOrdersCustomerNameByCardOrLine_: " + eOrdName);
+    }
+  }
+  return true;
+}
+
+/** 依會員卡／LINE ID，把訂單顧客姓名同步成社群名稱 */
+function patchOrdersCustomerNameByCardOrLine_(ss, memberCardNo, lineUserId, customerName) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var name = String(customerName || "").trim();
+  var card = normalizeMemberCardNo_(memberCardNo);
+  var uid = String(lineUserId || "").trim();
+  if (!name) return 0;
+  var orderSheet = getOrderSheet(ss);
+  if (!orderSheet) return 0;
+  var list = getAllOrdersMerged_(ss) || [];
+  var patched = 0;
+  var nowIso = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
+  for (var i = 0; i < list.length; i++) {
+    var ord = list[i];
+    if (!ord) continue;
+    var sameCard = isValidMemberCardNo_(card) && normalizeMemberCardNo_(ord.memberCardNo) === card;
+    var sameLine = isLineMessagingUserId_(uid) && String(ord.lineId || "").trim() === uid;
+    if (!sameCard && !sameLine) continue;
+    if (String(ord.customerName || "").trim() === name) continue;
+    ord.customerName = name;
+    ord.updated = nowIso;
+    try {
+      upsertOrder(orderSheet, ord);
+      patched++;
+    } catch (e) {
+      Logger.log("patch order customerName failed: " + (ord.id || "") + " " + e);
+    }
+  }
+  if (patched) clearOrderListCache_(orderSheet);
+  return patched;
+}
+
+/** 確保姓名寫進會員表可見欄（姓名／顧客姓名／社群名稱） */
+function ensureMemberNameWritten_(sheet, rowNum, customerName) {
+  if (!sheet || rowNum <= 0) return;
+  var name = String(customerName || "").trim();
+  if (!name) return;
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  var targets = ["姓名", "顧客姓名", "社群名稱", "客戶姓名", "customerName", "name"];
+  for (var c = 0; c < headers.length; c++) {
+    var h = String(headers[c] || "").trim();
+    for (var t = 0; t < targets.length; t++) {
+      if (h === targets[t] || h.toLowerCase() === String(targets[t]).toLowerCase()) {
+        sheet.getRange(rowNum, c + 1).setValue(name);
+        return;
+      }
+    }
+  }
 }
 
 /**
@@ -2570,8 +2653,18 @@ function createOrderFromLineParsed_(parsed, meta) {
   }
   try {
     var allOrders = getOrders(orderSheet);
-    var customerName = String(meta.displayName || "").trim() || "LINE顧客";
     var lineId = String(meta.lineUserId || "").trim();
+    // 優先用 MemberLinking 社群名稱（會員名單顧客姓名），再退回 LINE 顯示名稱
+    var rosterName = "";
+    var rosterCard = "";
+    try {
+      var memByLine = lineId ? getMemberRecordByLineUserId_(ss, lineId) : null;
+      if (memByLine) {
+        rosterName = String(memByLine.customerName || "").trim();
+        rosterCard = normalizeMemberCardNo_(memByLine.memberCardNo);
+      }
+    } catch (eRoster) { rosterName = ""; rosterCard = ""; }
+    var customerName = rosterName || String(meta.displayName || "").trim() || "LINE顧客";
     var nowIso = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
     var todayDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd");
     var rawText = String(meta.rawText || "");
@@ -2599,7 +2692,7 @@ function createOrderFromLineParsed_(parsed, meta) {
         total: Math.max(0, newSubtotal - discount + shipFee),
         remark: remark,
         updated: nowIso,
-        customerName: customerName || existing.customerName,
+        customerName: rosterName || existing.customerName || customerName,
         lineId: lineId || existing.lineId
       });
       if (!mergedOrder.preorderDate) mergedOrder.preorderDate = todayDate;
@@ -2623,7 +2716,10 @@ function createOrderFromLineParsed_(parsed, meta) {
     // —— 新開單 ——
     var orderId = computeNextOrderId_(allOrders);
 
-    var memberCardNo = findExistingMemberCardForCustomerSubmit_(allOrders, customerName, "") || "";
+    var memberCardNo = isValidMemberCardNo_(rosterCard) ? rosterCard : "";
+    if (!isValidMemberCardNo_(memberCardNo)) {
+      memberCardNo = findExistingMemberCardForCustomerSubmit_(allOrders, customerName, "") || "";
+    }
     if (!isValidMemberCardNo_(memberCardNo) && lineId) {
       for (var j = 0; j < allOrders.length; j++) {
         if (String(allOrders[j].lineId || "").trim() === lineId) {
@@ -3342,11 +3438,16 @@ function allocateNewMemberCardForLineBind_(ss, displayName, lineUserId, noteText
   return card;
 }
 
-/** 會員卡號 ↔ Messaging API userId（U…）綁定，供後台一鍵推播 */
-function bindLineUserIdToMemberCard_(ss, userId, card) {
+/**
+ * 會員卡號 ↔ Messaging API userId（U…）綁定，供後台一鍵推播
+ * opts.customerName：可一併寫入姓名（社群名稱）
+ */
+function bindLineUserIdToMemberCard_(ss, userId, card, opts) {
+  opts = opts || {};
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   userId = String(userId || "").trim();
   card = normalizeMemberCardNo_(card);
+  var bindName = String(opts.customerName || opts.communityName || "").trim();
   if (!isLineMessagingUserId_(userId)) {
     return { error: true, message: "無法取得 LINE 用戶識別（請從官方帳號對話傳送）" };
   }
@@ -3372,6 +3473,7 @@ function bindLineUserIdToMemberCard_(ss, userId, card) {
     // 推播用 U… 一定寫入 lineUserId，並同步到 Line ID（後台列表主要看這欄）
     member.lineUserId = userId;
     member.lineId = userId;
+    if (bindName) member.customerName = bindName;
     member.updatedAt = now;
     // LINE 綁定完成後先進入商家審核；已是有效／停用者不強制改寫停用
     if (String(member.status || "").trim() !== "停用") {
@@ -3380,7 +3482,7 @@ function bindLineUserIdToMemberCard_(ss, userId, card) {
   } else {
     member = normalizeMemberRecord_({
       memberCardNo: card,
-      customerName: "",
+      customerName: bindName,
       lineId: userId,
       lineUserId: userId,
       status: "審核中",
@@ -3392,6 +3494,11 @@ function bindLineUserIdToMemberCard_(ss, userId, card) {
   // 依「實際試算表表頭」寫入，避免欄位錯位導致 LINE ID 沒寫進可見欄
   var rowNum = findMemberRowByCard_(sheet, card);
   writeMemberRecordToSheet_(sheet, member, rowNum);
+  if (bindName && rowNum > 0) {
+    try {
+      ensureMemberNameWritten_(sheet, rowNum, bindName);
+    } catch (eBindName) { /* ignore */ }
+  }
   try {
     patchOrdersLineUserIdByCard_(ss, card, userId);
   } catch (ePatch) {
@@ -9182,7 +9289,7 @@ function memberKeyMap_(headers) {
   var map = {};
   var aliases = [
     ["會員卡號", "memberCardNo", "memberCard"],
-    ["姓名", "customerName", "name"],
+    ["姓名", "customerName", "name", "顧客姓名", "社群名稱", "客戶姓名"],
     ["電話", "phone"],
     ["Line ID", "lineId"],
     ["LINE推播ID", "lineUserId", "LINE User ID", "line user id"],

@@ -380,7 +380,7 @@
             匯出 CSV
           </button>
           <div class="flex-1 flex items-center gap-2 min-w-0 justify-end">
-            <input type="text" id="orderSearchInput" placeholder="搜尋訂單編號、客戶姓名、電話..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm pl-9" />
+            <input type="text" id="orderSearchInput" placeholder="搜尋訂單編號、顧客姓名、電話..." class="flex-1 min-w-0 max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm pl-9" />
             <button type="button" id="btnOrderSearch" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm hover:bg-slate-50">搜尋</button>
             <select id="orderStatusFilter" class="rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white text-slate-700">
               <option value="">全部狀態</option>
@@ -496,14 +496,14 @@
         <div class="rounded-xl border border-slate-200 bg-white overflow-hidden">
           <div class="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
             <h3 class="text-sm font-semibold text-slate-800">會員清冊</h3>
-            <input type="text" id="membersSearchInput" placeholder="搜尋姓名、電話、卡號" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-52" />
+            <input type="text" id="membersSearchInput" placeholder="搜尋顧客姓名、電話、卡號" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs w-52" />
           </div>
           <div class="overflow-x-auto max-h-[520px] overflow-y-auto">
             <table class="w-full text-sm">
               <thead class="bg-slate-50 sticky top-0">
                 <tr>
                   <th class="text-left py-2 px-3 font-medium text-slate-600">會員卡號</th>
-                  <th class="text-left py-2 px-3 font-medium text-slate-600">姓名</th>
+                  <th class="text-left py-2 px-3 font-medium text-slate-600">顧客姓名</th>
                   <th class="text-left py-2 px-3 font-medium text-slate-600">電話</th>
                   <th class="text-left py-2 px-3 font-medium text-slate-600">Line ID</th>
                   <th class="text-left py-2 px-3 font-medium text-slate-600">狀態</th>
@@ -534,8 +534,8 @@
                 <p class="text-[11px] text-slate-400 mt-1">既有顧客卡號維持不變。僅之後新客才用新規則：預購年(4)+月日(4)+隨機(5)</p>
               </div>
               <div>
-                <label class="block text-xs text-slate-500 mb-1">姓名</label>
-                <input type="text" id="memberFormName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="客戶姓名" />
+                <label class="block text-xs text-slate-500 mb-1">顧客姓名</label>
+                <input type="text" id="memberFormName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="顧客姓名／社群名稱" />
               </div>
               <div class="grid grid-cols-2 gap-3">
                 <div>
@@ -1006,7 +1006,7 @@
               </div>
               <div class="rounded-lg border border-sky-200 bg-sky-50/70 p-4 space-y-2">
                 <p class="text-sm font-medium text-sky-950">圖文選單「会員カード」設定</p>
-                <p class="text-xs text-sky-900/85 leading-relaxed">流程：加好友 → 點「会員カード」→ 聊天室出現關鍵字 → 未綁定由<strong>本系統</strong>送引導卡＋【會員綁定】說明；已綁定則只回覆卡號。</p>
+                <p class="text-xs text-sky-900/85 leading-relaxed">流程：加好友 → 傳「申請會員」（或點「会員カード」）→ 系統回覆 6 碼並進入審核；已是正式會員則只回覆現況。</p>
                 <div class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900 leading-relaxed">
                   <strong>重要：</strong>請到 LINE Official Account Manager → 回應設定／自動回應，<strong>刪除或關閉</strong>「会員カード」「會員綁定」的官方自動回覆。否則只會看到官方那則文字，引導卡不會由本系統送出（或看起來像沒送到）。
                 </div>
@@ -1398,8 +1398,8 @@
                 <p id="orderMemberCardHint" class="text-xs mt-1 hidden"></p>
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-500 mb-1">客戶姓名</label>
-                <input type="text" id="orderCustomerName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入姓名" />
+                <label class="block text-xs font-medium text-slate-500 mb-1">顧客姓名</label>
+                <input type="text" id="orderCustomerName" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="請輸入顧客姓名" />
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-500 mb-1">電話</label>
@@ -6993,7 +6993,7 @@
           var name = (customerName || "").trim();
           var ph = (phone || "").trim();
           if (!normalizeCustomerNameForOrders_(name) && !ph) {
-            showOrderMessage("請先填寫客戶姓名或電話", true);
+            showOrderMessage("請先填寫顧客姓名或電話", true);
             return;
           }
           function afterLoad() {
@@ -7820,7 +7820,7 @@
                 ? "此訂單有會員卡號；推播時會依 Memberist 該卡的 LINE ID 發送。請重新整理訂單列表以更新狀態。"
                 : "按下方按鈕即可推播對應進度到顧客官方 LINE（不會自動改訂單狀態）。";
             } else {
-              hint.textContent = "未綁定：請確認訂單有 13 碼會員卡號，且顧客已傳「綁定 卡號」寫入 Memberist。也可重新整理訂單列表。";
+              hint.textContent = "未綁定：請請顧客傳「申請會員」寫入 Memberist。也可重新整理訂單列表。";
             }
           }
           if (btns) {
@@ -7866,7 +7866,7 @@
           };
           var badge = can
             ? "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 mr-1\" title=\"已綁定 LINE 推播\">可推播</span>"
-            : "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 mr-1\" title=\"請請顧客傳：我要綁定 或 綁定 會員卡號\">未綁定</span>";
+            : "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 mr-1\" title=\"請請顧客傳：申請會員\">未綁定</span>";
           var btns = keys.map(function(k) {
             var label = labels[k] || k;
             var disabled = can ? "" : " disabled";
