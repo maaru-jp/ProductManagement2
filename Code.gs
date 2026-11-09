@@ -1239,6 +1239,30 @@ function isLineBindRelatedEvent_(event) {
   return false;
 }
 
+/**
+ * 解析綁定頁送出的申請訊息：
+ * 申請會員
+ * 社群名稱：xxx
+ * 取貨門市：yyy
+ */
+function parseLineApplyMemberPayload_(text) {
+  var raw = String(text || "").replace(/\r\n/g, "\n").trim();
+  var isApply = /^申請會員\b/.test(raw) || /^申請會員/.test(raw.replace(/\s+/g, ""));
+  var communityName = "";
+  var pickupStore = "";
+  var mName = raw.match(/(?:客戶姓名|社群名稱|社群暱稱|姓名|社群)[:：]\s*([^\n\r]+)/);
+  if (mName) communityName = String(mName[1] || "").trim();
+  var mStore = raw.match(/(?:取貨門市|取貨店|門市)[:：]\s*([^\n\r]+)/);
+  if (mStore) pickupStore = String(mStore[1] || "").trim();
+  if (communityName.length > 40) communityName = communityName.slice(0, 40);
+  if (pickupStore.length > 60) pickupStore = pickupStore.slice(0, 60);
+  return {
+    isApply: isApply,
+    communityName: communityName,
+    pickupStore: pickupStore
+  };
+}
+
 /** 正規化後判斷是否為會員綁定關鍵字（圖文選單「会員カード」等） */
 function isLineMemberCardKeyword_(text) {
   var raw = String(text || "")
@@ -1419,10 +1443,16 @@ function processLineEvent_(event, settings) {
     };
   }
 
-  // 關鍵字「申請會員」／圖文選單「会員カード」→ 直接開卡進審核並回 6 碼
-  if (isLineMemberCardKeyword_(text)) {
+  // 關鍵字「申請會員」／表單送出／圖文選單「会員カード」→ 開卡進審核
+  var applyPayload = parseLineApplyMemberPayload_(text);
+  if (applyPayload.isApply || isLineMemberCardKeyword_(text)) {
     Logger.log("LINE apply-member keyword hit: " + text + " user=" + userId);
-    return handleMemberCardBindStart_(ssActive, userId, replyToken, accessToken, { via: "keyword", text: text });
+    return handleMemberCardBindStart_(ssActive, userId, replyToken, accessToken, {
+      via: "keyword",
+      text: text,
+      communityName: applyPayload.communityName || "",
+      pickupStore: applyPayload.pickupStore || ""
+    });
   }
 
   // 僅處理像喊單／登記清單的訊息，一般閒聊不回
@@ -1652,6 +1682,12 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
   }
 
   clearPendingLineBind_(userId);
+  var communityName = String(meta.communityName || "").trim();
+  var pickupStore = String(meta.pickupStore || "").trim();
+  var lineDisplayName = fetchLineDisplayName_(userId, accessToken) || "";
+  var memberName = communityName || lineDisplayName || "";
+  var memberNote = buildLineApplyMemberNote_(pickupStore);
+
   var existing = getMemberRecordByLineUserId_(ss, userId);
   var existingCard = existing ? normalizeMemberCardNo_(existing.memberCardNo) : "";
   var existingStatus = existing ? (String(existing.status || "").trim() || "有效") : "";
@@ -1677,7 +1713,13 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
         via: meta.via || ""
       };
     }
-    var reuseOtp = issueLineApplyMemberOtp_(existingCard, userId, String(existing.customerName || ""));
+    // 審核中再送：若有填社群名稱／門市則更新會員資料
+    if (communityName || pickupStore) {
+      try {
+        patchMemberApplyProfile_(ss, existingCard, memberName, memberNote);
+      } catch (ePatchPending) { /* ignore */ }
+    }
+    var reuseOtp = issueLineApplyMemberOtp_(existingCard, userId, memberName || String(existing.customerName || ""));
     var reuseMsgs = buildLineApplyMemberPendingMessages_(reuseOtp, existingCard, false);
     var reuseSend = sendLineUserMessages_(userId, replyToken, accessToken, reuseMsgs, { preferPush: true });
     return {
@@ -1692,10 +1734,9 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
     };
   }
 
-  var displayName = fetchLineDisplayName_(userId, accessToken) || "";
   var card = "";
   try {
-    card = allocateNewMemberCardForLineBind_(ss, displayName, userId);
+    card = allocateNewMemberCardForLineBind_(ss, memberName, userId, memberNote);
   } catch (eAlloc) {
     sendLineUserMessages_(userId, replyToken, accessToken, [{
       type: "text",
@@ -1726,7 +1767,14 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
     };
   }
 
-  var otp = issueLineApplyMemberOtp_(card, userId, displayName);
+  // 綁定後再寫一次社群名稱／門市（避免 bind 覆寫空姓名）
+  if (communityName || pickupStore) {
+    try {
+      patchMemberApplyProfile_(ss, card, memberName, memberNote);
+    } catch (ePatchNew) { /* ignore */ }
+  }
+
+  var otp = issueLineApplyMemberOtp_(card, userId, memberName);
   var okMsgs = buildLineApplyMemberPendingMessages_(otp, card, true);
   var okSend = sendLineUserMessages_(userId, replyToken, accessToken, okMsgs, { preferPush: true });
   return {
@@ -1736,10 +1784,36 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
     status: "審核中",
     otp: otp,
     lineUserId: userId,
+    communityName: communityName,
+    pickupStore: pickupStore,
     sent: !!(okSend && okSend.replied),
     via: meta.via || "",
     data: meta.data || ""
   };
+}
+
+function buildLineApplyMemberNote_(pickupStore) {
+  var store = String(pickupStore || "").trim();
+  var note = "LINE 申請會員（待審核）";
+  if (store) note += "｜取貨門市：" + store;
+  return note;
+}
+
+/** 更新申請中的社群名稱／備註（門市） */
+function patchMemberApplyProfile_(ss, memberCardNo, customerName, note) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var card = normalizeMemberCardNo_(memberCardNo);
+  if (!isValidMemberCardNo_(card)) return;
+  var sheet = getMemberSheet(ss, { required: false });
+  if (!sheet) return;
+  var existing = getMemberRecordByCard_(ss, card);
+  if (!existing) return;
+  var member = normalizeMemberRecord_(existing);
+  if (String(customerName || "").trim()) member.customerName = String(customerName || "").trim();
+  if (String(note || "").trim()) member.note = String(note || "").trim();
+  member.updatedAt = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
+  var rowNum = findMemberRowByCard_(sheet, card);
+  writeMemberRecordToSheet_(sheet, member, rowNum);
 }
 
 /**
@@ -3128,8 +3202,8 @@ function consumeLineBindOtp_(otpCode, messagingUserId) {
   return { error: false, memberCardNo: card, loginUserId: String(obj.loginUserId || "") };
 }
 
-/** 新客 LINE 登入綁定：配置一組新卡並寫入會員清冊 */
-function allocateNewMemberCardForLineBind_(ss, displayName, lineUserId) {
+/** 新客申請會員：配置一組新卡並寫入會員清冊（姓名／備註可含取貨門市） */
+function allocateNewMemberCardForLineBind_(ss, displayName, lineUserId, noteText) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var used = {};
   try {
@@ -3159,7 +3233,7 @@ function allocateNewMemberCardForLineBind_(ss, displayName, lineUserId) {
       lineId: "",
       lineUserId: "",
       status: "審核中",
-      note: "LINE ID 已綁定（待審核；卡號核准後才對顧客顯示）",
+      note: String(noteText || "").trim() || "LINE 申請會員（待審核）",
       createdAt: now.slice(0, 10),
       updatedAt: now
     }), -1);
