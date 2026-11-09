@@ -136,7 +136,7 @@ function doGet(e) {
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
         routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info", "line_diag", "line_bind_config"],
         postRoutes: ["customer_order_submit", "line_bind_otp_create", "line_bind_otp_status", "line_bind_member_status", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_line_notify", "order_bind_guide", "line_bind_guide_send", "line_followers_list", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_approve", "member_sync_from_orders", "append", "update", "delete"],
-        lineWebhookHint: "Webhook URL 用 Cloudflare Worker 中繼。顧客於官方 LINE 傳「申請會員」即可開卡進審核並收到 6 碼；亦可「綁定 13碼」。",
+        lineWebhookHint: "Webhook URL 用 Cloudflare Worker 中繼。顧客於官方 LINE 傳「申請會員」即可開卡進審核並收到 6 碼。",
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
         memberSpreadsheetName: getMemberSpreadsheetMeta_().name
@@ -1064,7 +1064,7 @@ function getLineAutomationSettingsPublic_(includeSecrets) {
     notifyTemplates: s.notifyTemplates,
     notifyTypes: LINE_NOTIFY_TYPES_.slice(),
     messageTemplateKeys: LINE_MSG_TEMPLATE_KEYS_.slice(),
-    bindHint: "顧客於官方 LINE 傳「申請會員」開卡進審核（備援：綁定 13碼）",
+    bindHint: "顧客於官方 LINE 傳「申請會員」開卡進審核",
     message: "OK"
   };
 }
@@ -1387,58 +1387,35 @@ function processLineEvent_(event, settings) {
     };
   }
 
-  // 再處理「綁定 卡號」（13 碼備援；優先於会員カード關鍵字）
+  // 舊客「綁定 13 碼／我已有會員卡號」已停用：改引導改用「申請會員」
   var pendingBind = hasPendingLineBind_(userId);
   var bindCard = extractMemberCardFromBindText_(text);
   var pure13 = /^\d{13}$/.test(String(text || "").replace(/[０-９]/g, function(c) {
     return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
   }).replace(/\s+/g, ""));
-  var bindIntent =
+  var oldBindAttempt =
     /^綁定/.test(text) ||
     /^bind\s/i.test(text) ||
     /^bind$/i.test(text) ||
     (/綁定/.test(text) && !!bindCard) ||
     (pendingBind && !!bindCard) ||
-    (pure13 && !!bindCard); // 點選單後直接貼 13 碼也可綁
+    (pure13 && !!bindCard);
 
-  if (bindIntent) {
-    Logger.log("LINE bind intent text=[" + text + "] card=[" + bindCard + "] user=" + userId);
-    if (!isValidMemberCardNo_(bindCard)) {
-      if (accessToken) {
-        sendLineUserMessages_(userId, replyToken, accessToken, [{
-          type: "text",
-          text:
-            "請直接傳送「申請會員」，系統會回覆 6 碼並進入審核。\n" +
-            "（舊客仍可用：綁定 您的13碼會員卡號）"
-        }], { preferPush: true });
-        sendLineUserMessages_(userId, "", accessToken, buildLineBindGuideMessages_({ welcome: false }), { preferPush: true });
-      }
-      if (userId) setPendingLineBind_(userId);
-      return { ok: false, type: "bind_help", message: "invalid_card_format", text: text, pending: true };
-    }
-
-    if (!isLineMessagingUserId_(userId)) {
-      Logger.log("LINE bind missing userId");
-      return { ok: false, type: "bind", message: "missing_userId", text: text };
-    }
-    if (!accessToken) {
-      Logger.log("LINE bind missing accessToken");
-      return { ok: false, type: "bind", message: "missing_channel_access_token", memberCardNo: bindCard };
-    }
-
-    var bindRes = bindLineUserIdToMemberCard_(ssActive, userId, bindCard);
+  if (oldBindAttempt) {
+    Logger.log("LINE old bind retired text=[" + text + "] card=[" + bindCard + "] user=" + userId);
     clearPendingLineBind_(userId);
-    var okBind = !(bindRes && bindRes.error);
-    var successMsgs = buildLineBindVerifiedSuccessMessages_(okBind, bindCard, (bindRes && bindRes.message) || "");
-    var tipSend = sendLineUserMessages_(userId, replyToken, accessToken, successMsgs, { preferPush: true });
-    Logger.log("LINE bind done ok=" + okBind + " tipSent=" + !!(tipSend && tipSend.replied) + " msg=" + ((bindRes && bindRes.message) || ""));
+    if (accessToken) {
+      sendLineUserMessages_(userId, replyToken, accessToken, [{
+        type: "text",
+        text: "「綁定會員卡號」功能已停用。\n請直接傳送「申請會員」，系統會回覆 6 碼並進入審核。"
+      }], { preferPush: true });
+    }
     return {
-      ok: okBind,
-      type: "bind",
-      memberCardNo: bindCard,
-      lineUserId: userId,
-      message: (bindRes && bindRes.message) || "OK",
-      replied: !!(tipSend && tipSend.replied)
+      ok: true,
+      type: "bind_retired",
+      message: "use_apply_member",
+      text: text,
+      lineUserId: userId
     };
   }
 
@@ -1679,20 +1656,15 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
   var existingCard = existing ? normalizeMemberCardNo_(existing.memberCardNo) : "";
   var existingStatus = existing ? (String(existing.status || "").trim() || "有效") : "";
 
-  // 已綁過此 LINE：有效只回現況；其餘（含審核中）重發 6 碼、不另開新卡
+  // 已綁過此 LINE：有效 → Flex 提示「已完成會員綁定」＋卡號；其餘（含審核中）重發 6 碼
   if (isValidMemberCardNo_(existingCard)) {
     if (existingStatus === "有效") {
-      sendLineUserMessages_(
+      var boundMsgs = buildLineAlreadyBoundMemberMessages_(existingCard);
+      var boundSend = sendLineUserMessages_(
         userId,
         replyToken,
         accessToken,
-        [{
-          type: "text",
-          text:
-            "您已是正式會員，無需再申請。\n" +
-            "會員卡號：" + existingCard + "\n" +
-            "之後訂單進度會透過官方 LINE 通知您。"
-        }],
+        boundMsgs,
         { preferPush: true }
       );
       return {
@@ -1701,6 +1673,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
         memberCardNo: existingCard,
         status: existingStatus,
         lineUserId: userId,
+        sent: !!(boundSend && boundSend.replied),
         via: meta.via || ""
       };
     }
@@ -1812,6 +1785,99 @@ function buildLineApplyMemberPendingMessages_(otp, memberCardNo, isNew) {
   ];
 }
 
+/**
+ * 舊客／已核准會員再點「会員カード」：Flex 提示框顯示已完成綁定＋會員卡號
+ */
+function buildLineAlreadyBoundMemberMessages_(memberCardNo) {
+  var card = normalizeMemberCardNo_(memberCardNo) || String(memberCardNo || "").trim();
+  var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
+  var bodyContents = [
+    {
+      type: "text",
+      text: "已完成會員綁定",
+      weight: "bold",
+      size: "xl",
+      color: "#111111",
+      wrap: true
+    },
+    {
+      type: "text",
+      text: "您已是正式會員，無需再申請。之後訂單進度會透過官方 LINE 通知您。",
+      size: "sm",
+      color: "#8C8C8C",
+      wrap: true,
+      margin: "md"
+    },
+    {
+      type: "separator",
+      margin: "lg"
+    },
+    {
+      type: "box",
+      layout: "vertical",
+      margin: "lg",
+      spacing: "sm",
+      backgroundColor: "#F6F8F6",
+      cornerRadius: "12px",
+      paddingAll: "14px",
+      contents: [
+        {
+          type: "text",
+          text: "會員卡號",
+          size: "xs",
+          color: "#8C8C8C",
+          wrap: true
+        },
+        {
+          type: "text",
+          text: card || "（無）",
+          weight: "bold",
+          size: "lg",
+          color: "#111111",
+          wrap: true,
+          margin: "sm"
+        }
+      ]
+    }
+  ];
+  if (site && /^https:\/\//i.test(site)) {
+    bodyContents.push({
+      type: "button",
+      style: "primary",
+      color: "#06C755",
+      height: "md",
+      margin: "xl",
+      action: {
+        type: "uri",
+        label: "返回商店",
+        uri: site + "/"
+      }
+    });
+  }
+  return [
+    {
+      type: "text",
+      text: "已完成會員綁定\n會員卡號：" + (card || "（無）")
+    },
+    {
+      type: "flex",
+      altText: "已完成會員綁定｜" + (card || "會員卡"),
+      contents: {
+        type: "bubble",
+        size: getLineFlexBubbleSize_(),
+        body: {
+          type: "box",
+          layout: "vertical",
+          spacing: "sm",
+          paddingAll: "20px",
+          backgroundColor: "#FFFFFF",
+          contents: bodyContents
+        }
+      }
+    }
+  ];
+}
+
 /** 顧客綁定頁網址（請在 CONFIG.publicSiteUrl / lineBindPageUrl 填實際網域） */
 function getLineBindPageUrl_() {
   var custom = String(CONFIG.lineBindPageUrl || "").trim();
@@ -1843,14 +1909,10 @@ function buildLineBindGuideMessages_(opts) {
   opts = opts || {};
   var btnColor = "#06C755";
   var title = "尚未綁定會員資料";
-  var card = normalizeMemberCardNo_(opts.memberCardNo || "");
-  var hasCard = isValidMemberCardNo_(card);
   var desc = String(opts.hint || "").trim() ||
     "請先完成會員申請，才能接收訂單通知";
   var note = "傳「申請會員」→ 收到 6 碼 → 進入審核 → 商家核准";
-  var example = hasCard
-    ? ("將綁定卡號：" + card)
-    : "請直接傳送：申請會員";
+  var example = "請直接傳送：申請會員";
   var btnAction = { type: "message", label: "申請會員", text: "申請會員" };
 
   var flex = {
@@ -2621,10 +2683,9 @@ function fetchLineProfileByAccessToken_(accessToken) {
 }
 
 /**
- * 公開：產生 6 碼綁定驗證碼
- * body: { memberCardNo?, lineAccessToken?, displayName?, createIfMissing? }
- * - 舊客：帶 memberCardNo（可再帶 LINE accessToken）
- * - 新客：LINE 登入後可 createIfMissing=true 自動建卡
+ * 公開：產生 6 碼綁定驗證碼（舊網頁／LIFF 路徑；正式流程請於官方 LINE 傳「申請會員」）
+ * body: { lineAccessToken?, displayName?, createIfMissing? }
+ * 已停用「舊客輸入 13 碼卡號」開碼。
  */
 function createLineBindOtpPublic_(body) {
   body = body || {};
@@ -2633,7 +2694,7 @@ function createLineBindOtpPublic_(body) {
   var profile = accessToken ? fetchLineProfileByAccessToken_(accessToken) : null;
   var loginUserId = profile ? profile.userId : "";
   var displayName = String(body.displayName || (profile && profile.displayName) || "").trim();
-  var card = normalizeMemberCardNo_(body.memberCardNo || body.card || "");
+  var card = ""; // 不再接受舊客手動帶入卡號
   var createIfMissing = body.createIfMissing === true || body.createIfMissing === "true" || body.createIfMissing === 1;
 
   // 已用此 LINE 綁過 → 直接告知，不必再發碼
@@ -2668,7 +2729,7 @@ function createLineBindOtpPublic_(body) {
   if (!isValidMemberCardNo_(card)) {
     return {
       error: true,
-      message: "請輸入店家提供的 13 碼會員卡號，或先以 LINE 登入後建立新會員"
+      message: "請於官方 LINE 傳送「申請會員」完成申請（已停用輸入舊卡號）"
     };
   }
 
