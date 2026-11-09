@@ -55,7 +55,9 @@ var CONFIG = {
   // （舊）LIFF ID：已改為官方 LINE 傳「申請會員」開卡，可不填
   lineLiffId: "",
   // 綁定說明頁完整網址（空白則用 publicSiteUrl + /bind.html）
-  lineBindPageUrl: "https://maaru-jp.github.io/MemberLinking/bind.html"
+  lineBindPageUrl: "https://maaru-jp.github.io/MemberLinking/bind.html",
+  // 官方帳號 Basic ID（含 @，例：@maaru）。空白則部署後由 Bot Info API 自動抓取
+  lineOfficialAccountBasicId: ""
 };
 
 /**
@@ -1785,7 +1787,7 @@ function issueLineApplyMemberOtp_(memberCardNo, lineUserId, displayName) {
  */
 function buildLineApplyMemberPendingMessages_(otp, memberCardNo, isNew) {
   var code = String(otp || "").replace(/\D/g, "").slice(0, 6) || "------";
-  var title = isNew ? "已連結 LINE" : "審核中";
+  var title = isNew ? "申請已送出" : "審核中";
   return [{
     type: "flex",
     altText: title + "｜驗證碼 " + code,
@@ -1954,6 +1956,44 @@ function getLineBindPageUrl_() {
   return "";
 }
 
+/** 取得官方帳號 Basic ID（CONFIG 優先，否則呼叫 Bot Info） */
+function getLineOfficialAccountBasicId_() {
+  var configured = String(CONFIG.lineOfficialAccountBasicId || "").trim();
+  if (configured) {
+    return configured.charAt(0) === "@" ? configured : ("@" + configured.replace(/^@+/, ""));
+  }
+  try {
+    var settings = getLineAutomationSettings_();
+    var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
+    if (!accessToken) return "";
+    var cache = CacheService.getScriptCache();
+    var cacheKey = "line_bot_basic_id";
+    var cached = cache ? String(cache.get(cacheKey) || "").trim() : "";
+    if (cached) return cached.charAt(0) === "@" ? cached : ("@" + cached.replace(/^@+/, ""));
+    var res = UrlFetchApp.fetch("https://api.line.me/v2/bot/info", {
+      method: "get",
+      headers: { Authorization: "Bearer " + accessToken },
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) return "";
+    var data = JSON.parse(res.getContentText() || "{}");
+    var basicId = String(data.basicId || "").trim();
+    if (!basicId) return "";
+    if (basicId.charAt(0) !== "@") basicId = "@" + basicId.replace(/^@+/, "");
+    if (cache) cache.put(cacheKey, basicId, 21600);
+    return basicId;
+  } catch (e) {
+    return "";
+  }
+}
+
+/** 綁定頁「申請會員」深連結：開啟官方 LINE 並預填申請關鍵字 */
+function getLineApplyMemberDeepLink_() {
+  var basicId = getLineOfficialAccountBasicId_();
+  if (!basicId) return "";
+  return "https://line.me/R/oaMessage/" + basicId + "/?text=" + encodeURIComponent("申請會員");
+}
+
 function getLineBindPageConfigPublic_() {
   var projectName = String(CONFIG.memberLinkingProjectName || "MemberLinking").trim() || "MemberLinking";
   var brand = String(CONFIG.lineBrandName || "MAARU").trim() || "MAARU";
@@ -1964,13 +2004,15 @@ function getLineBindPageConfigPublic_() {
     liffId: String(CONFIG.lineLiffId || "").trim(),
     bindPageUrl: getLineBindPageUrl_(),
     publicSiteUrl: String(CONFIG.publicSiteUrl || "").trim(),
-    brandName: brand
+    brandName: brand,
+    lineBasicId: getLineOfficialAccountBasicId_(),
+    applyMemberUrl: getLineApplyMemberDeepLink_()
   };
 }
 
 /**
- * 引導顧客綁定會員的 Flex（傳「申請會員」即可）
- * opts.hint：覆寫說明；opts.memberCardNo：有卡號則附帶說明
+ * 引導顧客綁定會員的 Flex
+ * 按鈕「前往綁定會員」→ 開啟 MemberLinking 綁定頁
  */
 function buildLineBindGuideMessages_(opts) {
   opts = opts || {};
@@ -1978,11 +2020,15 @@ function buildLineBindGuideMessages_(opts) {
   var title = "尚未綁定會員資料";
   var desc = String(opts.hint || "").trim() ||
     "請先完成會員申請，才能接收訂單通知";
-  var btnAction = { type: "message", label: "申請會員", text: "申請會員" };
+  var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
+  var bindUrl = site ? (site + "/") : getLineBindPageUrl_();
+  var btnAction = /^https:\/\//i.test(bindUrl)
+    ? { type: "uri", label: "前往綁定會員", uri: bindUrl }
+    : { type: "message", label: "申請會員", text: "申請會員" };
 
   var flex = {
     type: "flex",
-    altText: "尚未綁定會員資料｜申請會員",
+    altText: "尚未綁定會員資料｜前往綁定會員",
     contents: {
       type: "bubble",
       size: getLineFlexBubbleSize_(),
@@ -2087,7 +2133,7 @@ function buildLineBindVerifiedSuccessMessages_(ok, memberCardNo, detailMsg) {
   var bodyContents = [
     {
       type: "text",
-      text: "已連結 LINE",
+      text: "申請已送出",
       weight: "bold",
       size: "xl",
       color: "#111111",
@@ -2118,7 +2164,7 @@ function buildLineBindVerifiedSuccessMessages_(ok, memberCardNo, detailMsg) {
   }
   return [{
     type: "flex",
-    altText: "已連結 LINE｜等待審核",
+    altText: "申請已送出｜等待審核",
     contents: {
       type: "bubble",
       size: getLineFlexBubbleSize_(),
