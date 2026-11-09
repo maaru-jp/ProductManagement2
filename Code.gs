@@ -1978,8 +1978,6 @@ function buildLineBindGuideMessages_(opts) {
   var title = "尚未綁定會員資料";
   var desc = String(opts.hint || "").trim() ||
     "請先完成會員申請，才能接收訂單通知";
-  var note = "傳「申請會員」→ 收到 6 碼 → 進入審核 → 商家核准";
-  var example = "請直接傳送：申請會員";
   var btnAction = { type: "message", label: "申請會員", text: "申請會員" };
 
   var flex = {
@@ -2010,22 +2008,6 @@ function buildLineBindGuideMessages_(opts) {
             color: "#8C8C8C",
             wrap: true,
             margin: "md"
-          },
-          {
-            type: "text",
-            text: note,
-            size: "sm",
-            color: "#8C8C8C",
-            wrap: true,
-            margin: "sm"
-          },
-          {
-            type: "text",
-            text: example,
-            size: "sm",
-            color: "#8C8C8C",
-            wrap: true,
-            margin: "none"
           },
           {
             type: "button",
