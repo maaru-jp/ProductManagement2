@@ -1289,15 +1289,10 @@ function processLineEvent_(event, settings) {
     var followUser = String((event.source && event.source.userId) || "").trim();
     var followAccess = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
     var isUnblocked = !!(event.follow && event.follow.isUnblocked);
-    // 加好友：只提示點圖文選單；引導卡＋會員綁定文字在點「会員カード」後再送
-    var welcomeMsgs = [
-      {
-        type: "text",
-        text:
-          "歡迎加入！\n" +
-          "請直接傳「申請會員」，系統會回覆 6 碼並進入審核；通過後即可接收訂單通知。"
-      }
-    ];
+    // 加好友：改送 Flex 引導卡（不再另送會員綁定說明文字）
+    var welcomeMsgs = buildLineBindGuideMessages_({
+      hint: "請先完成會員申請，才能接收訂單通知"
+    });
     var followSend = { replied: false, replyMode: "", detail: {} };
     if (!followAccess) {
       Logger.log("LINE follow: 缺少 Channel access token，無法發送歡迎卡");
@@ -1405,10 +1400,13 @@ function processLineEvent_(event, settings) {
     Logger.log("LINE old bind retired text=[" + text + "] card=[" + bindCard + "] user=" + userId);
     clearPendingLineBind_(userId);
     if (accessToken) {
-      sendLineUserMessages_(userId, replyToken, accessToken, [{
-        type: "text",
-        text: "「綁定會員卡號」功能已停用。\n請直接傳送「申請會員」，系統會回覆 6 碼並進入審核。"
-      }], { preferPush: true });
+      sendLineUserMessages_(
+        userId,
+        replyToken,
+        accessToken,
+        buildLineBindGuideMessages_({ hint: "請先完成會員申請，才能接收訂單通知" }),
+        { preferPush: true }
+      );
     }
     return {
       ok: true,
@@ -1742,11 +1740,29 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
   };
 }
 
-/** 產生並快取「申請會員」6 碼（供回覆顯示／對照） */
+/**
+ * 產生並快取「申請會員」6 碼（供回覆顯示／對照）
+ * 同一張卡若尚有未過期碼 → 重用，避免審核中重複點選出現不同驗證碼
+ */
 function issueLineApplyMemberOtp_(memberCardNo, lineUserId, displayName) {
   var card = normalizeMemberCardNo_(memberCardNo);
-  var otp = generateLineBindOtpCode_();
   var cache = lineBindOtpCache_();
+  var reuseKey = isValidMemberCardNo_(card) ? (LINE_BIND_OTP_CARD_PREFIX_ + card) : "";
+
+  if (cache && reuseKey) {
+    var oldCode = String(cache.get(reuseKey) || "").replace(/\D/g, "").slice(0, 6);
+    if (/^\d{6}$/.test(oldCode)) {
+      var oldPayload = cache.get(LINE_BIND_OTP_PREFIX_ + oldCode);
+      if (oldPayload) {
+        // 延長同一組碼的有效時間，讓重查時仍一致
+        cache.put(LINE_BIND_OTP_PREFIX_ + oldCode, oldPayload, LINE_BIND_OTP_TTL_SEC_);
+        cache.put(reuseKey, oldCode, LINE_BIND_OTP_TTL_SEC_);
+        return oldCode;
+      }
+    }
+  }
+
+  var otp = generateLineBindOtpCode_();
   var payload = JSON.stringify({
     memberCardNo: card,
     loginUserId: String(lineUserId || ""),
@@ -1756,33 +1772,90 @@ function issueLineApplyMemberOtp_(memberCardNo, lineUserId, displayName) {
   });
   if (cache) {
     cache.put(LINE_BIND_OTP_PREFIX_ + otp, payload, LINE_BIND_OTP_TTL_SEC_);
-    if (isValidMemberCardNo_(card)) {
-      cache.put(LINE_BIND_OTP_CARD_PREFIX_ + card, otp, LINE_BIND_OTP_TTL_SEC_);
+    if (reuseKey) {
+      cache.put(reuseKey, otp, LINE_BIND_OTP_TTL_SEC_);
     }
   }
   return otp;
 }
 
-/** 申請成功／審核中回覆文案（含 6 碼） */
+/**
+ * 申請成功／審核中回覆（僅 Flex）
+ * 新客首次綁定只先取得 LINE ID，不對顧客顯示會員卡號（卡號待商家核准後再通知）
+ */
 function buildLineApplyMemberPendingMessages_(otp, memberCardNo, isNew) {
-  var code = String(otp || "").replace(/\D/g, "").slice(0, 6);
-  var card = normalizeMemberCardNo_(memberCardNo) || "";
-  var head = isNew ? "已收到會員申請！" : "您的會員申請仍在審核中。";
-  return [
-    {
-      type: "text",
-      text:
-        head + "\n\n" +
-        "您的申請驗證碼：" + (code || "------") + "\n" +
-        "狀態：審核中" +
-        (card ? ("\n會員卡號：" + card) : "") +
-        "\n\n商家核准後會再透過本對話通知您。"
-    },
-    {
-      type: "text",
-      text: "💬 小提醒：我們不會發送擾人廣告，但會用來通知訂單結帳與出貨明細，請確保可以聯繫到您喔！🙏"
+  var code = String(otp || "").replace(/\D/g, "").slice(0, 6) || "------";
+  var title = isNew ? "已連結 LINE" : "審核中";
+  return [{
+    type: "flex",
+    altText: title + "｜驗證碼 " + code,
+    contents: {
+      type: "bubble",
+      size: getLineFlexBubbleSize_(),
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        paddingAll: "20px",
+        backgroundColor: "#FFFFFF",
+        contents: [
+          {
+            type: "text",
+            text: title,
+            weight: "bold",
+            size: "xl",
+            color: "#111111",
+            wrap: true
+          },
+          {
+            type: "text",
+            text: "已取得您的 LINE，申請已送出，請等待商家審核。",
+            size: "sm",
+            color: "#8C8C8C",
+            wrap: true,
+            margin: "md"
+          },
+          {
+            type: "box",
+            layout: "vertical",
+            margin: "lg",
+            spacing: "sm",
+            backgroundColor: "#F6F8F6",
+            cornerRadius: "12px",
+            paddingAll: "14px",
+            contents: [
+              {
+                type: "text",
+                text: "申請驗證碼",
+                size: "xs",
+                color: "#8C8C8C",
+                wrap: true
+              },
+              {
+                type: "text",
+                text: code,
+                weight: "bold",
+                size: "xxl",
+                color: "#111111",
+                wrap: true,
+                margin: "sm",
+                align: "center"
+              },
+              {
+                type: "text",
+                text: "狀態：審核中",
+                size: "sm",
+                color: "#8C8C8C",
+                wrap: true,
+                margin: "md",
+                align: "center"
+              }
+            ]
+          }
+        ]
+      }
     }
-  ];
+  }];
 }
 
 /**
@@ -1854,28 +1927,22 @@ function buildLineAlreadyBoundMemberMessages_(memberCardNo) {
       }
     });
   }
-  return [
-    {
-      type: "text",
-      text: "已完成會員綁定\n會員卡號：" + (card || "（無）")
-    },
-    {
-      type: "flex",
-      altText: "已完成會員綁定｜" + (card || "會員卡"),
-      contents: {
-        type: "bubble",
-        size: getLineFlexBubbleSize_(),
-        body: {
-          type: "box",
-          layout: "vertical",
-          spacing: "sm",
-          paddingAll: "20px",
-          backgroundColor: "#FFFFFF",
-          contents: bodyContents
-        }
+  return [{
+    type: "flex",
+    altText: "已完成會員綁定｜" + (card || "會員卡"),
+    contents: {
+      type: "bubble",
+      size: getLineFlexBubbleSize_(),
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        paddingAll: "20px",
+        backgroundColor: "#FFFFFF",
+        contents: bodyContents
       }
     }
-  ];
+  }];
 }
 
 /** 顧客綁定頁網址（請在 CONFIG.publicSiteUrl / lineBindPageUrl 填實際網域） */
@@ -1976,102 +2043,113 @@ function buildLineBindGuideMessages_(opts) {
   return [flex];
 }
 
-/** 【會員綁定】說明文字（單獨一則，較不易因 Flex 失敗而整批失敗） */
+/** （已停用）會員綁定說明文字：一律改走 Flex，不再送純文字 */
 function buildLineBindGuideTipMessages_() {
-  return [{
-    type: "text",
-    text:
-      "【會員申請】\n" +
-      "1. 在本對話傳送「申請會員」\n" +
-      "2. 系統立刻回覆 6 碼驗證碼\n" +
-      "3. 狀態進入「審核中」\n" +
-      "4. 商家核准後會再通知您"
-  }];
+  return [];
 }
 
 /**
- * 點圖文選單「会員カード」後回覆：引導卡 ＋【會員綁定】說明
+ * 點圖文選單「会員カード」後回覆：僅引導 Flex
  */
 function buildLineBindGuideHelpMessages_(opts) {
-  return buildLineBindGuideMessages_(opts || {}).concat(buildLineBindGuideTipMessages_());
+  return buildLineBindGuideMessages_(opts || {});
 }
 
-/** 綁定結果：文字 + Flex 卡片（較容易在聊天室看到） */
+/** 綁定結果：僅 Flex */
 function buildLineBindResultMessages_(ok, memberCardNo, detailMsg) {
   return buildLineBindVerifiedSuccessMessages_(ok, memberCardNo, detailMsg);
 }
 
 /**
- * 綁定完成回覆（對齊驗證成功版型）：
- * 1) 驗證成功 2) 小提醒 3) 返回商店按鈕
+ * 綁定完成回覆：僅 Flex
+ * 首次綁定只確認已取得 LINE ID，不顯示會員卡號（核准後才通知卡號）
  */
 function buildLineBindVerifiedSuccessMessages_(ok, memberCardNo, detailMsg) {
-  var card = normalizeMemberCardNo_(memberCardNo) || String(memberCardNo || "").trim();
+  var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
   if (!ok) {
     return [{
-      type: "text",
-      text:
-        "綁定失敗\n" +
-        "會員卡號：" + (card || "（無）") + "\n" +
-        String(detailMsg || "請再傳一次「申請會員」後重試")
-    }];
-  }
-
-  var msgs = [
-    {
-      type: "text",
-      text: "✅ 驗證成功！您的帳號已完成綁定，註冊資料已送出，正在等待商家審核。"
-    },
-    {
-      type: "text",
-      text:
-        "💬 小提醒：審核結果會透過此官方帳號通知您。我們不會發送擾人廣告，但會用來通知訂單結帳與出貨明細，請確保可以聯繫到您喔！🙏" +
-        (card ? ("\n\n會員卡號：" + card) : "")
-    }
-  ];
-
-  var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
-  if (site && /^https:\/\//i.test(site)) {
-    msgs.push({
       type: "flex",
-      altText: "點擊下方按鈕返回商店",
+      altText: "綁定失敗",
       contents: {
         type: "bubble",
         size: getLineFlexBubbleSize_(),
         body: {
           type: "box",
           layout: "vertical",
-          spacing: "md",
-          paddingAll: "16px",
+          spacing: "sm",
+          paddingAll: "20px",
           backgroundColor: "#FFFFFF",
           contents: [
             {
               type: "text",
-              text: "點擊下方按鈕返回商店",
+              text: "綁定失敗",
               weight: "bold",
-              size: "md",
+              size: "xl",
               color: "#111111",
-              align: "center",
               wrap: true
             },
             {
-              type: "button",
-              style: "primary",
-              color: "#06C755",
-              height: "md",
-              margin: "lg",
-              action: {
-                type: "uri",
-                label: "🛒 進入商店",
-                uri: site + "/"
-              }
+              type: "text",
+              text: String(detailMsg || "請再傳一次「申請會員」後重試"),
+              size: "sm",
+              color: "#8C8C8C",
+              wrap: true,
+              margin: "md"
             }
           ]
         }
       }
+    }];
+  }
+
+  var bodyContents = [
+    {
+      type: "text",
+      text: "已連結 LINE",
+      weight: "bold",
+      size: "xl",
+      color: "#111111",
+      wrap: true
+    },
+    {
+      type: "text",
+      text: "已取得您的 LINE，申請已送出，請等待商家審核。核准後會再通知您。",
+      size: "sm",
+      color: "#8C8C8C",
+      wrap: true,
+      margin: "md"
+    }
+  ];
+  if (site && /^https:\/\//i.test(site)) {
+    bodyContents.push({
+      type: "button",
+      style: "primary",
+      color: "#06C755",
+      height: "md",
+      margin: "xl",
+      action: {
+        type: "uri",
+        label: "返回商店",
+        uri: site + "/"
+      }
     });
   }
-  return msgs;
+  return [{
+    type: "flex",
+    altText: "已連結 LINE｜等待審核",
+    contents: {
+      type: "bubble",
+      size: getLineFlexBubbleSize_(),
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        paddingAll: "20px",
+        backgroundColor: "#FFFFFF",
+        contents: bodyContents
+      }
+    }
+  }];
 }
 
 function sendLineUserMessages_(userId, replyToken, accessToken, messages, opts) {
@@ -2891,46 +2969,78 @@ function approveMemberBind_(ss, memberSheet, body) {
     if (!tok.error) {
       var brand = String(CONFIG.lineBrandName || "MAARU").trim() || "MAARU";
       var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
-      var msgs = [
+      // 核准後才對顧客公開會員卡號
+      var approveBody = [
         {
           type: "text",
-          text: "✅ 審核通過！您的會員資料已核准，現在可以重新進入商店頁面開始使用。\n會員卡號：" + card
+          text: brand + " 審核通過",
+          weight: "bold",
+          size: "xl",
+          color: "#059669",
+          wrap: true
+        },
+        {
+          type: "text",
+          text: "您的會員資料已核准，現在可以使用商店服務。",
+          size: "sm",
+          color: "#8C8C8C",
+          wrap: true,
+          margin: "md"
+        },
+        {
+          type: "box",
+          layout: "vertical",
+          margin: "lg",
+          spacing: "sm",
+          backgroundColor: "#F6F8F6",
+          cornerRadius: "12px",
+          paddingAll: "14px",
+          contents: [
+            {
+              type: "text",
+              text: "會員卡號",
+              size: "xs",
+              color: "#8C8C8C",
+              wrap: true
+            },
+            {
+              type: "text",
+              text: card,
+              weight: "bold",
+              size: "lg",
+              color: "#111111",
+              wrap: true,
+              margin: "sm"
+            }
+          ]
         }
       ];
       if (site && /^https:\/\//i.test(site)) {
-        msgs.push({
-          type: "flex",
-          altText: "審核通過｜進入商店",
-          contents: {
-            type: "bubble",
-            size: getLineFlexBubbleSize_(),
-            body: {
-              type: "box",
-              layout: "vertical",
-              paddingAll: "16px",
-              spacing: "md",
-              contents: [
-                {
-                  type: "text",
-                  text: brand + " 審核通過",
-                  weight: "bold",
-                  size: "md",
-                  color: "#059669",
-                  align: "center"
-                },
-                {
-                  type: "button",
-                  style: "primary",
-                  color: "#06C755",
-                  height: "md",
-                  margin: "lg",
-                  action: { type: "uri", label: "🛒 進入商店", uri: site + "/" }
-                }
-              ]
-            }
-          }
+        approveBody.push({
+          type: "button",
+          style: "primary",
+          color: "#06C755",
+          height: "md",
+          margin: "xl",
+          action: { type: "uri", label: "進入商店", uri: site + "/" }
         });
       }
+      var msgs = [{
+        type: "flex",
+        altText: "審核通過｜會員卡號 " + card,
+        contents: {
+          type: "bubble",
+          size: getLineFlexBubbleSize_(),
+          body: {
+            type: "box",
+            layout: "vertical",
+            paddingAll: "20px",
+            spacing: "sm",
+            backgroundColor: "#FFFFFF",
+            contents: approveBody
+          }
+        }
+      }];
       var pushRes = pushLineMessages_(userId, tok.accessToken, msgs);
       notified = !!(pushRes && pushRes.ok);
       if (!notified) notifyDetail = String((pushRes && (pushRes.message || pushRes.body)) || "push_failed").slice(0, 160);
@@ -3021,7 +3131,7 @@ function allocateNewMemberCardForLineBind_(ss, displayName, lineUserId) {
       lineId: "",
       lineUserId: "",
       status: "審核中",
-      note: "LINE 申請會員開卡（待審核）",
+      note: "LINE ID 已綁定（待審核；卡號核准後才對顧客顯示）",
       createdAt: now.slice(0, 10),
       updatedAt: now
     }), -1);
