@@ -90,7 +90,15 @@
         var statusCls =
           status === "停用"
             ? "bg-slate-100 text-slate-600"
-            : "bg-emerald-50 text-emerald-700";
+            : status === "審核中"
+              ? "bg-amber-50 text-amber-800"
+              : "bg-emerald-50 text-emerald-700";
+        var approveBtn =
+          status === "審核中"
+            ? '<button type="button" class="text-emerald-700 hover:underline text-xs mr-2 font-medium" data-approve-member="' +
+              escapeHtml(card) +
+              '">核准</button>'
+            : "";
         return (
           "<tr class=\"border-t border-slate-100 hover:bg-slate-50/80\">" +
           '<td class="py-2.5 px-3 font-mono text-xs tracking-wide">' +
@@ -112,6 +120,7 @@
           escapeHtml(status) +
           "</span></td>" +
           '<td class="py-2.5 px-3 text-right whitespace-nowrap">' +
+          approveBtn +
           '<button type="button" class="text-sky-600 hover:underline text-xs mr-2" data-copy-card="' +
           escapeHtml(card) +
           '">複製卡號</button>' +
@@ -148,6 +157,40 @@
         deleteMember(btn.getAttribute("data-del-member"));
       });
     });
+    tbody.querySelectorAll("[data-approve-member]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        approveMember(btn.getAttribute("data-approve-member"));
+      });
+    });
+  }
+
+  function approveMember(card) {
+    card = normalizeCard(card);
+    if (!isValidCard(card)) return;
+    if (!confirm("確定核准會員 " + formatCardDisplay(card) + "？\n核准後會推播 LINE 通知顧客。")) return;
+    if (typeof fetchWrite !== "function") {
+      showMessage("後台寫入 API 未就緒", true);
+      return;
+    }
+    showMessage("正在核准…", false);
+    fetchWrite({ action: "member_approve", memberCardNo: card })
+      .then(function (r) {
+        return r.text().then(function (t) {
+          try {
+            return t ? JSON.parse(t) : {};
+          } catch (e) {
+            return { error: true, message: "回應非 JSON" };
+          }
+        });
+      })
+      .then(function (data) {
+        if (data && data.error) throw new Error(data.message || "核准失敗");
+        showMessage(data.message || "已核准", false);
+        loadMembers(true);
+      })
+      .catch(function (err) {
+        showMessage((err && err.message) || "核准失敗", true);
+      });
   }
 
   function renderConflicts(conflicts) {
