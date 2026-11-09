@@ -1809,7 +1809,7 @@ function buildLineApplyMemberPendingMessages_(otp, memberCardNo, isNew) {
           },
           {
             type: "text",
-            text: "已取得您的 LINE，申請已送出，請等待商家審核。",
+            text: "申請已送出，請等待審核",
             size: "sm",
             color: "#8C8C8C",
             wrap: true,
@@ -2113,7 +2113,7 @@ function buildLineBindVerifiedSuccessMessages_(ok, memberCardNo, detailMsg) {
     },
     {
       type: "text",
-      text: "已取得您的 LINE，申請已送出，請等待商家審核。核准後會再通知您。",
+      text: "申請已送出，請等待審核",
       size: "sm",
       color: "#8C8C8C",
       wrap: true,
