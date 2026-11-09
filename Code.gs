@@ -2066,7 +2066,6 @@ function buildLineApplyMemberPendingMessages_(otp, memberCardNo, isNew) {
  */
 function buildLineAlreadyBoundMemberMessages_(memberCardNo) {
   var card = normalizeMemberCardNo_(memberCardNo) || String(memberCardNo || "").trim();
-  var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
   var bodyContents = [
     {
       type: "text",
@@ -2116,20 +2115,6 @@ function buildLineAlreadyBoundMemberMessages_(memberCardNo) {
       ]
     }
   ];
-  if (site && /^https:\/\//i.test(site)) {
-    bodyContents.push({
-      type: "button",
-      style: "primary",
-      color: "#06C755",
-      height: "md",
-      margin: "xl",
-      action: {
-        type: "uri",
-        label: "返回商店",
-        uri: site + "/"
-      }
-    });
-  }
   return [{
     type: "flex",
     altText: "已完成會員綁定｜" + (card || "會員卡"),
@@ -3197,8 +3182,7 @@ function approveMemberBind_(ss, memberSheet, body) {
     var tok = getLineChannelAccessTokenOrError_();
     if (!tok.error) {
       var brand = String(CONFIG.lineBrandName || "MAARU").trim() || "MAARU";
-      var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
-      // 核准後才對顧客公開會員卡號
+      // 核准後才對顧客公開會員卡號（不附商店按鈕）
       var approveBody = [
         {
           type: "text",
@@ -3244,16 +3228,6 @@ function approveMemberBind_(ss, memberSheet, body) {
           ]
         }
       ];
-      if (site && /^https:\/\//i.test(site)) {
-        approveBody.push({
-          type: "button",
-          style: "primary",
-          color: "#06C755",
-          height: "md",
-          margin: "xl",
-          action: { type: "uri", label: "進入商店", uri: site + "/" }
-        });
-      }
       var msgs = [{
         type: "flex",
         altText: "審核通過｜會員卡號 " + card,
