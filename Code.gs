@@ -136,8 +136,8 @@ function doGet(e) {
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
-        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info", "line_diag", "line_bind_config"],
-        postRoutes: ["customer_order_submit", "line_bind_otp_create", "line_bind_otp_status", "line_bind_member_status", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_line_notify", "order_bind_guide", "line_bind_guide_send", "line_followers_list", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_approve", "member_sync_from_orders", "append", "update", "delete"],
+        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info", "line_diag", "line_bind_config", "line_bind_name_check"],
+        postRoutes: ["customer_order_submit", "line_bind_otp_create", "line_bind_otp_status", "line_bind_member_status", "line_bind_name_check", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_line_notify", "order_bind_guide", "line_bind_guide_send", "line_followers_list", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_approve", "member_sync_from_orders", "append", "update", "delete"],
         lineWebhookHint: "Webhook URL 用 Cloudflare Worker 中繼。顧客於官方 LINE 傳「申請會員」即可開卡進審核並收到 6 碼。",
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
@@ -162,6 +162,9 @@ function doGet(e) {
     }
     if (action === "line_bind_config") {
       return jsonOutput(getLineBindPageConfigPublic_());
+    }
+    if (action === "line_bind_name_check") {
+      return jsonOutput(checkLineBindCommunityNamePublic_(params));
     }
     if (action === "points_balance") {
       return jsonOutput({ error: true, message: "紅利功能已停用", disabled: true });
@@ -223,6 +226,9 @@ function doPost(e) {
     }
     if (actionEarly === "line_bind_member_status") {
       return jsonOutput(getLineBindMemberStatusPublic_(body));
+    }
+    if (actionEarly === "line_bind_name_check") {
+      return jsonOutput(checkLineBindCommunityNamePublic_(body));
     }
     // LINE Messaging API Webhook（官方帳號收到訊息 → 自動建單＋回覆）
     if (body.events && Object.prototype.toString.call(body.events) === "[object Array]") {
@@ -1692,6 +1698,57 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
   var existingCard = existing ? normalizeMemberCardNo_(existing.memberCardNo) : "";
   var existingStatus = existing ? (String(existing.status || "").trim() || "有效") : "";
 
+  // 社群名稱（= 顧客姓名）不可與其他會員重複
+  if (memberName) {
+    var nameConflict = findCommunityNameConflict_(ss, memberName, {
+      lineUserId: userId,
+      memberCardNo: existingCard
+    });
+    if (nameConflict && nameConflict.conflict) {
+      sendLineUserMessages_(userId, replyToken, accessToken, [{
+        type: "flex",
+        altText: "社群名稱已被使用",
+        contents: {
+          type: "bubble",
+          size: getLineFlexBubbleSize_(),
+          body: {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            paddingAll: "20px",
+            backgroundColor: "#FFFFFF",
+            contents: [
+              {
+                type: "text",
+                text: "社群名稱已被使用",
+                weight: "bold",
+                size: "xl",
+                color: "#111111",
+                wrap: true
+              },
+              {
+                type: "text",
+                text: "「" + memberName + "」已有其他會員使用。請回到申請頁更換社群名稱後再送出。",
+                size: "sm",
+                color: "#8C8C8C",
+                wrap: true,
+                margin: "md"
+              }
+            ]
+          }
+        }
+      }], { preferPush: true });
+      return {
+        ok: false,
+        type: "member_apply_name_taken",
+        message: "community_name_taken",
+        communityName: memberName,
+        lineUserId: userId,
+        via: meta.via || ""
+      };
+    }
+  }
+
   // 已綁過此 LINE：有效 → Flex 提示「已完成會員綁定」＋卡號；其餘（含審核中）重發 6 碼
   if (isValidMemberCardNo_(existingCard)) {
     if (existingStatus === "有效") {
@@ -1797,6 +1854,76 @@ function buildLineApplyMemberNote_(pickupStore) {
   var note = "LINE 申請會員（待審核）";
   if (store) note += "｜取貨門市：" + store;
   return note;
+}
+
+/** 社群名稱比對鍵（忽略空白／大小寫）＝後台顧客姓名 */
+function normalizeCommunityNameKey_(name) {
+  return String(name || "").trim().replace(/\s+/g, "").toLowerCase();
+}
+
+/**
+ * 檢查社群名稱是否已被其他會員占用
+ * opts.lineUserId / opts.memberCardNo：排除自己
+ */
+function findCommunityNameConflict_(ss, communityName, opts) {
+  opts = opts || {};
+  var key = normalizeCommunityNameKey_(communityName);
+  if (!key) return { conflict: false };
+  var selfUserId = String(opts.lineUserId || "").trim();
+  var selfCard = normalizeMemberCardNo_(opts.memberCardNo || "");
+  try {
+    var sheet = getMemberSheet(ss || SpreadsheetApp.getActiveSpreadsheet(), { required: false });
+    if (!sheet) return { conflict: false };
+    var members = getMembers(sheet) || [];
+    for (var i = 0; i < members.length; i++) {
+      var m = members[i] || {};
+      if (normalizeCommunityNameKey_(m.customerName) !== key) continue;
+      var mc = normalizeMemberCardNo_(m.memberCardNo);
+      var mu = String(m.lineUserId || "").trim();
+      if (!isLineMessagingUserId_(mu) && isLineMessagingUserId_(m.lineId)) {
+        mu = String(m.lineId || "").trim();
+      }
+      if (selfCard && mc === selfCard) continue;
+      if (selfUserId && isLineMessagingUserId_(selfUserId) && mu === selfUserId) continue;
+      return {
+        conflict: true,
+        memberCardNo: mc,
+        customerName: String(m.customerName || "").trim(),
+        status: String(m.status || "").trim()
+      };
+    }
+  } catch (e) {
+    Logger.log("findCommunityNameConflict_: " + e);
+  }
+  return { conflict: false };
+}
+
+/** 公開：申請前檢查社群名稱是否可用（對應後台顧客姓名） */
+function checkLineBindCommunityNamePublic_(body) {
+  body = body || {};
+  var name = String(body.communityName || body.name || body.customerName || "").trim();
+  if (!name) {
+    return { error: true, available: false, message: "請填寫社群名稱" };
+  }
+  if (name.length > 40) {
+    return { error: true, available: false, message: "社群名稱請勿超過 40 字" };
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var conflict = findCommunityNameConflict_(ss, name, {});
+  if (conflict && conflict.conflict) {
+    return {
+      error: false,
+      available: false,
+      message: "此社群名稱已被使用，請更換後再申請",
+      communityName: name
+    };
+  }
+  return {
+    error: false,
+    available: true,
+    message: "OK",
+    communityName: name
+  };
 }
 
 /** 更新申請中的社群名稱／備註（門市） */
