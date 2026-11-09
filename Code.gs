@@ -48,8 +48,12 @@ var CONFIG = {
   // 非空時覆寫該風格的主色（例：#7A9E7E）
   lineBrandColor: "",
   lineBrandLogoUrl: "",
-  // 顧客官網網址（Flex「查看我的訂單」按鈕；例：https://你的網域）
-  publicSiteUrl: ""
+  // 顧客官網網址（Flex「查看我的訂單」／綁定成功「進入商店」；例：https://你的網域）
+  publicSiteUrl: "https://maaru-jp.github.io/ProductManagement2",
+  // LIFF ID（會員綁定頁 LINE 登入用；於 LINE Developers → LIFF 建立後填入，例：1234567890-abcdefgh）
+  lineLiffId: "",
+  // 綁定頁完整網址（空白則用 publicSiteUrl + /bind.html）
+  lineBindPageUrl: "https://maaru-jp.github.io/ProductManagement2/bind.html"
 };
 
 /**
@@ -128,9 +132,9 @@ function doGet(e) {
         spreadsheetName: ssMeta.getName(),
         orderSheetName: (CONFIG.orderSheetName || "歷史訂單"),
         pointsSheetName: (CONFIG.pointsSheetName || "紅利點數"),
-        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info", "line_diag"],
-        postRoutes: ["customer_order_submit", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_line_notify", "order_bind_guide", "line_bind_guide_send", "line_followers_list", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_sync_from_orders", "append", "update", "delete"],
-        lineWebhookHint: "Webhook URL 用 Cloudflare Worker 中繼。顧客傳「我要綁定」或「綁定 13碼」可綁定。後台可直接發送綁定引導卡／進度推播。",
+        routes: ["points_balance", "customer_orders", "order_status", "orderId_legacy", "sheet1_progress", "spreadsheet_info", "line_diag", "line_bind_config"],
+        postRoutes: ["customer_order_submit", "line_bind_otp_create", "line_bind_otp_status", "line_bind_member_status", "line_settings_get", "line_settings_save", "line_webhook", "line_test_order", "order_line_notify", "order_bind_guide", "line_bind_guide_send", "line_followers_list", "order_list", "order_get", "order_upsert", "order_delete", "order_sheet_repair", "points_sync", "points_list", "points_sheet_repair", "points_merge_duplicate_earn", "points_purge_card", "member_list", "member_upsert", "member_delete", "member_approve", "member_sync_from_orders", "append", "update", "delete"],
+        lineWebhookHint: "Webhook URL 用 Cloudflare Worker 中繼。顧客於綁定頁 LINE 登入取得 6 碼，貼到官方 LINE 完成綁定；亦可「綁定 13碼」。",
         memberSheetName: (CONFIG.memberSheetName || "會員名單"),
         memberSpreadsheetId: (CONFIG.memberSpreadsheetId || ""),
         memberSpreadsheetName: getMemberSpreadsheetMeta_().name
@@ -151,6 +155,9 @@ function doGet(e) {
         queryWebhookTokenMatch: !!(lineDiag.webhookToken && String(params.webhook_token || params.line_token || "").trim() === lineDiag.webhookToken),
         message: "OK"
       });
+    }
+    if (action === "line_bind_config") {
+      return jsonOutput(getLineBindPageConfigPublic_());
     }
     if (action === "points_balance") {
       return jsonOutput({ error: true, message: "紅利功能已停用", disabled: true });
@@ -202,6 +209,16 @@ function doPost(e) {
     // 顧客官網直接送單：不需後台 token（仍做欄位驗證與頻率限制）
     if (actionEarly === "customer_order_submit") {
       return jsonOutput(submitCustomerOrderPublic_(body));
+    }
+    // 會員綁定：官網／LIFF 產生 6 碼驗證碼（公開）
+    if (actionEarly === "line_bind_otp_create") {
+      return jsonOutput(createLineBindOtpPublic_(body));
+    }
+    if (actionEarly === "line_bind_otp_status") {
+      return jsonOutput(getLineBindOtpStatusPublic_(body));
+    }
+    if (actionEarly === "line_bind_member_status") {
+      return jsonOutput(getLineBindMemberStatusPublic_(body));
     }
     // LINE Messaging API Webhook（官方帳號收到訊息 → 自動建單＋回覆）
     if (body.events && Object.prototype.toString.call(body.events) === "[object Array]") {
@@ -327,7 +344,7 @@ function doPost(e) {
     }
 
     // 會員名單：list / upsert / delete / sync
-    if (action === "member_list" || action === "member_upsert" || action === "member_delete" || action === "member_sync_from_orders" || action === "points_purge_card") {
+    if (action === "member_list" || action === "member_upsert" || action === "member_delete" || action === "member_sync_from_orders" || action === "points_purge_card" || action === "member_approve") {
       var memberSheet = null;
       try {
         memberSheet = getMemberSheet(ss);
@@ -363,6 +380,9 @@ function doPost(e) {
         out.memberSpreadsheetName = getMemberSpreadsheetMeta_().name;
         out.memberSpreadsheetUrl = getMemberSpreadsheetMeta_().url;
         return jsonOutput(out);
+      }
+      if (action === "member_approve") {
+        return jsonOutput(approveMemberBind_(ss, memberSheet, body));
       }
       if (action === "member_sync_from_orders") {
         var syncResult = syncMembersFromOrders_(ss);
@@ -910,7 +930,7 @@ function defaultLineNotifyTemplates_() {
   return {
     order_created: defaultLineOrderCreatedTemplate_(),
     order_merged: defaultLineOrderMergedTemplate_(),
-    confirm_pay: "匯款完成後請回覆，謝謝！",
+    confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
       "您好：\n\n" +
@@ -1042,7 +1062,7 @@ function getLineAutomationSettingsPublic_(includeSecrets) {
     notifyTemplates: s.notifyTemplates,
     notifyTypes: LINE_NOTIFY_TYPES_.slice(),
     messageTemplateKeys: LINE_MSG_TEMPLATE_KEYS_.slice(),
-    bindHint: "顧客請先加官方帳號為好友，傳：綁定 13碼會員卡號",
+    bindHint: "顧客至綁定頁 LINE 登入取得 6 碼，貼到官方 LINE 完成綁定（備援：綁定 13碼）",
     message: "OK"
   };
 }
@@ -1209,6 +1229,7 @@ function isLineBindRelatedEvent_(event) {
     var t = String(event.message.text || "").trim();
     if (isLineMemberCardKeyword_(t)) return true;
     if (/^綁定/.test(t) || /^bind\b/i.test(t) || (/綁定/.test(t) && !!extractMemberCardFromBindText_(t))) return true;
+    if (extractLineBindOtpFromText_(t)) return true;
     if (/^\d{13}$/.test(t.replace(/\D/g, "")) && t.replace(/\D/g, "").length === 13) return true;
   }
   return false;
@@ -1324,7 +1345,46 @@ function processLineEvent_(event, settings) {
   var accessToken = String(settings.channelAccessToken || "").trim().replace(/^Bearer\s+/i, "");
   var ssActive = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 先處理「綁定 卡號」（優先於会員カード關鍵字，避免誤判）
+  // 先處理「6 碼驗證碼」綁定（官網／LIFF LINE 登入後產生）
+  var otpCode = extractLineBindOtpFromText_(text);
+  if (otpCode) {
+    Logger.log("LINE bind otp intent code=[" + otpCode + "] user=" + userId);
+    if (!isLineMessagingUserId_(userId)) {
+      return { ok: false, type: "bind_otp", message: "missing_userId", text: text };
+    }
+    if (!accessToken) {
+      return { ok: false, type: "bind_otp", message: "missing_channel_access_token" };
+    }
+    var otpConsume = consumeLineBindOtp_(otpCode, userId);
+    clearPendingLineBind_(userId);
+    if (otpConsume && otpConsume.error) {
+      sendLineUserMessages_(userId, replyToken, accessToken, [{
+        type: "text",
+        text: String(otpConsume.message || "驗證碼無效或已過期，請回到綁定頁重新取得 6 碼後再貼上。")
+      }], { preferPush: true });
+      return {
+        ok: false,
+        type: "bind_otp",
+        message: otpConsume.message || "otp_invalid",
+        lineUserId: userId
+      };
+    }
+    var otpCard = normalizeMemberCardNo_(otpConsume.memberCardNo);
+    var otpBindRes = bindLineUserIdToMemberCard_(ssActive, userId, otpCard);
+    var otpOk = !(otpBindRes && otpBindRes.error);
+    var otpMsgs = buildLineBindVerifiedSuccessMessages_(otpOk, otpCard, (otpBindRes && otpBindRes.message) || "");
+    var otpSend = sendLineUserMessages_(userId, replyToken, accessToken, otpMsgs, { preferPush: true });
+    return {
+      ok: otpOk,
+      type: "bind_otp",
+      memberCardNo: otpCard,
+      lineUserId: userId,
+      message: (otpBindRes && otpBindRes.message) || "OK",
+      replied: !!(otpSend && otpSend.replied)
+    };
+  }
+
+  // 再處理「綁定 卡號」（13 碼備援；優先於会員カード關鍵字）
   var pendingBind = hasPendingLineBind_(userId);
   var bindCard = extractMemberCardFromBindText_(text);
   var pure13 = /^\d{13}$/.test(String(text || "").replace(/[０-９]/g, function(c) {
@@ -1345,10 +1405,8 @@ function processLineEvent_(event, settings) {
         sendLineUserMessages_(userId, replyToken, accessToken, [{
           type: "text",
           text:
-            "綁定格式不正確。\n" +
-            "請傳：綁定 您的13碼會員卡號\n" +
-            "範例：綁定 2026092312345\n" +
-            "（「綁定」與卡號中間請空一格）"
+            "請先到綁定頁用 LINE 登入取得 6 碼驗證碼，直接貼到此對話即可完成綁定。\n" +
+            "（舊方式仍可用：綁定 您的13碼會員卡號）"
         }], { preferPush: true });
         sendLineUserMessages_(userId, "", accessToken, buildLineBindGuideMessages_({ welcome: false }), { preferPush: true });
       }
@@ -1367,20 +1425,9 @@ function processLineEvent_(event, settings) {
 
     var bindRes = bindLineUserIdToMemberCard_(ssActive, userId, bindCard);
     clearPendingLineBind_(userId);
-    // 文字與 Flex 分送：文字一定先到，避免 Flex 失敗導致完全無回覆
     var okBind = !(bindRes && bindRes.error);
-    var plain =
-      (okBind ? "綁定成功！\n" : "綁定失敗\n") +
-      "會員卡號：" + bindCard + "\n" +
-      (okBind
-        ? "已連結此官方帳號，之後可接收訂單進度通知。"
-        : String((bindRes && bindRes.message) || "請確認卡號後再試"));
-    var tipSend = sendLineUserMessages_(userId, replyToken, accessToken, [{ type: "text", text: plain }], { preferPush: true });
-    try {
-      sendLineUserMessages_(userId, "", accessToken, buildLineBindResultMessages_(okBind, bindCard, (bindRes && bindRes.message) || "").slice(1), { preferPush: true });
-    } catch (eFlexBind) {
-      Logger.log("LINE bind flex skipped: " + eFlexBind);
-    }
+    var successMsgs = buildLineBindVerifiedSuccessMessages_(okBind, bindCard, (bindRes && bindRes.message) || "");
+    var tipSend = sendLineUserMessages_(userId, replyToken, accessToken, successMsgs, { preferPush: true });
     Logger.log("LINE bind done ok=" + okBind + " tipSent=" + !!(tipSend && tipSend.replied) + " msg=" + ((bindRes && bindRes.message) || ""));
     return {
       ok: okBind,
@@ -1683,9 +1730,29 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
   };
 }
 
+/** 顧客綁定頁網址 */
+function getLineBindPageUrl_() {
+  var custom = String(CONFIG.lineBindPageUrl || "").trim();
+  if (custom && /^https:\/\//i.test(custom)) return custom.replace(/\/$/, "");
+  var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
+  if (site && /^https:\/\//i.test(site)) return site + "/bind.html";
+  return "https://maaru-jp.github.io/ProductManagement2/bind.html";
+}
+
+function getLineBindPageConfigPublic_() {
+  return {
+    ok: true,
+    error: false,
+    liffId: String(CONFIG.lineLiffId || "").trim(),
+    bindPageUrl: getLineBindPageUrl_(),
+    publicSiteUrl: String(CONFIG.publicSiteUrl || "").trim(),
+    brandName: String(CONFIG.lineBrandName || "MAARU").trim() || "MAARU"
+  };
+}
+
 /**
- * 引導顧客綁定會員的 Flex（postback 按鈕，對齊圖文選單流程）
- * opts.hint：覆寫說明；opts.memberCardNo：有卡號則按鈕一鍵 postback 綁定
+ * 引導顧客綁定會員的 Flex（導向綁定頁／6 碼流程）
+ * opts.hint：覆寫說明；opts.memberCardNo：有卡號則附帶進綁定頁
  */
 function buildLineBindGuideMessages_(opts) {
   opts = opts || {};
@@ -1695,25 +1762,16 @@ function buildLineBindGuideMessages_(opts) {
   var hasCard = isValidMemberCardNo_(card);
   var desc = String(opts.hint || "").trim() ||
     "請先完成會員綁定，才能接收訂單通知";
-  var note = hasCard
-    ? ("備註：點下方按鈕即可綁定卡號 " + card)
-    : "備註：「綁定」與 13 碼會員卡號中間請空一格";
+  var note = "LINE 登入 → 取得 6 碼 → 貼回本對話 → 等待商家審核";
   var example = hasCard
-    ? ("將綁定：" + card)
-    : "範例：綁定 2026092312345";
+    ? ("將綁定卡號：" + card)
+    : "請直接貼上綁定頁顯示的 6 碼數字";
+  var bindUrl = getLineBindPageUrl_();
+  if (hasCard) bindUrl += (bindUrl.indexOf("?") >= 0 ? "&" : "?") + "card=" + encodeURIComponent(card);
 
-  // 官方後台圖文選單多半無 Postback → Flex 按鈕用「訊息」自動帶出文字
-  var btnAction = hasCard
-    ? {
-        type: "message",
-        label: "前往綁定會員",
-        text: "綁定 " + card
-      }
-    : {
-        type: "message",
-        label: "前往綁定會員",
-        text: "會員綁定"
-      };
+  var btnAction = /^https:\/\//i.test(bindUrl)
+    ? { type: "uri", label: "前往綁定會員", uri: bindUrl }
+    : { type: "message", label: "前往綁定會員", text: "會員綁定" };
 
   var flex = {
     type: "flex",
@@ -1778,18 +1836,17 @@ function buildLineBindGuideMessages_(opts) {
 
 /** 【會員綁定】說明文字（單獨一則，較不易因 Flex 失敗而整批失敗） */
 function buildLineBindGuideTipMessages_() {
+  var bindUrl = getLineBindPageUrl_();
   return [{
     type: "text",
     text:
       "【會員綁定】\n" +
-      "請依下列格式傳送（可複製後改卡號）：\n" +
-      "綁定 您的13碼會員卡號\n" +
+      "1. 開啟綁定頁並用 LINE 登入\n" +
+      "2. 系統顯示 6 碼驗證碼，點複製\n" +
+      "3. 貼回本對話完成 LINE 綁定\n" +
+      "4. 進入「審核中」，通過後會再通知您\n" +
       "\n" +
-      "範例：\n" +
-      "綁定 2026092312345\n" +
-      "\n" +
-      "也可直接只傳 13 碼數字。\n" +
-      "（「綁定」與卡號中間請空一格）"
+      "綁定頁：\n" + bindUrl
   }];
 }
 
@@ -1802,15 +1859,45 @@ function buildLineBindGuideHelpMessages_(opts) {
 
 /** 綁定結果：文字 + Flex 卡片（較容易在聊天室看到） */
 function buildLineBindResultMessages_(ok, memberCardNo, detailMsg) {
-  var card = String(memberCardNo || "").trim();
-  var title = ok ? "綁定成功" : "綁定失敗";
-  var color = ok ? "#059669" : "#E11D48";
-  var bodyText = ok
-    ? ("會員卡號：" + card + "\n之後店家更新訂單進度時，會透過官方 LINE 通知您。")
-    : ("會員卡號：" + (card || "（無）") + "\n" + (detailMsg || "請確認卡號後再試"));
-  var flex = {
+  return buildLineBindVerifiedSuccessMessages_(ok, memberCardNo, detailMsg);
+}
+
+/**
+ * 綁定完成回覆（對齊驗證成功版型）：
+ * 1) 驗證成功 2) 小提醒 3) 返回商店按鈕
+ */
+function buildLineBindVerifiedSuccessMessages_(ok, memberCardNo, detailMsg) {
+  var card = normalizeMemberCardNo_(memberCardNo) || String(memberCardNo || "").trim();
+  if (!ok) {
+    return [{
+      type: "text",
+      text:
+        "綁定失敗\n" +
+        "會員卡號：" + (card || "（無）") + "\n" +
+        String(detailMsg || "請回到綁定頁重新取得 6 碼後再試")
+    }];
+  }
+
+  var msgs = [
+    {
+      type: "text",
+      text: "✅ 驗證成功！您的帳號已完成綁定，註冊資料已送出，正在等待商家審核。"
+    },
+    {
+      type: "text",
+      text:
+        "💬 小提醒：審核結果會透過此官方帳號通知您。我們不會發送擾人廣告，但會用來通知訂單結帳與出貨明細，請確保可以聯繫到您喔！🙏" +
+        (card ? ("\n\n會員卡號：" + card) : "")
+    }
+  ];
+
+  var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
+  if (!site || !/^https:\/\//i.test(site)) {
+    site = "https://maaru-jp.github.io/ProductManagement2";
+  }
+  msgs.push({
     type: "flex",
-    altText: title + (card ? ("｜" + card) : ""),
+    altText: "點擊下方按鈕返回商店",
     contents: {
       type: "bubble",
       size: getLineFlexBubbleSize_(),
@@ -1818,38 +1905,35 @@ function buildLineBindResultMessages_(ok, memberCardNo, detailMsg) {
         type: "box",
         layout: "vertical",
         spacing: "md",
-        paddingAll: "14px",
-        cornerRadius: "20px",
+        paddingAll: "16px",
         backgroundColor: "#FFFFFF",
         contents: [
-          { type: "text", text: title, weight: "bold", size: "lg", color: color },
-          { type: "separator" },
-          {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            contents: [
-              { type: "text", text: "會員卡號", size: "xs", color: "#94A3B8" },
-              { type: "text", text: card || "—", size: "md", weight: "bold", wrap: true }
-            ]
-          },
           {
             type: "text",
-            text: ok
-              ? "已連結此官方帳號。後台訂單管理可一鍵推播進度通知。"
-              : String(detailMsg || "請確認 13 碼卡號後再傳一次。"),
-            size: "sm",
-            color: "#475569",
+            text: "點擊下方按鈕返回商店",
+            weight: "bold",
+            size: "md",
+            color: "#111111",
+            align: "center",
             wrap: true
+          },
+          {
+            type: "button",
+            style: "primary",
+            color: "#06C755",
+            height: "md",
+            margin: "lg",
+            action: {
+              type: "uri",
+              label: "🛒 進入商店",
+              uri: site + "/"
+            }
           }
         ]
       }
     }
-  };
-  return [
-    { type: "text", text: title + "！\n" + bodyText },
-    flex
-  ];
+  });
+  return msgs;
 }
 
 function sendLineUserMessages_(userId, replyToken, accessToken, messages, opts) {
@@ -2389,6 +2473,426 @@ function pushLineMessages_(userId, accessToken, messages) {
   }
 }
 
+var LINE_BIND_OTP_TTL_SEC_ = 10 * 60;
+var LINE_BIND_OTP_PREFIX_ = "line_bind_otp_";
+var LINE_BIND_OTP_CARD_PREFIX_ = "line_bind_otp_card_";
+
+/** 從顧客訊息抽出 6 碼驗證碼（勿與 13 碼卡號混淆） */
+function extractLineBindOtpFromText_(text) {
+  var raw = String(text || "").replace(/[０-９]/g, function(c) {
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  }).trim();
+  if (!raw) return "";
+  var compact = raw.replace(/\s+/g, "");
+  if (/^\d{13}$/.test(compact)) return "";
+  var m = compact.match(/^(?:綁定|bind|驗證|驗證碼|otp)[:：]?(\d{6})$/i);
+  if (m) return m[1];
+  if (/^\d{6}$/.test(compact)) return compact;
+  m = raw.match(/(?:綁定|bind|驗證|驗證碼|otp)\s*[:：]?\s*([0-9]{6})\b/i);
+  return m ? m[1] : "";
+}
+
+function lineBindOtpCache_() {
+  try {
+    return CacheService.getScriptCache();
+  } catch (e) {
+    return null;
+  }
+}
+
+function generateLineBindOtpCode_() {
+  var cache = lineBindOtpCache_();
+  for (var i = 0; i < 30; i++) {
+    var n = Utilities.getUuid().replace(/\D/g, "");
+    if (n.length < 6) n = String(Math.floor(Math.random() * 1000000));
+    var code = ("000000" + n).slice(-6);
+    if (code === "000000") continue;
+    var key = LINE_BIND_OTP_PREFIX_ + code;
+    if (cache) {
+      var hit = cache.get(key);
+      if (hit) continue;
+    }
+    return code;
+  }
+  return ("000000" + String(Math.floor(Math.random() * 1000000))).slice(-6);
+}
+
+function fetchLineProfileByAccessToken_(accessToken) {
+  accessToken = String(accessToken || "").trim().replace(/^Bearer\s+/i, "");
+  if (!accessToken) return null;
+  try {
+    var res = UrlFetchApp.fetch("https://api.line.me/v2/profile", {
+      method: "get",
+      headers: { Authorization: "Bearer " + accessToken },
+      muteHttpExceptions: true,
+      followRedirects: true
+    });
+    var code = res.getResponseCode();
+    var body = {};
+    try { body = JSON.parse(res.getContentText() || "{}"); } catch (e1) { body = {}; }
+    if (code < 200 || code >= 300) return null;
+    var uid = String(body.userId || "").trim();
+    if (!isLineMessagingUserId_(uid)) return null;
+    return {
+      userId: uid,
+      displayName: String(body.displayName || "").trim(),
+      pictureUrl: String(body.pictureUrl || "").trim()
+    };
+  } catch (e) {
+    Logger.log("fetchLineProfileByAccessToken_: " + e);
+    return null;
+  }
+}
+
+/**
+ * 公開：產生 6 碼綁定驗證碼
+ * body: { memberCardNo?, lineAccessToken?, displayName?, createIfMissing? }
+ * - 舊客：帶 memberCardNo（可再帶 LINE accessToken）
+ * - 新客：LINE 登入後可 createIfMissing=true 自動建卡
+ */
+function createLineBindOtpPublic_(body) {
+  body = body || {};
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var accessToken = String(body.lineAccessToken || body.accessToken || "").trim();
+  var profile = accessToken ? fetchLineProfileByAccessToken_(accessToken) : null;
+  var loginUserId = profile ? profile.userId : "";
+  var displayName = String(body.displayName || (profile && profile.displayName) || "").trim();
+  var card = normalizeMemberCardNo_(body.memberCardNo || body.card || "");
+  var createIfMissing = body.createIfMissing === true || body.createIfMissing === "true" || body.createIfMissing === 1;
+
+  // 已用此 LINE 綁過 → 直接告知，不必再發碼
+  if (loginUserId) {
+    var already = getMemberRecordByLineUserId_(ss, loginUserId);
+    var alreadyCard = already ? normalizeMemberCardNo_(already.memberCardNo) : "";
+    if (isValidMemberCardNo_(alreadyCard)) {
+      var alreadyStatus = String(already.status || "有效").trim() || "有效";
+      return {
+        error: false,
+        alreadyBound: true,
+        memberCardNo: alreadyCard,
+        status: alreadyStatus,
+        pendingReview: alreadyStatus === "審核中",
+        message: alreadyStatus === "審核中" ? "已綁定，等待商家審核" : "此 LINE 已完成綁定",
+        otp: "",
+        expiresInSec: 0
+      };
+    }
+  }
+
+  var isNewMember = false;
+  if (!isValidMemberCardNo_(card) && createIfMissing && loginUserId) {
+    try {
+      card = allocateNewMemberCardForLineBind_(ss, displayName, loginUserId);
+      isNewMember = true;
+    } catch (eAlloc) {
+      return { error: true, message: "無法建立會員卡號：" + String(eAlloc && eAlloc.message ? eAlloc.message : eAlloc) };
+    }
+  }
+
+  if (!isValidMemberCardNo_(card)) {
+    return {
+      error: true,
+      message: "請輸入店家提供的 13 碼會員卡號，或先以 LINE 登入後建立新會員"
+    };
+  }
+
+  // 頻率限制（同卡／同 LINE 每分鐘最多 5 次）
+  var cache = lineBindOtpCache_();
+  var rateKey = "line_otp_rate_" + (loginUserId || card);
+  if (cache) {
+    var rate = Number(cache.get(rateKey) || "0") || 0;
+    if (rate >= 5) {
+      return { error: true, message: "驗證碼請求太頻繁，請稍後再試" };
+    }
+    cache.put(rateKey, String(rate + 1), 60);
+  }
+
+  // 同卡若尚有未過期碼，重用（方便顧客重複開啟頁面）
+  var reuseKey = LINE_BIND_OTP_CARD_PREFIX_ + card;
+  if (cache) {
+    var oldCode = cache.get(reuseKey);
+    if (oldCode && /^\d{6}$/.test(oldCode)) {
+      var oldPayload = cache.get(LINE_BIND_OTP_PREFIX_ + oldCode);
+      if (oldPayload) {
+        return {
+          error: false,
+          otp: oldCode,
+          memberCardNo: card,
+          isNewMember: !!isNewMember,
+          expiresInSec: LINE_BIND_OTP_TTL_SEC_,
+          alreadyBound: false,
+          message: "OK",
+          bindHint: "請複製 6 碼貼到官方 LINE 完成綁定，接著等待商家審核"
+        };
+      }
+    }
+  }
+
+  var otp = generateLineBindOtpCode_();
+  var payload = JSON.stringify({
+    memberCardNo: card,
+    loginUserId: loginUserId || "",
+    displayName: displayName || "",
+    createdAt: new Date().getTime()
+  });
+  if (cache) {
+    cache.put(LINE_BIND_OTP_PREFIX_ + otp, payload, LINE_BIND_OTP_TTL_SEC_);
+    cache.put(reuseKey, otp, LINE_BIND_OTP_TTL_SEC_);
+  } else {
+    PropertiesService.getScriptProperties().setProperty(LINE_BIND_OTP_PREFIX_ + otp, payload);
+  }
+
+  return {
+    error: false,
+    otp: otp,
+    memberCardNo: card,
+    isNewMember: !!isNewMember,
+    expiresInSec: LINE_BIND_OTP_TTL_SEC_,
+    alreadyBound: false,
+    message: "OK",
+    bindHint: "請複製 6 碼貼到官方 LINE 完成綁定，接著等待商家審核"
+  };
+}
+
+function getLineBindOtpStatusPublic_(body) {
+  body = body || {};
+  var otp = String(body.otp || body.code || "").replace(/\D/g, "").slice(0, 6);
+  if (!/^\d{6}$/.test(otp)) return { error: true, message: "驗證碼格式錯誤", active: false };
+  var cache = lineBindOtpCache_();
+  var raw = cache ? cache.get(LINE_BIND_OTP_PREFIX_ + otp) : "";
+  if (!raw) {
+    try {
+      raw = PropertiesService.getScriptProperties().getProperty(LINE_BIND_OTP_PREFIX_ + otp) || "";
+    } catch (e) { raw = ""; }
+  }
+  if (!raw) return { error: false, active: false, message: "驗證碼不存在或已使用／過期" };
+  var obj = {};
+  try { obj = JSON.parse(raw); } catch (e2) { obj = {}; }
+  return {
+    error: false,
+    active: true,
+    memberCardNo: normalizeMemberCardNo_(obj.memberCardNo),
+    expiresInSec: LINE_BIND_OTP_TTL_SEC_,
+    message: "OK"
+  };
+}
+
+/**
+ * 公開：查詢綁定／審核狀態
+ * body: { lineAccessToken? , memberCardNo? }
+ */
+function getLineBindMemberStatusPublic_(body) {
+  body = body || {};
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var accessToken = String(body.lineAccessToken || body.accessToken || "").trim();
+  var card = normalizeMemberCardNo_(body.memberCardNo || body.card || "");
+  var member = null;
+  if (accessToken) {
+    var profile = fetchLineProfileByAccessToken_(accessToken);
+    if (profile && profile.userId) {
+      member = getMemberRecordByLineUserId_(ss, profile.userId);
+    }
+  }
+  if (!member && isValidMemberCardNo_(card)) {
+    member = getMemberRecordByCard_(ss, card);
+  }
+  if (!member) {
+    return {
+      error: false,
+      bound: false,
+      pendingReview: false,
+      status: "",
+      memberCardNo: card || "",
+      message: "尚未綁定"
+    };
+  }
+  var st = String(member.status || "有效").trim() || "有效";
+  var uid = String(member.lineUserId || member.lineId || "").trim();
+  var bound = isLineMessagingUserId_(uid);
+  return {
+    error: false,
+    bound: bound,
+    pendingReview: st === "審核中",
+    approved: st === "有效",
+    status: st,
+    memberCardNo: normalizeMemberCardNo_(member.memberCardNo) || card,
+    customerName: String(member.customerName || "").trim(),
+    message: st === "審核中" ? "審核中" : (st === "有效" ? "已通過審核" : st)
+  };
+}
+
+/** 後台：核准 LINE 綁定會員（審核中 → 有效）並推播通知 */
+function approveMemberBind_(ss, memberSheet, body) {
+  body = body || {};
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var card = normalizeMemberCardNo_(body.memberCardNo || body.card || "");
+  if (!isValidMemberCardNo_(card)) {
+    return { error: true, message: "缺少有效會員卡號" };
+  }
+  memberSheet = memberSheet || getMemberSheet(ss, { required: false });
+  if (!memberSheet) {
+    var hint = memberSheetShareHintMessage_();
+    return { error: true, message: hint.message, memberSpreadsheetUrl: hint.memberSpreadsheetUrl };
+  }
+  var existing = getMemberRecordByCard_(ss, card);
+  if (!existing) return { error: true, message: "找不到會員 " + card };
+  var member = normalizeMemberRecord_(existing);
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
+  member.status = "有效";
+  member.updatedAt = now;
+  if (String(member.note || "").indexOf("待審核") >= 0) {
+    member.note = String(member.note || "").replace(/待審核/g, "已審核");
+  }
+  var rowNum = findMemberRowByCard_(memberSheet, card);
+  writeMemberRecordToSheet_(memberSheet, member, rowNum);
+
+  var userId = String(member.lineUserId || member.lineId || "").trim();
+  var notified = false;
+  var notifyDetail = "";
+  if (isLineMessagingUserId_(userId)) {
+    var tok = getLineChannelAccessTokenOrError_();
+    if (!tok.error) {
+      var brand = String(CONFIG.lineBrandName || "MAARU").trim() || "MAARU";
+      var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
+      if (!site || !/^https:\/\//i.test(site)) {
+        site = "https://maaru-jp.github.io/ProductManagement2";
+      }
+      var msgs = [
+        {
+          type: "text",
+          text: "✅ 審核通過！您的會員資料已核准，現在可以重新進入商店頁面開始使用。\n會員卡號：" + card
+        },
+        {
+          type: "flex",
+          altText: "審核通過｜進入商店",
+          contents: {
+            type: "bubble",
+            size: getLineFlexBubbleSize_(),
+            body: {
+              type: "box",
+              layout: "vertical",
+              paddingAll: "16px",
+              spacing: "md",
+              contents: [
+                {
+                  type: "text",
+                  text: brand + " 審核通過",
+                  weight: "bold",
+                  size: "md",
+                  color: "#059669",
+                  align: "center"
+                },
+                {
+                  type: "button",
+                  style: "primary",
+                  color: "#06C755",
+                  height: "md",
+                  margin: "lg",
+                  action: { type: "uri", label: "🛒 進入商店", uri: site + "/" }
+                }
+              ]
+            }
+          }
+        }
+      ];
+      var pushRes = pushLineMessages_(userId, tok.accessToken, msgs);
+      notified = !!(pushRes && pushRes.ok);
+      if (!notified) notifyDetail = String((pushRes && (pushRes.message || pushRes.body)) || "push_failed").slice(0, 160);
+    } else {
+      notifyDetail = tok.message || "no_token";
+    }
+  } else {
+    notifyDetail = "no_line_user";
+  }
+
+  return {
+    error: false,
+    message: notified ? "已核准並通知顧客" : ("已核准" + (notifyDetail ? "（通知未送出：" + notifyDetail + "）" : "")),
+    memberCardNo: card,
+    status: "有效",
+    notified: notified,
+    member: member
+  };
+}
+
+/** 官方 LINE 貼上 6 碼後核銷 */
+function consumeLineBindOtp_(otpCode, messagingUserId) {
+  otpCode = String(otpCode || "").replace(/\D/g, "").slice(0, 6);
+  messagingUserId = String(messagingUserId || "").trim();
+  if (!/^\d{6}$/.test(otpCode)) {
+    return { error: true, message: "驗證碼須為 6 碼數字" };
+  }
+  var cache = lineBindOtpCache_();
+  var key = LINE_BIND_OTP_PREFIX_ + otpCode;
+  var raw = cache ? cache.get(key) : "";
+  var fromProps = false;
+  if (!raw) {
+    try {
+      raw = PropertiesService.getScriptProperties().getProperty(key) || "";
+      fromProps = !!raw;
+    } catch (e) { raw = ""; }
+  }
+  if (!raw) {
+    return { error: true, message: "驗證碼無效或已過期，請回到綁定頁重新取得 6 碼。" };
+  }
+  var obj = {};
+  try { obj = JSON.parse(raw); } catch (e2) {
+    return { error: true, message: "驗證碼資料損壞，請重新取得" };
+  }
+  var card = normalizeMemberCardNo_(obj.memberCardNo);
+  if (!isValidMemberCardNo_(card)) {
+    return { error: true, message: "驗證碼未對應有效會員卡號" };
+  }
+  // 單次使用
+  if (cache) {
+    cache.remove(key);
+    cache.remove(LINE_BIND_OTP_CARD_PREFIX_ + card);
+  }
+  if (fromProps) {
+    try { PropertiesService.getScriptProperties().deleteProperty(key); } catch (e3) { /* ignore */ }
+  }
+  return { error: false, memberCardNo: card, loginUserId: String(obj.loginUserId || "") };
+}
+
+/** 新客 LINE 登入綁定：配置一組新卡並寫入會員清冊 */
+function allocateNewMemberCardForLineBind_(ss, displayName, lineUserId) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var used = {};
+  try {
+    var orders = getAllOrdersMerged_(ss) || [];
+    for (var i = 0; i < orders.length; i++) {
+      var c = normalizeMemberCardNo_(orders[i] && orders[i].memberCardNo);
+      if (isValidMemberCardNo_(c)) used[c] = true;
+    }
+  } catch (e1) { /* ignore */ }
+  try {
+    var mSheet = getMemberSheet(ss, { required: false });
+    var members = mSheet ? (getMembers(mSheet) || []) : [];
+    for (var j = 0; j < members.length; j++) {
+      var mc = normalizeMemberCardNo_(members[j] && members[j].memberCardNo);
+      if (isValidMemberCardNo_(mc)) used[mc] = true;
+    }
+  } catch (e2) { /* ignore */ }
+
+  var card = generateMemberCardNoForSubmit_(used, new Date());
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Taipei", "yyyy-MM-dd'T'HH:mm:ss");
+  var sheet = getMemberSheet(ss, { required: false });
+  if (sheet) {
+    ensureMemberHeaderRow_(sheet);
+    writeMemberRecordToSheet_(sheet, normalizeMemberRecord_({
+      memberCardNo: card,
+      customerName: String(displayName || "").trim(),
+      lineId: "",
+      lineUserId: "",
+      status: "審核中",
+      note: "LINE 登入綁定頁開卡（待審核）",
+      createdAt: now.slice(0, 10),
+      updatedAt: now
+    }), -1);
+  }
+  return card;
+}
+
 /** 會員卡號 ↔ Messaging API userId（U…）綁定，供後台一鍵推播 */
 function bindLineUserIdToMemberCard_(ss, userId, card) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
@@ -2420,15 +2924,18 @@ function bindLineUserIdToMemberCard_(ss, userId, card) {
     member.lineUserId = userId;
     member.lineId = userId;
     member.updatedAt = now;
-    if (!member.status) member.status = "有效";
+    // LINE 綁定完成後先進入商家審核；已是有效／停用者不強制改寫停用
+    if (String(member.status || "").trim() !== "停用") {
+      member.status = "審核中";
+    }
   } else {
     member = normalizeMemberRecord_({
       memberCardNo: card,
       customerName: "",
       lineId: userId,
       lineUserId: userId,
-      status: "有效",
-      note: "LINE 綁定",
+      status: "審核中",
+      note: "LINE 綁定待審核",
       createdAt: now.slice(0, 10),
       updatedAt: now
     });
@@ -2802,7 +3309,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
   styleKey = styleKey || resolveLineFlexStyleKey_();
   var jp = {
     confirm_pay: {
-      title: "訂金付款通知",
+      title: "請確認訂單並匯款",
       sectionLabel: "匯款資訊",
       sectionEmoji: "✉️",
       alt: "訂單確認／請匯款",
@@ -3477,7 +3984,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "匯款完成後請回覆，謝謝！",
+      text: "匯款完成後請回覆本對話告知，謝謝！",
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
