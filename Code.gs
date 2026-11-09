@@ -1877,7 +1877,7 @@ function buildLineAlreadyBoundMemberMessages_(memberCardNo) {
     },
     {
       type: "text",
-      text: "您已是正式會員，無需再申請。之後訂單進度會透過官方 LINE 通知您。",
+      text: "您已完成會員綁定，無需再綁定。",
       size: "sm",
       color: "#8C8C8C",
       wrap: true,
@@ -3009,7 +3009,7 @@ function approveMemberBind_(ss, memberSheet, body) {
         },
         {
           type: "text",
-          text: "您的會員資料已核准，現在可以使用商店服務。",
+          text: "您的會員資料已核准",
           size: "sm",
           color: "#8C8C8C",
           wrap: true,
