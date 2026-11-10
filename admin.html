@@ -1076,11 +1076,7 @@
                   <textarea id="lineNotifyTpl_shipping" rows="8" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-slate-700 mb-1">④ 到店／可取貨</label>
-                  <textarea id="lineNotifyTpl_arrived" rows="4" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
-                </div>
-                <div>
-                  <label class="block text-xs font-medium text-slate-700 mb-1">⑤ 取貨完成</label>
+                  <label class="block text-xs font-medium text-slate-700 mb-1">④ 取貨完成</label>
                   <textarea id="lineNotifyTpl_completed" rows="4" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed"></textarea>
                 </div>
               </div>
@@ -2177,13 +2173,12 @@
         var lineTestOrderBtn = document.getElementById("lineTestOrderBtn");
         var lastLineWebhookToken = "";
         // paid（已收到匯款）已併入 order_established，後台不再單獨顯示
-        var LINE_NOTIFY_TYPE_KEYS_ = ["confirm_pay", "order_established", "shipping", "arrived"];
-        var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "arrived", "completed"];
+        var LINE_NOTIFY_TYPE_KEYS_ = ["confirm_pay", "order_established", "shipping"];
+        var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "completed"];
         var LINE_NOTIFY_LABELS_ = {
           confirm_pay: "確認/請匯款",
           order_established: "訂單成立／已匯款",
-          shipping: "出貨通知",
-          arrived: "到店/可取貨"
+          shipping: "出貨通知"
         };
         window.LINE_NOTIFY_TYPE_KEYS_ = LINE_NOTIFY_TYPE_KEYS_;
         window.LINE_NOTIFY_LABELS_ = LINE_NOTIFY_LABELS_;
@@ -7824,7 +7819,7 @@
             }
           }
           if (btns) {
-            var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "order_established", "shipping", "arrived"];
+            var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "order_established", "shipping"];
             var labels = window.LINE_NOTIFY_LABELS_ || {};
             btns.innerHTML = keys.map(function(k) {
               var label = labels[k] || k;
@@ -7856,12 +7851,11 @@
 
         function renderOrderLineNotifyControls_(ord) {
           var can = orderLooksLineNotifyBound_(ord);
-          var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "order_established", "shipping", "arrived"];
+          var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "order_established", "shipping"];
           var labels = window.LINE_NOTIFY_LABELS_ || {
             confirm_pay: "確認/請匯款",
             order_established: "訂單成立／已匯款",
-            shipping: "出貨通知",
-            arrived: "到店/可取貨"
+            shipping: "出貨通知"
           };
           var badge = can
             ? "<span class=\"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 mr-1\" title=\"已綁定 LINE 推播\">可推播</span>"

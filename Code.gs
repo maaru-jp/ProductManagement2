@@ -910,9 +910,9 @@ var LINE_MERGE_WINDOW_MS_ = 2 * 60 * 60 * 1000;
 
 /** 後台一鍵推播類型（順序與訂單管理按鈕一致） */
 // paid（已收到匯款）已併入 order_established，不再單獨推播
-var LINE_NOTIFY_TYPES_ = ["confirm_pay", "order_established", "shipping", "arrived"];
+var LINE_NOTIFY_TYPES_ = ["confirm_pay", "order_established", "shipping"];
 /** 統一訊息模板鍵（喊單自動回覆＋進度推播內文），後台同一區編輯、同一份 JSON 儲存 */
-var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "arrived", "completed"];
+var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "completed"];
 
 function isLineMessagingUserId_(s) {
   var v = String(s || "").trim();
@@ -944,13 +944,10 @@ function defaultLineNotifyTemplates_() {
     confirm_pay: "匯款完成後請回覆，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
-      "您好：\n\n" +
-      "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量，請留意查收\n\n" +
-      "到貨時間依物流配送安排為主\n\n" +
-      "如有任何問題，歡迎隨時與小幫手聯繫",
-    arrived:
-      "{{customerName}} 您好，訂單 {{orderId}} 已可取貨。\n\n" +
-      "請於期限內取件，謝謝！",
+      "您好\n\n" +
+      "您的訂單已安排出貨，隨附本次訂單明細\n\n" +
+      "實際到貨時間依物流配送為主，如有任何問題，歡迎聯繫小幫手\n\n" +
+      "感謝您的支持與購買！",
     completed:
       "{{customerName}} 您好，訂單 {{orderId}} 已完成。\n\n" +
       "感謝您的支持！之後可用會員卡號查詢紀錄。"
@@ -4418,7 +4415,22 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
   var titleSize = "xl";
 
   var headerContents = [];
+  var hideBrandInHeader = (notifyType === "confirm_pay" || notifyType === "shipping");
+  var titleOnly = {
+    type: "text",
+    text: lineFlexSafeText_(meta.title, 36),
+    size: titleSize,
+    weight: "bold",
+    color: theme.headerTitle,
+    wrap: true
+  };
   if (logo && /^https:\/\//i.test(logo)) {
+    var logoTitleContents = hideBrandInHeader
+      ? [titleOnly]
+      : [
+          { type: "text", text: brand, size: "md", weight: "bold", color: theme.headerBrand },
+          Object.assign({}, titleOnly)
+        ];
     headerContents.push({
       type: "box",
       layout: "horizontal",
@@ -4445,32 +4457,16 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
           layout: "vertical",
           flex: 1,
           justifyContent: "center",
-          contents: [
-            { type: "text", text: brand, size: "md", weight: "bold", color: theme.headerBrand },
-            {
-              type: "text",
-              text: lineFlexSafeText_(meta.title, 36),
-              size: titleSize,
-              weight: "bold",
-              color: theme.headerTitle,
-              wrap: true
-            }
-          ]
+          contents: logoTitleContents
         }
       ]
     });
+  } else if (hideBrandInHeader) {
+    headerContents.push(titleOnly);
   } else {
     headerContents.push(
       { type: "text", text: brand, size: "md", weight: "bold", color: theme.headerBrand },
-      {
-        type: "text",
-        text: lineFlexSafeText_(meta.title, 36),
-        size: titleSize,
-        weight: "bold",
-        color: theme.headerTitle,
-        wrap: true,
-        margin: "xs"
-      }
+      Object.assign({}, titleOnly, { margin: "xs" })
     );
   }
 
@@ -4633,10 +4629,10 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       ]
     });
     var shippingBody =
-      "您好：\n\n" +
-      "您的訂單已安排出貨，附上本次訂單明細，方便您收到商品後核對品項與數量，請留意查收\n\n" +
-      "到貨時間依物流配送安排為主\n\n" +
-      "如有任何問題，歡迎隨時與小幫手聯繫";
+      "您好\n\n" +
+      "您的訂單已安排出貨，隨附本次訂單明細\n\n" +
+      "實際到貨時間依物流配送為主，如有任何問題，歡迎聯繫小幫手\n\n" +
+      "感謝您的支持與購買！";
     bodyContents.push({
       type: "separator",
       margin: "md",
@@ -4716,7 +4712,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
 
   var footerContents = [];
   var trackUrl = guessLogisticsTrackUrl_(order.shippingMethod);
-  if (trackUrl && (notifyType === "shipping" || notifyType === "arrived")) {
+  if (trackUrl && notifyType === "shipping") {
     footerContents.push({
       type: "button",
       style: "secondary",
@@ -5012,7 +5008,7 @@ function sendOrderBindGuide_(ss, body) {
 }
 
 /**
- * 後台一鍵推播：body = { orderId, notifyType: order_established|confirm_pay|paid|shipping|arrived|completed }
+ * 後台一鍵推播：body = { orderId, notifyType: order_established|confirm_pay|shipping }
  * 以 Flex 卡片推播；進度類以後台文字模板填入說明區；訂單成立通知版型固定。
  */
 function sendOrderLineNotify_(ss, body) {
