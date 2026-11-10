@@ -909,7 +909,8 @@ var LINE_PROP_NOTIFY_TEMPLATES = "line_order_notify_templates_json";
 var LINE_MERGE_WINDOW_MS_ = 2 * 60 * 60 * 1000;
 
 /** 後台一鍵推播類型（順序與訂單管理按鈕一致） */
-var LINE_NOTIFY_TYPES_ = ["confirm_pay", "paid", "order_established", "shipping", "arrived"];
+// paid（已收到匯款）已併入 order_established，不再單獨推播
+var LINE_NOTIFY_TYPES_ = ["confirm_pay", "order_established", "shipping", "arrived"];
 /** 統一訊息模板鍵（喊單自動回覆＋進度推播內文），後台同一區編輯、同一份 JSON 儲存 */
 var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "arrived", "completed"];
 
@@ -1784,7 +1785,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
         via: meta.via || ""
       };
     }
-    // 審核中再送：更新社群名稱（顧客姓名）
+    // 審核中再送：更新社群名稱（顧客姓名）；不發送「審核中」通知 Flex
     if (memberName || pickupStore) {
       try {
         patchMemberApplyProfile_(ss, existingCard, memberName, memberNote);
@@ -1793,8 +1794,6 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
       }
     }
     var reuseOtp = issueLineApplyMemberOtp_(existingCard, userId, memberName || String(existing.customerName || ""));
-    var reuseMsgs = buildLineApplyMemberPendingMessages_(reuseOtp, existingCard, false);
-    var reuseSend = sendLineUserMessages_(userId, replyToken, accessToken, reuseMsgs, { preferPush: true });
     return {
       ok: true,
       type: "member_apply_pending",
@@ -1802,7 +1801,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
       status: existingStatus || "審核中",
       otp: reuseOtp,
       lineUserId: userId,
-      sent: !!(reuseSend && reuseSend.replied),
+      sent: false,
       via: meta.via || ""
     };
   }
@@ -1847,6 +1846,7 @@ function handleMemberCardBindStart_(ss, userId, replyToken, accessToken, meta) {
     Logger.log("patchMemberApplyProfile_ after bind: " + ePatchNew);
   }
 
+  // 首次申請：回覆「申請已送出」；已在審核中再點則不重送（見上方 pending 分支）
   var otp = issueLineApplyMemberOtp_(card, userId, memberName);
   var okMsgs = buildLineApplyMemberPendingMessages_(otp, card, true);
   var okSend = sendLineUserMessages_(userId, replyToken, accessToken, okMsgs, { preferPush: true });
@@ -4201,7 +4201,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
     },
     {
       type: "text",
-      text: "以下是本次訂購明細，請您確認商品與數量是否正確",
+      text: "以下是本次訂購明細",
       size: "sm",
       weight: "bold",
       color: theme.textSoft,
@@ -4281,6 +4281,62 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
     { type: "separator", margin: "lg", color: theme.separator },
     {
       type: "text",
+      text: "✅ 已收到匯款",
+      size: "md",
+      weight: "bold",
+      color: theme.text,
+      wrap: true,
+      margin: "md",
+      align: "center"
+    }
+  ]);
+
+  // 有填預購訂金時一併顯示（與原「已收到匯款」卡一致）
+  var depositNum = Math.round(Number(order.depositAmount) || 0);
+  if (!isNaN(depositNum) && depositNum > 0) {
+    bodyContents.push({
+      type: "box",
+      layout: "vertical",
+      margin: "sm",
+      paddingAll: "12px",
+      cornerRadius: "16px",
+      backgroundColor: theme.chipBg,
+      contents: [
+        {
+          type: "text",
+          text: "預購訂金",
+          size: "md",
+          weight: "bold",
+          color: theme.textMuted,
+          align: "center"
+        },
+        {
+          type: "text",
+          text: "NT$" + depositNum,
+          size: "3xl",
+          weight: "bold",
+          color: theme.text,
+          align: "center",
+          margin: "xs"
+        }
+      ]
+    });
+  }
+
+  bodyContents = bodyContents.concat([
+    {
+      type: "text",
+      text: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
+      size: "sm",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "md",
+      align: "center"
+    },
+    { type: "separator", margin: "lg", color: theme.separator },
+    {
+      type: "text",
       text: "若以上訂單資訊有誤，請儘快聯繫小幫手協助確認",
       size: "sm",
       weight: "bold",
@@ -4293,7 +4349,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
 
   return {
     type: "flex",
-    altText: brand + "｜訂單成立通知" + (orderId ? ("｜" + orderDisp) : ""),
+    altText: brand + "｜訂單成立／已收到匯款" + (orderId ? ("｜" + orderDisp) : ""),
     contents: {
       type: "bubble",
       size: getLineFlexBubbleSize_(),
@@ -4321,6 +4377,15 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
                 size: "xl",
                 weight: "bold",
                 color: theme.headerTitle,
+                margin: "xs",
+                wrap: true
+              },
+              {
+                type: "text",
+                text: "已收到匯款",
+                size: "sm",
+                weight: "bold",
+                color: theme.headerBrand,
                 margin: "xs",
                 wrap: true
               }
@@ -4980,6 +5045,8 @@ function sendOrderLineNotify_(ss, body) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var notifyType = String(body.notifyType || body.type || "").trim();
   var orderId = String(body.orderId || body.id || "").trim();
+  // paid 已併入 order_established，仍接受舊 notifyType
+  if (notifyType === "paid") notifyType = "order_established";
   if (LINE_NOTIFY_TYPES_.indexOf(notifyType) < 0) {
     return { error: true, message: "未知通知類型（可用：" + LINE_NOTIFY_TYPES_.join("、") + "）" };
   }

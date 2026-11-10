@@ -2176,12 +2176,12 @@
         var lineCopyWebhookUrl = document.getElementById("lineCopyWebhookUrl");
         var lineTestOrderBtn = document.getElementById("lineTestOrderBtn");
         var lastLineWebhookToken = "";
-        var LINE_NOTIFY_TYPE_KEYS_ = ["confirm_pay", "paid", "order_established", "shipping", "arrived"];
+        // paid（已收到匯款）已併入 order_established，後台不再單獨顯示
+        var LINE_NOTIFY_TYPE_KEYS_ = ["confirm_pay", "order_established", "shipping", "arrived"];
         var LINE_MSG_TEMPLATE_KEYS_ = ["order_created", "order_merged", "confirm_pay", "paid", "shipping", "arrived", "completed"];
         var LINE_NOTIFY_LABELS_ = {
           confirm_pay: "確認/請匯款",
-          paid: "已確認匯款",
-          order_established: "訂單成立",
+          order_established: "訂單成立／已匯款",
           shipping: "出貨通知",
           arrived: "到店/可取貨"
         };
@@ -7856,11 +7856,10 @@
 
         function renderOrderLineNotifyControls_(ord) {
           var can = orderLooksLineNotifyBound_(ord);
-          var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "paid", "order_established", "shipping", "arrived"];
+          var keys = window.LINE_NOTIFY_TYPE_KEYS_ || ["confirm_pay", "order_established", "shipping", "arrived"];
           var labels = window.LINE_NOTIFY_LABELS_ || {
             confirm_pay: "確認/請匯款",
-            paid: "已確認匯款",
-            order_established: "訂單成立",
+            order_established: "訂單成立／已匯款",
             shipping: "出貨通知",
             arrived: "到店/可取貨"
           };
