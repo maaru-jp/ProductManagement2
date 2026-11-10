@@ -941,7 +941,7 @@ function defaultLineNotifyTemplates_() {
   return {
     order_created: defaultLineOrderCreatedTemplate_(),
     order_merged: defaultLineOrderMergedTemplate_(),
-    confirm_pay: "匯款完成後請回覆本對話告知，謝謝！",
+    confirm_pay: "匯款完成後請回覆，謝謝！",
     paid: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
     shipping:
       "您好：\n\n" +
@@ -3865,7 +3865,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
   styleKey = styleKey || resolveLineFlexStyleKey_();
   var jp = {
     confirm_pay: {
-      title: "請確認訂單並匯款",
+      title: "訂金付款通知",
       sectionLabel: "匯款資訊",
       sectionEmoji: "✉️",
       alt: "訂單確認／請匯款",
@@ -3922,7 +3922,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
   };
   var kr = {
     confirm_pay: {
-      title: "請確認並完成匯款",
+      title: "訂金付款通知",
       sectionLabel: "匯款資訊",
       sectionEmoji: "💳",
       alt: "訂單確認／請匯款",
@@ -3979,7 +3979,7 @@ function lineNotifyFlexMeta_(notifyType, styleKey) {
   };
   var classic = {
     confirm_pay: {
-      title: "請確認並匯款",
+      title: "訂金付款通知",
       sectionLabel: "匯款資訊",
       sectionEmoji: "💳",
       alt: "訂單確認／請匯款",
@@ -4278,26 +4278,16 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
         }
       ]
     },
-    { type: "separator", margin: "lg", color: theme.separator },
-    {
-      type: "text",
-      text: "✅ 已收到匯款",
-      size: "md",
-      weight: "bold",
-      color: theme.text,
-      wrap: true,
-      margin: "md",
-      align: "center"
-    }
+    { type: "separator", margin: "lg", color: theme.separator }
   ]);
 
-  // 有填預購訂金時一併顯示（與原「已收到匯款」卡一致）
+  // 有填預購訂金時一併顯示
   var depositNum = Math.round(Number(order.depositAmount) || 0);
   if (!isNaN(depositNum) && depositNum > 0) {
     bodyContents.push({
       type: "box",
       layout: "vertical",
-      margin: "sm",
+      margin: "md",
       paddingAll: "12px",
       cornerRadius: "16px",
       backgroundColor: theme.chipBg,
@@ -4326,7 +4316,7 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
   bodyContents = bodyContents.concat([
     {
       type: "text",
-      text: "已確認收到預購訂金，我們會盡快為您安排出貨，謝謝！",
+      text: "已收到您的預購訂金，我們將盡快為您安排後續作業",
       size: "sm",
       weight: "bold",
       color: theme.textSoft,
@@ -4334,15 +4324,24 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
       margin: "md",
       align: "center"
     },
-    { type: "separator", margin: "lg", color: theme.separator },
     {
       type: "text",
-      text: "若以上訂單資訊有誤，請儘快聯繫小幫手協助確認",
+      text: "請確認以上訂單資訊，如有任何錯誤，請盡快聯繫小幫手協助處理",
       size: "sm",
       weight: "bold",
       color: theme.textSoft,
       wrap: true,
-      margin: "md",
+      margin: "sm",
+      align: "center"
+    },
+    {
+      type: "text",
+      text: "感謝您的支持與耐心等候！",
+      size: "sm",
+      weight: "bold",
+      color: theme.textSoft,
+      wrap: true,
+      margin: "sm",
       align: "center"
     }
   ]);
@@ -4370,23 +4369,12 @@ function buildLineOrderEstablishedNotifyFlexMessage_(order) {
             paddingAll: "16px",
             backgroundColor: color,
             contents: [
-              { type: "text", text: brand, size: "md", weight: "bold", color: theme.headerBrand },
               {
                 type: "text",
                 text: "訂單成立通知",
                 size: "xl",
                 weight: "bold",
                 color: theme.headerTitle,
-                margin: "xs",
-                wrap: true
-              },
-              {
-                type: "text",
-                text: "已收到匯款",
-                size: "sm",
-                weight: "bold",
-                color: theme.headerBrand,
-                margin: "xs",
                 wrap: true
               }
             ]
@@ -4605,7 +4593,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
     });
     bodyContents.push({
       type: "text",
-      text: "匯款完成後請回覆本對話告知，謝謝！",
+      text: "匯款完成後請回覆，謝謝！",
       size: "lg",
       weight: "bold",
       color: theme.textSoft,
@@ -4736,20 +4724,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       action: { type: "uri", label: theme.btnTrackLabel, uri: trackUrl }
     });
   }
-  var site = String(CONFIG.publicSiteUrl || "").trim().replace(/\/$/, "");
-  if (site && /^https:\/\//i.test(site)) {
-    var ordersUrl = site + "/#orders";
-    if (v.memberCardNo) {
-      ordersUrl = site + "/?card=" + encodeURIComponent(v.memberCardNo) + "#orders";
-    }
-    footerContents.push({
-      type: "button",
-      style: "primary",
-      color: color,
-      height: "sm",
-      action: { type: "uri", label: theme.btnOrdersLabel, uri: ordersUrl }
-    });
-  }
+  // 不顯示「查看訂單」按鈕
 
   // mega＝適中寬度（勿用 giga，手機上偏寬）
   var cardSections = [
@@ -4769,7 +4744,7 @@ function buildLineOrderNotifyFlexMessage_(notifyType, order, bodyText) {
       contents: bodyContents
     }
   ];
-  // 僅在有物流／訂單連結時顯示按鈕；不顯示「收到了」回覆按鈕
+  // 僅在有物流追蹤連結時顯示按鈕
   if (footerContents.length) {
     cardSections.push({
       type: "box",
